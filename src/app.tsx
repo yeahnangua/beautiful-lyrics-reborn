@@ -210,7 +210,7 @@ let CheckForLiveBackgrounds: (() => void)
 }
 
 // Main watcher
-{
+async function main() {
 	// Wait until we're loaded
 	await new Promise<void>(
 		resolve => {
@@ -312,3 +312,5 @@ let CheckForLiveBackgrounds: (() => void)
 		UpdateAnalytics()
 	}
 }
+
+export default main;

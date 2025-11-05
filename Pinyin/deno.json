@@ -1,0 +1,14 @@
+{
+	"name": "@socali/pinyin",
+	"version": "4.0.0",
+	"tasks": {},
+	"compilerOptions": {
+		"lib": [
+			"ESNext",
+			"DOM",
+			"DOM.iterable",
+			"deno.ns"
+		]
+	},
+	"exports": "./Source/main.ts"
+}

@@ -145,11 +145,13 @@ out
 # End of https://www.toptal.com/developers/gitignore/api/node
 
 # Non-Essential Files
-Tasks/Release.ts
+Extension/Tasks/Release.ts
 **/.DS_Store
 .DS_STORE
-Drafts/**/*
-Builds/Test/*
-Builds/Release/bundle@*.*
+Extension/Drafts/**/*
+Extension/Builds/Test/*
+Extension/Builds/Release/bundle@*.*
+Cloudflare/
+Bot Server Keys/
 deno.lock
 .DS_Store

@@ -1,0 +1,80 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "http://example.com/Schema.json",
+	"title": "Build Configuration",
+	"description": "A schema for Spice Build Configurations",
+	"type": "object",
+	"properties": {
+		"$schema": {
+			"type": "string",
+			"readOnly": true
+		},
+		"Name": {
+			"description": "The base file name used for Hosted Release builds, also the internal Spicetify file name when using a Test build or storing Locally",
+			"type": "string",
+			"pattern": "^[\\w_-]+$",
+			"readOnly": true
+		},
+		"Version": {
+			"description": "The current version of the Build, used by the Auto-Updater to determine what version to get",
+			"type": "string",
+			"pattern": "^\\d+\\.\\d+\\.\\d+$",
+			"readOnly": true
+		},
+		"ReleaseLocation": {
+			"description": "Configuration determining WHERE the Auto-Updater will get the release from",
+			"type": "object",
+			"oneOf": [
+				{
+					"type": "object",
+					"properties": {
+						"Type": {
+							"description": "Uses a GitHub Repository to get the Release by Version Tag",
+							"type": "string",
+							"enum": ["GitHub"],
+							"readOnly": true
+						},
+						"User": {
+							"description": "Username on GitHub",
+							"type": "string",
+							"readOnly": true
+						},
+						"Repository": {
+							"description": "Repository Name on GitHub",
+							"type": "string",
+							"readOnly": true
+						}
+					},
+					"required": ["Type", "User", "Repository"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"Type": {
+							"description": "Uses a specified Host to get the Release",
+							"type": "string",
+							"enum": ["Hosted"],
+							"readOnly": true
+						},
+						"Url": {
+							"description": "The URL to the Host directory",
+							"type": "string",
+							"readOnly": true
+						},
+						"VersionCheckUrl": {
+							"description": "The URL to check for the latest version",
+							"type": "string",
+							"readOnly": true
+						}
+					},
+					"required": ["Type", "Url", "VersionCheckUrl"],
+					"additionalProperties": false
+				}
+			],
+			"readOnly": true
+		}
+	},
+	"required": ["Name", "Version", "ReleaseLocation"],
+	"additionalProperties": false
+}

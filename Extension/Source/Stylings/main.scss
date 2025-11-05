@@ -1,0 +1,126 @@
+body:has(.SliderBar.Active) {
+	cursor: pointer;
+}
+
+.Root__right-sidebar:has(.main-nowPlayingView-section, canvas) {
+	--background-tint: color-mix(
+		in srgb,
+		rgb(var(--spice-rgb-selected-row)) 7%,
+		transparent
+	);
+	--spice-card: var(--background-tint);
+	--background-tinted-base: var(--background-tint);
+
+	.main-nowPlayingView-content {
+		background: transparent;
+	}
+
+	.main-nowPlayingView-contextItemInfo::before {
+		display: none;
+	}
+
+	.BeautifulLyricsBackground {
+		div[data-overlayscrollbars-viewport], div[data-overlayscrollbars-viewport] > div {
+			background: transparent !important;
+		}
+	}
+
+	.BeautifulLyricsBackground div:has(> video) {
+		mask: linear-gradient(
+			180deg,
+			transparent 0,
+			transparent 0px, black 0px,
+			black 70%, transparent 100%,
+			transparent
+		);
+
+		video {
+			filter: opacity(0.75) brightness(0.5);
+		}
+	}
+
+	.BeautifulLyricsBackground .main-nowPlayingView-coverArtContainer div:has(video) {
+		&::after, &::before {
+			display: none;
+		}
+	}
+
+	.BeautifulLyricsBackground .main-trackInfo-artists {
+		opacity: 0.75;
+		filter: brightness(1.15);
+	}
+
+	.main-nowPlayingView-coverArt {
+		opacity: 0.95;
+		box-shadow: #00000045 0 9px 20px 0px;
+	}
+
+	.main-nowPlayingView-section {
+		background-color: var(--background-tinted-base) !important;
+
+		button div div:has(a) {
+			background-color: transparent !important;
+		}
+	}
+
+	button[type="button"] {
+		background-color: transparent !important;
+		color: rgba(255, 255, 255, 0.8);
+
+		.Button-sm-buttonSecondary-useBrowserDefaultFocusStyle,
+		.Button-sm-buttonSecondary-isUsingKeyboard-useBrowserDefaultFocusStyle {
+			border: 1px solid rgba(255, 255, 255, 0.5);
+		}
+	}
+}
+
+// Improves scroll-bar
+.os-host:has(.BeautifulLyricsBackground),
+#lyrics-cinema,
+.Root__main-view:has(.BeautifulLyricsBackground) {
+	.os-scrollbar {
+		padding: 5px;
+
+		.os-scrollbar-handle {
+			mix-blend-mode: overlay;
+			background-color: rgba(252, 249, 249, 0.117) !important;
+		}
+	}
+}
+
+// This is the entire lyrics configuration used to create the gradient backgrounds
+.BeautifulLyricsBackground {
+	// This is the overarching container, the parent of the container class
+	overflow: hidden;
+	position: relative;
+	border-radius: var(--section-border-radius, 8px);
+
+	// This is needed so that the gradient-background can be visible
+	&.main-nowPlayingView-sectionHeaderSpacing.main-nowPlayingView-lyricsGradient, .main-buddyFeed-content {
+		background: transparent;
+	}
+
+	// These are full-screen background specific classes to make the gradient-background work/show properly
+	&.BeautifulLyricsPage &-Container {
+		filter: saturate(2.5) brightness(0.65); // Blur-related
+	}
+
+	// These are right-side card background specific classes to adjust for contrast issues
+	&:is(aside) &-Container {
+		filter: saturate(2) brightness(0.7); // Blur-related
+	}
+
+	// Gradient Background Container
+	&-Container {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+		pointer-events: none;
+		overflow: hidden;
+		border-radius: var(--section-border-radius, 8px);
+
+		filter: saturate(1.5) brightness(0.8); // Blur-related
+	}
+}

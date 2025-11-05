@@ -1,13 +1,18 @@
 [
 	{
-	  "name": "Beautiful Lyrics",
-	  "description": "Adds Synced Lyrics, Dynamic Background, Fullscreen, Romanization, and more!",
-	  "preview": "./previews/icon.gif",
-	  "main": "./Builds/Release/beautiful-lyrics.mjs",
-	  "readme": "README.md",
-	  "authors": [
-		  { "name": "SoCalifornian", "url": "https://github.com/surfbryce" }
-	  ],
-	  "tags": ["lyrics", "fullscreen", "background", "romanization", "romaji", "romaja", "pinyin", "japanese", "korean", "chinese"]
+		"name": "Beautiful Lyrics",
+		"description": "Adds Synced Lyrics, Dynamic Background, Fullscreen, Romanization, and more!",
+		"preview": "./Marketing/Marketplace/Icon.gif",
+		"main": "./Extension/Builds/Release/beautiful-lyrics.mjs",
+		"readme": "README.md",
+		"authors": [
+			{ "name": "SoCalifornian", "url": "https://github.com/surfbryce" }
+		],
+		"tags": [
+			"lyrics",
+			"fullscreen", "background",
+			"romanization", "romaji", "romaja", "pinyin",
+			"japanese", "korean", "chinese"
+		]
 	}
 ]

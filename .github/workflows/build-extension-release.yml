@@ -1,0 +1,66 @@
+name: Build Extension Release
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/build-extension-release.yml"
+      - "Extension/**"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-extension-release.yml"
+      - "Extension/**"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-extension-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-release:
+    name: Build release bundle
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+          cache: true
+
+      - name: Build release bundle
+        working-directory: Extension
+        run: |
+          deno run -A - <<'TS'
+          import Bundle from "./Spices/Build/Bundle.ts";
+
+          const output = await Bundle({ Type: "Offline" });
+
+          await Deno.mkdir("./Builds/Release", { recursive: true });
+          await Deno.writeTextFile(
+            "./Builds/Release/beautiful-lyrics-reborn.mjs",
+            output as string,
+          );
+          TS
+
+      - name: Commit release bundle
+        if: github.event_name == 'push'
+        run: |
+          if git diff --quiet -- Extension/Builds/Release/beautiful-lyrics-reborn.mjs; then
+            echo "Release bundle is already up to date."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Extension/Builds/Release/beautiful-lyrics-reborn.mjs
+          git commit -m "build: update extension release bundle"
+          git push

@@ -2,7 +2,7 @@ name: "Incorrect Lyrics"
 description: "Lyrics are incorrect."
 title: "First Songs' Name/Artists"
 labels: ["Incorrect Lyrics"]
-assignees: surfbryce
+assignees: yeahnangua
 
 body:
   - type: checkboxes
@@ -12,7 +12,7 @@ body:
       options:
         - label: "IF you are reporting multiple songs, add \", ...\" to the end of your title."
           required: true
-        - label: "For every song you want to report, check Musixmatch or Apple Music and check to see if the Lyrics are any Different than what Beautiful Lyrics has."
+        - label: "For every song you want to report, check Musixmatch or Apple Music and check to see if the Lyrics are any Different than what Beautiful Lyrics Reborn has."
           required: true
         - label: "For every song you want to report, point out the Incorrect Lyrics and what the correct ones are (ONLY IF the Lyrics aren't entirely incorrect)."
           required: true

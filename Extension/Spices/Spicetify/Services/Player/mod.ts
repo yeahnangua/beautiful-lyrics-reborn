@@ -207,6 +207,14 @@ const SongNameFilters = [
 	/\s*\-\s*(?:Stereo|Mono)(?:\s*Version|\s*Mix)?/,
 	/\s*\(\s*(?:Stereo|Mono)(?:\s*Mix)?\)?/
 ]
+const FilterSongName = (songName: string): string => {
+	let transformedName = songName
+	for (const filter of SongNameFilters) {
+		transformedName = transformedName.replace(filter, "")
+	}
+
+	return transformedName
+}
 const LoadSongDetails = () => {
 	// Remove our prior details state
 	SongDetails = undefined, HaveSongDetailsLoaded = false
@@ -284,10 +292,7 @@ const LoadSongDetails = () => {
 				}
 
 				// Filter our name of any gunk we may not want
-				let transformedName = trackInformation.name
-				for (const filter of SongNameFilters) {
-					transformedName = transformedName.replace(filter, "")
-				}
+				const transformedName = FilterSongName(trackInformation.name)
 
 				// Update our details
 				SongDetails = {
@@ -329,7 +334,7 @@ const LoadSongDetails = () => {
 
 // Handle our Lyrics
 const ProviderLyricsStore = GetExpireStore<ProviderLyrics | false>(
-	"Player_ProviderLyrics", 3,
+	"Player_ProviderLyrics", 4,
 	{
 		Duration: 1,
 		Unit: "Months"
@@ -337,7 +342,7 @@ const ProviderLyricsStore = GetExpireStore<ProviderLyrics | false>(
 	true
 )
 const TransformedLyricsStore = GetExpireStore<TransformedLyrics | false>(
-	"Player_TransformedLyrics", 3,
+	"Player_TransformedLyrics", 4,
 	{
 		Duration: 1,
 		Unit: "Months"
@@ -347,6 +352,40 @@ const TransformedLyricsStore = GetExpireStore<TransformedLyrics | false>(
 
 export let SongLyrics: (TransformedLyrics | undefined) = undefined
 export let HaveSongLyricsLoaded: boolean = false
+const BuildLyricsRequestURL = (song: StreamedSongMetadata): string => {
+	const url = new URL(`https://lyrics.txw.qzz.io/lyrics/${encodeURIComponent(song.Id)}`)
+	const track = SpotifyPlayer.data?.item
+	const metadata = track?.metadata as unknown as (TrackMetadata | undefined)
+
+	const trackName = metadata?.title || track?.name
+	if (trackName !== undefined && trackName.length > 0) {
+		url.searchParams.set("track_name", FilterSongName(trackName))
+	}
+
+	const artistNames = (
+		track?.artists
+		?.map(artist => artist.name)
+		.filter((artistName): artistName is string => artistName !== undefined && artistName.length > 0)
+		?? []
+	)
+	if ((artistNames.length === 0) && (metadata?.artist_name !== undefined) && (metadata.artist_name.length > 0)) {
+		artistNames.push(metadata.artist_name)
+	}
+	for (const artistName of artistNames) {
+		url.searchParams.append("artist_name", artistName)
+	}
+
+	const albumName = metadata?.album_title || track?.album?.name
+	if (albumName !== undefined && albumName.length > 0) {
+		url.searchParams.set("album_name", albumName)
+	}
+
+	if (Number.isFinite(song.Duration) && song.Duration > 0) {
+		url.searchParams.set("duration", String(Math.round(song.Duration)))
+	}
+
+	return url.toString()
+}
 const LoadSongLyrics = () => {
 	// Remove our prior lyric state
 	HaveSongLyricsLoaded = false, SongLyrics = undefined
@@ -358,6 +397,7 @@ const LoadSongLyrics = () => {
 		SongLyricsLoadedSignal.Fire()
 		return
 	}
+	const lyricsRequestURL = BuildLyricsRequestURL(songAtUpdate)
 
 	// Now go through the process of loading our lyrics
 	{
@@ -367,24 +407,24 @@ const LoadSongLyrics = () => {
 			providerLyrics => {
 				if (providerLyrics === undefined) { // Otherwise, get our lyrics
 					return (
-						(
-							GetSpotifyAccessToken()
-							.then(
-								accessToken => fetch(
-									`https://beautiful-lyrics.socalifornian.live/lyrics/${encodeURIComponent(songAtUpdate.Id)}`,
-									// `http://localhost:8787/lyrics/${encodeURIComponent(songAtUpdate.Id)}`,
-									{
-										method: "GET",
-										headers: {
-											Authorization: `Bearer ${accessToken}`
-										}
+						GetSpotifyAccessToken()
+						.then(
+							accessToken => fetch(
+								lyricsRequestURL,
+								{
+									method: "GET",
+									headers: {
+										Authorization: `Bearer ${accessToken}`,
+										"X-Spotify-App-Platform": SpotifyPlatform.PlatformData.app_platform,
+										"X-Spotify-App-Version": SpotifyPlatform.version
 									}
-								)
+								}
 							)
-							.then(
-								(response) => {
-									if (response.ok === false) {
-										throw `Failed to load Lyrics for Track (${
+						)
+						.then(
+							(response) => {
+								if (response.ok === false) {
+									throw `Failed to load Lyrics for Track (${
 											songAtUpdate.Id
 										}), Error: ${response.status} ${response.statusText}`
 									}
@@ -398,9 +438,8 @@ const LoadSongLyrics = () => {
 										return undefined
 									} else {
 										return JSON.parse(text)
-									}
 								}
-							)
+							}
 						)
 						.then(
 							(providerLyrics) => {
@@ -456,6 +495,20 @@ const LoadSongLyrics = () => {
 
 				// Update our lyrics
 				SongLyrics = transformedLyrics, HaveSongLyricsLoaded = true
+				SongLyricsLoadedSignal.Fire()
+			}
+		)
+		.catch(
+			error => {
+				// Make sure we still have the same song active
+				if (Song !== songAtUpdate) {
+					return
+				}
+
+				console.warn(`Failed to load Lyrics for Track (${songAtUpdate.Id})`)
+				console.error(error)
+
+				SongLyrics = undefined, HaveSongLyricsLoaded = true
 				SongLyricsLoadedSignal.Fire()
 			}
 		)

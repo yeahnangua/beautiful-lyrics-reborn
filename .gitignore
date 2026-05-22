@@ -153,5 +153,7 @@ Extension/Builds/Test/*
 Extension/Builds/Release/bundle@*.*
 Cloudflare/
 Bot Server Keys/
+Server/.wrangler/
+docs/superpowers/
 deno.lock
 .DS_Store

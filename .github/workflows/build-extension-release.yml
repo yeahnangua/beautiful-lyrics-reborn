@@ -36,6 +36,22 @@ jobs:
           deno-version: v2.x
           cache: true
 
+      - name: Stub Spicetify for CI build
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          cat > "$RUNNER_TEMP/bin/spicetify" <<'SH'
+          #!/usr/bin/env sh
+          if [ "$1" = "-c" ]; then
+            echo "$RUNNER_TEMP/spicetify/config-xpui.ini"
+            exit 0
+          fi
+
+          echo "spicetify stub only supports -c during CI builds" >&2
+          exit 1
+          SH
+          chmod +x "$RUNNER_TEMP/bin/spicetify"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
       - name: Build release bundle
         working-directory: Extension
         run: |

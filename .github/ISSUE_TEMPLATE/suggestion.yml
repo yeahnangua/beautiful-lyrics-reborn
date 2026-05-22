@@ -2,7 +2,7 @@ name: "Suggestion"
 description: "Use this to Suggest New Features, Improvements, and etc."
 title: "Summarize your Suggestion Here"
 labels: ["Suggestion"]
-assignees: surfbryce
+assignees: yeahnangua
 
 body:
   - type: dropdown
@@ -19,7 +19,7 @@ body:
     id: "suggestion-reason"
     attributes:
       label: "What is the context behind this Suggestion?"
-      description: "What led you to think of this Suggestion? Was it a problem/pain-point with Beautiful Lyrics? Was it something you experienced somewhere else? And etc."
+      description: "What led you to think of this Suggestion? Was it a problem/pain-point with Beautiful Lyrics Reborn? Was it something you experienced somewhere else? And etc."
     validations:
       required: true
   - type: textarea

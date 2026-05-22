@@ -2,7 +2,7 @@ name: "Improve Lyrics Sync-Type"
 description: "Lyrics that don't have the best Sync-Type. Ex., having Line lyrics when they should be Karaoke."
 title: "First Songs' Name // Artists"
 labels: ["Improve Lyrics Sync"]
-assignees: surfbryce
+assignees: yeahnangua
 
 body:
   - type: checkboxes
@@ -12,7 +12,7 @@ body:
       options:
         - label: "IF you are reporting multiple songs, add \", ...\" to the end of your title."
           required: true
-        - label: "For every song you want to report, check Musixmatch or Apple Music and check to see if the Sync Type is better than what Beautiful Lyrics has."
+        - label: "For every song you want to report, check Musixmatch or Apple Music and check to see if the Sync Type is better than what Beautiful Lyrics Reborn has."
           required: true
   - type: textarea
     id: "song-links"

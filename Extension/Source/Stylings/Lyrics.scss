@@ -306,9 +306,15 @@
 	--gradient-offset: -20%;
 	--gradient-color-alpha: 0.4;
 
-	/* Make it so text can wrap and we expand to its size */
-	display: flex;
+	/* Keep line lyrics as text, otherwise WebKit can paint the gradient as a block. */
+	display: inline-block;
+	max-width: 100%;
 	white-space: pre-wrap;
+}
+
+.Vocals:has(.Line),
+.Vocals:has(.Syllable) {
+	padding: 0.5em;
 }
 
 .Vocals.Lead .Line {
@@ -339,10 +345,16 @@
 }
 
 /* Syllable-Synced Lyric */
-.Syllable, .Word {
+.Syllable {
 	/* Our letters should not wrap - only the Syllable span itself should */
 	display: flex;
 	white-space: nowrap;
+}
+
+.Word {
+	display: flex;
+	flex-wrap: wrap;
+	white-space: normal;
 }
 
 .Syllable:not(.Emphasis) {

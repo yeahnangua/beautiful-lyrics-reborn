@@ -2,13 +2,13 @@ name: "Extension Bug Report"
 description: "Bugs related to the Extension itself. Use the Lyric templates for Lyric issues."
 title: "Summarize the Bug/Issue Here"
 labels: ["Extension Bug"]
-assignees: surfbryce
+assignees: yeahnangua
 
 body:
   - type: dropdown
     id: "installation-type"
     attributes:
-      label: "How did you install Beautiful Lyrics?"
+      label: "How did you install Beautiful Lyrics Reborn?"
       multiple: false
       options:
         - Marketplace
@@ -26,7 +26,7 @@ body:
     id: "country"
     attributes:
       label: "What Country are you from?"
-      description: "Spotify isn't allowed in certain Countries, but Beautiful Lyrics *should* work with a VPN, so this helps determine if it isn't."
+      description: "Spotify isn't allowed in certain Countries, but Beautiful Lyrics Reborn *should* work with a VPN, so this helps determine if it isn't."
       placeholder: "United States"
     validations:
       required: true
@@ -45,14 +45,14 @@ body:
     id: "local-information"
     attributes:
       label: "Spotify/Spicetify Information"
-      description: "To learn how to get this information, visit: https://github.com/surfbryce/beautiful-lyrics/wiki/Extension-Bug-Reporting#getting-your-spotifyspicetify-information"
+      description: "To learn how to get this information, visit: https://github.com/yeahnangua/beautiful-lyrics-reborn/issues"
     validations:
       required: true
   - type: textarea
     id: "extension-information"
     attributes:
       label: "Spotify HTML/CSS and Console Screenshots"
-      description: "To learn how to get this information, visit: https://github.com/surfbryce/beautiful-lyrics/wiki/Extension-Bug-Reporting#getting-your-spotify-htmlcss-files"
+      description: "To learn how to get this information, visit: https://github.com/yeahnangua/beautiful-lyrics-reborn/issues"
     validations:
       required: true
   - type: checkboxes

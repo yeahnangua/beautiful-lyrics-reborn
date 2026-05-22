@@ -149,6 +149,17 @@ const GenerateRomanization = <L extends TextMetadata, I extends BaseInformation>
 		)
 	)
 }
+const GenerateRomanizationSafely = <L extends TextMetadata, I extends BaseInformation>(
+	lyricMetadata: L,
+	rootInformation: I
+): Promise<void> => (
+	GenerateRomanization(lyricMetadata, rootInformation)
+	.catch(
+		error => {
+			console.warn("Failed to romanize lyric text; continuing with original lyrics.", error)
+		}
+	)
+)
 
 // Transformation Methods
 export const TransformProviderLyrics = (providerLyrics: ProviderLyrics): Promise<TransformedLyrics> => {
@@ -176,7 +187,7 @@ export const TransformProviderLyrics = (providerLyrics: ProviderLyrics): Promise
 
 		// Go through and romanize everything
 		for(const lyricMetadata of lyrics.Lines) {
-			romanizationPromises.push(GenerateRomanization(lyricMetadata, lyrics))
+			romanizationPromises.push(GenerateRomanizationSafely(lyricMetadata, lyrics))
 		}
 	} else if (lyrics.Type === "Line") {
 		// Determine our language AND natural-alignment
@@ -201,7 +212,7 @@ export const TransformProviderLyrics = (providerLyrics: ProviderLyrics): Promise
 		// Go through and romanize everything
 		for(const vocalGroup of lyrics.Content) {
 			if (vocalGroup.Type == "Vocal") {
-				romanizationPromises.push(GenerateRomanization(vocalGroup, lyrics))
+				romanizationPromises.push(GenerateRomanizationSafely(vocalGroup, lyrics))
 			}
 		}
 	} else if (lyrics.Type === "Syllable") {
@@ -234,12 +245,12 @@ export const TransformProviderLyrics = (providerLyrics: ProviderLyrics): Promise
 		for(const vocalGroup of lyrics.Content) {
 			if (vocalGroup.Type == "Vocal") {
 				for(const syllable of vocalGroup.Lead.Syllables) {
-					romanizationPromises.push(GenerateRomanization(syllable, lyrics))
+					romanizationPromises.push(GenerateRomanizationSafely(syllable, lyrics))
 				}
 
 				if (vocalGroup.Background !== undefined) {
 					for(const syllable of vocalGroup.Background[0].Syllables) {
-						romanizationPromises.push(GenerateRomanization(syllable, lyrics))
+						romanizationPromises.push(GenerateRomanizationSafely(syllable, lyrics))
 					}
 				}
 			}

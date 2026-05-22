@@ -1,18 +1,22 @@
-[
-	{
-		"name": "Beautiful Lyrics",
-		"description": "Adds Synced Lyrics, Dynamic Background, Fullscreen, Romanization, and more!",
-		"preview": "./Marketing/Marketplace/Icon.gif",
-		"main": "./Extension/Builds/Release/beautiful-lyrics.mjs",
-		"readme": "README.md",
-		"authors": [
-			{ "name": "SoCalifornian", "url": "https://github.com/surfbryce" }
-		],
-		"tags": [
-			"lyrics",
-			"fullscreen", "background",
-			"romanization", "romaji", "romaja", "pinyin",
-			"japanese", "korean", "chinese"
-		]
-	}
-]
+{
+  "name": "Beautiful Lyrics Reborn",
+  "description": "A revived Beautiful Lyrics Spicetify extension with a new lyrics Worker backend and third-party lyric fallbacks.",
+  "preview": "Marketing/Marketplace/Thumbnail.gif",
+  "main": "Extension/Builds/Release/beautiful-lyrics-reborn.mjs",
+  "readme": "README.md",
+  "authors": [
+    {
+      "name": "yeahnangua",
+      "url": "https://github.com/yeahnangua"
+    },
+    {
+      "name": "surfbryce",
+      "url": "https://github.com/surfbryce"
+    }
+  ],
+  "tags": [
+    "lyrics",
+    "fullscreen",
+    "karaoke"
+  ]
+}

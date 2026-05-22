@@ -1,0 +1,7 @@
+name = "beautiful-lyrics-reborn-server"
+main = "src/index.ts"
+compatibility_date = "2026-05-22"
+
+[[routes]]
+pattern = "lyrics.txw.qzz.io"
+custom_domain = true

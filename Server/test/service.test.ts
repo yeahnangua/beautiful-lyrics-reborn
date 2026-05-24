@@ -11,12 +11,16 @@ function createProviders(): ProviderClients {
     qqmusic: {
       getSyllableLyrics: vi.fn().mockResolvedValue(undefined)
     },
-    netease: {
-      getSyllableLyrics: vi.fn().mockResolvedValue(undefined)
-    },
     spotify: {
       getLyrics: vi.fn().mockResolvedValue(undefined),
       getTrackMetadata: vi.fn().mockResolvedValue(undefined)
+    },
+    lyrically: {
+      getSyllableLyrics: vi.fn().mockResolvedValue(undefined),
+      getLyrics: vi.fn().mockResolvedValue(undefined),
+      getYouTubeLyrics: vi.fn().mockResolvedValue(undefined),
+      getDeezerLyrics: vi.fn().mockResolvedValue(undefined),
+      getGeniusLyrics: vi.fn().mockResolvedValue(undefined)
     },
     lrclib: {
       getLyrics: vi.fn().mockResolvedValue(undefined)
@@ -167,9 +171,79 @@ describe("lyrics service", () => {
     expect(providers.spotify.getLyrics).not.toHaveBeenCalled();
   });
 
-  it("uses NetEase syllable lyrics when AMLLDB and QQ Music miss", async () => {
+  it("uses Lyrically Spotify proxy line lyrics before direct Spotify when AMLLDB and QQ Music miss", async () => {
     const providers = createProviders();
-    vi.mocked(providers.netease.getSyllableLyrics).mockResolvedValue({
+    vi.mocked(providers.lyrically.getLyrics).mockResolvedValue({
+      Type: "Line",
+      StartTime: 1,
+      EndTime: 2,
+      Content: [
+        {
+          Type: "Vocal",
+          Text: "Lyrically Spotify proxy line",
+          StartTime: 1,
+          EndTime: 2,
+          OppositeAligned: false
+        }
+      ]
+    });
+    vi.mocked(providers.spotify.getLyrics).mockResolvedValue({
+      Type: "Line",
+      StartTime: 1,
+      EndTime: 2,
+      Content: [
+        {
+          Type: "Vocal",
+          Text: "Spotify line",
+          StartTime: 1,
+          EndTime: 2,
+          OppositeAligned: false
+        }
+      ]
+    });
+
+    const service = createLyricsService(providers);
+    await expect(
+      service.getLyrics("track", "token", {
+        id: "track",
+        name: "Song",
+        artists: ["Artist"]
+      })
+    ).resolves.toEqual({
+      Type: "Line",
+      StartTime: 1,
+      EndTime: 2,
+      Content: [
+        {
+          Type: "Vocal",
+          Text: "Lyrically Spotify proxy line",
+          StartTime: 1,
+          EndTime: 2,
+          OppositeAligned: false
+        }
+      ]
+    });
+    expect(providers.qqmusic.getSyllableLyrics).toHaveBeenCalledWith({
+      id: "track",
+      name: "Song",
+      artists: ["Artist"]
+    });
+    expect(providers.lyrically.getSyllableLyrics).toHaveBeenCalledWith({
+      id: "track",
+      name: "Song",
+      artists: ["Artist"]
+    });
+    expect(providers.lyrically.getLyrics).toHaveBeenCalledWith({
+      id: "track",
+      name: "Song",
+      artists: ["Artist"]
+    });
+    expect(providers.spotify.getLyrics).not.toHaveBeenCalled();
+  });
+
+  it("prefers Lyrically syllable lyrics before Spotify line lyrics", async () => {
+    const providers = createProviders();
+    vi.mocked(providers.lyrically.getSyllableLyrics).mockResolvedValue({
       Type: "Syllable",
       StartTime: 1,
       EndTime: 2,
@@ -182,7 +256,94 @@ describe("lyrics service", () => {
             EndTime: 2,
             Syllables: [
               {
-                Text: "好",
+                Text: "Hello",
+                StartTime: 1,
+                EndTime: 2,
+                IsPartOfWord: false
+              }
+            ]
+          }
+        }
+      ]
+    });
+    vi.mocked(providers.spotify.getLyrics).mockResolvedValue({
+      Type: "Line",
+      StartTime: 1,
+      EndTime: 2,
+      Content: [
+        {
+          Type: "Vocal",
+          Text: "Spotify line",
+          StartTime: 1,
+          EndTime: 2,
+          OppositeAligned: false
+        }
+      ]
+    });
+
+    const service = createLyricsService(providers);
+    await expect(
+      service.getLyrics("track", "token", {
+        id: "track",
+        name: "Song",
+        artists: ["Artist"]
+      })
+    ).resolves.toEqual({
+      Type: "Syllable",
+      StartTime: 1,
+      EndTime: 2,
+      Content: [
+        {
+          Type: "Vocal",
+          OppositeAligned: false,
+          Lead: {
+            StartTime: 1,
+            EndTime: 2,
+            Syllables: [
+              {
+                Text: "Hello",
+                StartTime: 1,
+                EndTime: 2,
+                IsPartOfWord: false
+              }
+            ]
+          }
+        }
+      ]
+    });
+    expect(providers.spotify.getLyrics).not.toHaveBeenCalled();
+  });
+
+  it("prefers Lyrically Deezer syllable lyrics before Lyrically Spotify proxy line lyrics", async () => {
+    const providers = createProviders();
+    vi.mocked(providers.lyrically.getLyrics).mockResolvedValue({
+      Type: "Line",
+      StartTime: 1,
+      EndTime: 2,
+      Content: [
+        {
+          Type: "Vocal",
+          Text: "Lyrically Spotify proxy line",
+          StartTime: 1,
+          EndTime: 2,
+          OppositeAligned: false
+        }
+      ]
+    });
+    vi.mocked(providers.lyrically.getDeezerLyrics).mockResolvedValue({
+      Type: "Syllable",
+      StartTime: 1,
+      EndTime: 2,
+      Content: [
+        {
+          Type: "Vocal",
+          OppositeAligned: false,
+          Lead: {
+            StartTime: 1,
+            EndTime: 2,
+            Syllables: [
+              {
+                Text: "Deezer",
                 StartTime: 1,
                 EndTime: 2,
                 IsPartOfWord: false
@@ -213,7 +374,7 @@ describe("lyrics service", () => {
             EndTime: 2,
             Syllables: [
               {
-                Text: "好",
+                Text: "Deezer",
                 StartTime: 1,
                 EndTime: 2,
                 IsPartOfWord: false
@@ -223,16 +384,7 @@ describe("lyrics service", () => {
         }
       ]
     });
-    expect(providers.qqmusic.getSyllableLyrics).toHaveBeenCalledWith({
-      id: "track",
-      name: "Song",
-      artists: ["Artist"]
-    });
-    expect(providers.netease.getSyllableLyrics).toHaveBeenCalledWith({
-      id: "track",
-      name: "Song",
-      artists: ["Artist"]
-    });
+    expect(providers.lyrically.getLyrics).not.toHaveBeenCalled();
     expect(providers.spotify.getLyrics).not.toHaveBeenCalled();
   });
 
@@ -269,6 +421,101 @@ describe("lyrics service", () => {
       ]
     });
     expect(providers.spotify.getTrackMetadata).toHaveBeenCalledWith("track", "token", undefined);
+    expect(providers.lrclib.getLyrics).not.toHaveBeenCalled();
+  });
+
+  it("uses direct Spotify line lyrics when Lyrically Spotify proxy misses", async () => {
+    const providers = createProviders();
+    vi.mocked(providers.spotify.getLyrics).mockResolvedValue({
+      Type: "Line",
+      StartTime: 1,
+      EndTime: 2,
+      Content: [
+        {
+          Type: "Vocal",
+          Text: "Spotify line",
+          StartTime: 1,
+          EndTime: 2,
+          OppositeAligned: false
+        }
+      ]
+    });
+
+    const service = createLyricsService(providers);
+    await expect(service.getLyrics("track", "token")).resolves.toEqual({
+      Type: "Line",
+      StartTime: 1,
+      EndTime: 2,
+      Content: [
+        {
+          Type: "Vocal",
+          Text: "Spotify line",
+          StartTime: 1,
+          EndTime: 2,
+          OppositeAligned: false
+        }
+      ]
+    });
+    expect(providers.lyrically.getLyrics).toHaveBeenCalledWith({
+      id: "track",
+      name: "",
+      artists: []
+    });
+    expect(providers.spotify.getLyrics).toHaveBeenCalledWith("track", "token", undefined);
+  });
+
+  it("prefers Lyrically line lyrics over LRCLIB line lyrics", async () => {
+    const providers = createProviders();
+    vi.mocked(providers.spotify.getLyrics).mockResolvedValue(undefined);
+    vi.mocked(providers.spotify.getTrackMetadata).mockResolvedValue({
+      id: "track",
+      name: "Song",
+      artists: ["Artist"]
+    });
+    vi.mocked(providers.lyrically.getLyrics).mockResolvedValue({
+      Type: "Line",
+      StartTime: 1,
+      EndTime: 2,
+      Content: [
+        {
+          Type: "Vocal",
+          Text: "Lyrically line",
+          StartTime: 1,
+          EndTime: 2,
+          OppositeAligned: false
+        }
+      ]
+    });
+    vi.mocked(providers.lrclib.getLyrics).mockResolvedValue({
+      Type: "Line",
+      StartTime: 1,
+      EndTime: 2,
+      Content: [
+        {
+          Type: "Vocal",
+          Text: "LRCLIB line",
+          StartTime: 1,
+          EndTime: 2,
+          OppositeAligned: false
+        }
+      ]
+    });
+
+    const service = createLyricsService(providers);
+    await expect(service.getLyrics("track", "token")).resolves.toEqual({
+      Type: "Line",
+      StartTime: 1,
+      EndTime: 2,
+      Content: [
+        {
+          Type: "Vocal",
+          Text: "Lyrically line",
+          StartTime: 1,
+          EndTime: 2,
+          OppositeAligned: false
+        }
+      ]
+    });
     expect(providers.lrclib.getLyrics).not.toHaveBeenCalled();
   });
 

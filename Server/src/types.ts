@@ -68,7 +68,7 @@ export type SpotifyClientContext = {
 export type ProviderClients = {
   amlldb: AmllDbProvider;
   qqmusic: QqMusicProvider;
-  netease: NeteaseProvider;
+  lyrically: LyricallyProvider;
   spotify: SpotifyProvider;
   lrclib: LrclibProvider;
 };
@@ -98,6 +98,10 @@ export type QqMusicProvider = {
   getSyllableLyrics(track: TrackMetadata): Promise<SyllableSyncedLyrics | undefined>;
 };
 
-export type NeteaseProvider = {
+export type LyricallyProvider = {
   getSyllableLyrics(track: TrackMetadata): Promise<SyllableSyncedLyrics | undefined>;
+  getLyrics(track: TrackMetadata): Promise<BeautifulLyrics | undefined>;
+  getYouTubeLyrics(track: TrackMetadata): Promise<BeautifulLyrics | undefined>;
+  getDeezerLyrics(track: TrackMetadata): Promise<BeautifulLyrics | undefined>;
+  getGeniusLyrics(track: TrackMetadata): Promise<StaticSyncedLyrics | undefined>;
 };

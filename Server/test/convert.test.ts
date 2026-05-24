@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { convertPlainTextToStatic } from "../src/convert/plain";
+import { convertEnhancedLrcToSyllableLyrics } from "../src/convert/enhanced-lrc";
 import { convertLrcToLineLyrics, parseLrcTimestamp } from "../src/convert/lrc";
 import { convertSpotifyLyricsPayload } from "../src/convert/spotify";
 import { convertTtmlToSyllableLyrics, parseTtmlTime } from "../src/convert/ttml";
 import { convertQrcXmlToSyllableLyrics, convertYrcToSyllableLyrics } from "../src/convert/karaoke";
 import { createAmllDbProvider } from "../src/providers/amlldb";
 import { createLrclibProvider } from "../src/providers/lrclib";
+import { createLyricallyProvider } from "../src/providers/lyrically";
 
 describe("plain lyric conversion", () => {
   it("converts non-empty plain text lines to Static lyrics", () => {
@@ -55,6 +57,59 @@ describe("LRC conversion", () => {
 
   it("returns undefined when LRC contains no timed lyric text", () => {
     expect(convertLrcToLineLyrics("[ar:Artist]\n[00:01.00]")).toBeUndefined();
+  });
+
+  it("converts enhanced LRC word timestamps to Syllable output", () => {
+    const result = convertEnhancedLrcToSyllableLyrics(
+      "[00:01.00] <00:01.00> Hello <00:01.50>   <00:01.50> world\n[00:03.00] <00:03.00> Again",
+      5
+    );
+
+    expect(result).toEqual({
+      Type: "Syllable",
+      StartTime: 1,
+      EndTime: 5,
+      Content: [
+        {
+          Type: "Vocal",
+          OppositeAligned: false,
+          Lead: {
+            StartTime: 1,
+            EndTime: 3,
+            Syllables: [
+              {
+                Text: "Hello",
+                StartTime: 1,
+                EndTime: 1.5,
+                IsPartOfWord: false
+              },
+              {
+                Text: "world",
+                StartTime: 1.5,
+                EndTime: 3,
+                IsPartOfWord: false
+              }
+            ]
+          }
+        },
+        {
+          Type: "Vocal",
+          OppositeAligned: false,
+          Lead: {
+            StartTime: 3,
+            EndTime: 5,
+            Syllables: [
+              {
+                Text: "Again",
+                StartTime: 3,
+                EndTime: 5,
+                IsPartOfWord: false
+              }
+            ]
+          }
+        }
+      ]
+    });
   });
 });
 
@@ -409,6 +464,207 @@ describe("LRCLIB provider", () => {
           OppositeAligned: false
         }
       ]
+    });
+  });
+});
+
+describe("Lyrically provider", () => {
+  it("prefers Musixmatch word lyrics over Spotify line lyrics", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      expect(init?.headers).toEqual(
+        expect.objectContaining({
+          Accept: "application/json",
+          "User-Agent": "beautiful-lyrics-reborn/1.0 (https://github.com/yeahnangua/beautiful-lyrics-reborn)"
+        })
+      );
+
+      if (url.includes("/musixmatch/lyrics")) {
+        expect(new URL(url).searchParams.get("id")).toBe("spotifyTrack");
+        expect(new URL(url).searchParams.get("type")).toBe("word");
+        expect(new URL(url).searchParams.get("format")).toBe("json");
+        return new Response(JSON.stringify("[00:01.00] <00:01.00> Hello <00:01.50> world"));
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+
+    const provider = createLyricallyProvider(fetchMock);
+    const lyrics = await provider.getSyllableLyrics({
+      id: "spotifyTrack",
+      name: "Song",
+      artists: ["Artist"],
+      durationSeconds: 3
+    });
+
+    expect(lyrics?.Type).toBe("Syllable");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("gets Lyrically Spotify line lyrics", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/spotify/lyrics")) {
+        expect(new URL(url).searchParams.get("id")).toBe("spotifyTrack");
+        return new Response(JSON.stringify("[00:01.00]Line"));
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+
+    const provider = createLyricallyProvider(fetchMock);
+    await expect(
+      provider.getLyrics({
+        id: "spotifyTrack",
+        name: "Song",
+        artists: ["Artist"],
+        durationSeconds: 3
+      })
+    ).resolves.toEqual({
+      Type: "Line",
+      StartTime: 1,
+      EndTime: 3,
+      Content: [
+        {
+          Type: "Vocal",
+          Text: "Line",
+          StartTime: 1,
+          EndTime: 3,
+          OppositeAligned: false
+        }
+      ]
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("converts Lyrically Deezer word lyrics to Syllable output", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("api.deezer.com/search/track")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 655095912,
+                title: "bad guy",
+                duration: 194,
+                artist: { name: "Billie Eilish" }
+              }
+            ]
+          })
+        );
+      }
+      if (url.includes("/deezer/lyrics")) {
+        expect(new URL(url).searchParams.get("id")).toBe("655095912");
+        return new Response(
+          JSON.stringify({
+            id: "34352482",
+            plain_lyrics: "White shirt now red",
+            lyrics: [
+              {
+                text: [
+                  { text: "White", timestamp: 14175, endtime: 14462 },
+                  { text: "shirt", timestamp: 14637, endtime: 14937 }
+                ],
+                timestamp: 14175,
+                endtime: 14937
+              }
+            ],
+            isError: false
+          })
+        );
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+
+    const provider = createLyricallyProvider(fetchMock);
+    await expect(
+      provider.getDeezerLyrics({
+        id: "spotifyTrack",
+        name: "bad guy",
+        artists: ["Billie Eilish"],
+        durationSeconds: 194
+      })
+    ).resolves.toEqual({
+      Type: "Syllable",
+      StartTime: 14.175,
+      EndTime: 14.937,
+      Content: [
+        {
+          Type: "Vocal",
+          OppositeAligned: false,
+          Lead: {
+            StartTime: 14.175,
+            EndTime: 14.937,
+            Syllables: [
+              {
+                Text: "White",
+                StartTime: 14.175,
+                EndTime: 14.462,
+                IsPartOfWord: true
+              },
+              {
+                Text: "shirt",
+                StartTime: 14.637,
+                EndTime: 14.937,
+                IsPartOfWord: false
+              }
+            ]
+          }
+        }
+      ]
+    });
+  });
+
+  it("gets Lyrically Genius static lyrics by searching Genius", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("genius.com/api/search/song")) {
+        return new Response(
+          JSON.stringify({
+            response: {
+              sections: [
+                {
+                  type: "song",
+                  hits: [
+                    {
+                      result: {
+                        title: "Shape of You",
+                        primary_artist_names: "Ed Sheeran",
+                        url: "https://genius.com/Ed-sheeran-shape-of-you-lyrics"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          })
+        );
+      }
+      if (url.includes("/genius/lyrics")) {
+        expect(new URL(url).searchParams.get("url")).toBe("https://genius.com/Ed-sheeran-shape-of-you-lyrics");
+        return new Response(
+          JSON.stringify({
+            error: false,
+            lyrics: "[Verse]\nA club isn't the best place"
+          })
+        );
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+
+    const provider = createLyricallyProvider(fetchMock);
+    await expect(
+      provider.getGeniusLyrics({
+        id: "spotifyTrack",
+        name: "Shape of You",
+        artists: ["Ed Sheeran"]
+      })
+    ).resolves.toEqual({
+      Type: "Static",
+      Lines: [{ Text: "[Verse]" }, { Text: "A club isn't the best place" }]
     });
   });
 });

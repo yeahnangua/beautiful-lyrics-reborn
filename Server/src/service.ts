@@ -46,8 +46,8 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
       const searchedAmllDbSyllableLyrics =
         suppliedTrackMetadata === undefined && trackMetadata !== undefined
           ? await providers.amlldb.getSyllableLyrics(trackId, trackMetadata).catch((error) => {
-        console.warn(`[lyrics] ${trackId}: amlldb failed`, error);
-        return undefined;
+              console.warn(`[lyrics] ${trackId}: amlldb failed`, error);
+              return undefined;
             })
           : undefined;
       if (searchedAmllDbSyllableLyrics !== undefined) {
@@ -66,16 +66,45 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
           return qqMusicSyllableLyrics;
         }
         console.log(`[lyrics] ${trackId}: qq music syllable lyrics unavailable`);
+      }
 
-        const neteaseSyllableLyrics = await providers.netease.getSyllableLyrics(trackMetadata).catch((error) => {
-          console.warn(`[lyrics] ${trackId}: netease failed`, error);
+      const lyricallyTrackMetadata = trackMetadata ?? { id: trackId, name: "", artists: [] };
+      const lyricallySyllableLyrics = await providers.lyrically
+        .getSyllableLyrics(lyricallyTrackMetadata)
+        .catch((error) => {
+          console.warn(`[lyrics] ${trackId}: lyrically failed`, error);
           return undefined;
         });
-        if (neteaseSyllableLyrics !== undefined) {
-          console.log(`[lyrics] ${trackId}: using netease ${neteaseSyllableLyrics.Type}`);
-          return neteaseSyllableLyrics;
-        }
-        console.log(`[lyrics] ${trackId}: netease syllable lyrics unavailable`);
+      if (lyricallySyllableLyrics !== undefined) {
+        console.log(`[lyrics] ${trackId}: using lyrically ${lyricallySyllableLyrics.Type}`);
+        return lyricallySyllableLyrics;
+      }
+      console.log(`[lyrics] ${trackId}: lyrically syllable lyrics unavailable`);
+
+      const deezerLyrics =
+        trackMetadata === undefined
+          ? undefined
+          : await providers.lyrically.getDeezerLyrics(trackMetadata).catch((error) => {
+              console.warn(`[lyrics] ${trackId}: lyrically deezer failed`, error);
+              return undefined;
+            });
+      if (deezerLyrics?.Type === "Syllable") {
+        console.log(`[lyrics] ${trackId}: using lyrically deezer ${deezerLyrics.Type}`);
+        return deezerLyrics;
+      }
+
+      const lyricallyLyrics = await providers.lyrically.getLyrics(lyricallyTrackMetadata).catch((error) => {
+        console.warn(`[lyrics] ${trackId}: lyrically spotify proxy failed`, error);
+        return undefined;
+      });
+      if (lyricallyLyrics?.Type === "Line" || lyricallyLyrics?.Type === "Syllable") {
+        console.log(`[lyrics] ${trackId}: using lyrically spotify proxy ${lyricallyLyrics.Type}`);
+        return lyricallyLyrics;
+      }
+      if (lyricallyLyrics === undefined) {
+        console.log(`[lyrics] ${trackId}: lyrically spotify proxy lyrics unavailable`);
+      } else {
+        console.log(`[lyrics] ${trackId}: holding lyrically spotify proxy ${lyricallyLyrics.Type} as final fallback`);
       }
 
       const spotifyLyrics = await providers.spotify.getLyrics(trackId, accessToken, clientContext).catch((error) => {
@@ -92,9 +121,29 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
         console.log(`[lyrics] ${trackId}: holding spotify ${spotifyLyrics.Type} as final fallback`);
       }
 
+      if (deezerLyrics?.Type === "Line") {
+        console.log(`[lyrics] ${trackId}: using lyrically deezer ${deezerLyrics.Type}`);
+        return deezerLyrics;
+      }
+
+      const youtubeLyrics =
+        trackMetadata === undefined
+          ? undefined
+          : await providers.lyrically.getYouTubeLyrics(trackMetadata).catch((error) => {
+              console.warn(`[lyrics] ${trackId}: lyrically youtube failed`, error);
+              return undefined;
+            });
+      if (youtubeLyrics !== undefined && youtubeLyrics.Type !== "Static") {
+        console.log(`[lyrics] ${trackId}: using lyrically youtube ${youtubeLyrics.Type}`);
+        return youtubeLyrics;
+      }
+
       if (trackMetadata === undefined) {
         console.log(`[lyrics] ${trackId}: no metadata, cannot use fallback`);
-        if (spotifyLyrics !== undefined) {
+        if (lyricallyLyrics !== undefined) {
+          console.log(`[lyrics] ${trackId}: using lyrically spotify proxy ${lyricallyLyrics.Type}`);
+          return lyricallyLyrics;
+        } else if (spotifyLyrics !== undefined) {
           console.log(`[lyrics] ${trackId}: using spotify ${spotifyLyrics.Type}`);
           return spotifyLyrics;
         }
@@ -113,9 +162,26 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
         return fallbackLyrics;
       }
 
-      if (spotifyLyrics !== undefined) {
+      const geniusLyrics = await providers.lyrically.getGeniusLyrics(trackMetadata).catch((error) => {
+        console.warn(`[lyrics] ${trackId}: lyrically genius failed`, error);
+        return undefined;
+      });
+
+      if (lyricallyLyrics !== undefined) {
+        console.log(`[lyrics] ${trackId}: using lyrically spotify proxy ${lyricallyLyrics.Type}`);
+        return lyricallyLyrics;
+      } else if (spotifyLyrics !== undefined) {
         console.log(`[lyrics] ${trackId}: using spotify ${spotifyLyrics.Type}`);
         return spotifyLyrics;
+      } else if (deezerLyrics !== undefined) {
+        console.log(`[lyrics] ${trackId}: using lyrically deezer ${deezerLyrics.Type}`);
+        return deezerLyrics;
+      } else if (youtubeLyrics !== undefined) {
+        console.log(`[lyrics] ${trackId}: using lyrically youtube ${youtubeLyrics.Type}`);
+        return youtubeLyrics;
+      } else if (geniusLyrics !== undefined) {
+        console.log(`[lyrics] ${trackId}: using lyrically genius ${geniusLyrics.Type}`);
+        return geniusLyrics;
       } else if (fallbackLyrics !== undefined) {
         console.log(`[lyrics] ${trackId}: using lrclib ${fallbackLyrics.Type}`);
         return fallbackLyrics;

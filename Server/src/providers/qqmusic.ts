@@ -39,6 +39,25 @@ type QqMusicLyricResponse = {
 
 const musicuUrl = "https://u.y.qq.com/cgi-bin/musicu.fcg";
 const traditionalToSimplified = OpenCC.Converter({ from: "tw", to: "cn" });
+const languageTags = new Set([
+  "粤",
+  "粤语",
+  "国",
+  "国语",
+  "普通话",
+  "台",
+  "台语",
+  "闽南语",
+  "日",
+  "日语",
+  "日文",
+  "韩",
+  "韩语",
+  "韩文",
+  "英",
+  "英语",
+  "英文"
+]);
 
 function uniqueValues(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter((value) => value.length > 0))];
@@ -46,6 +65,34 @@ function uniqueValues(values: string[]): string[] {
 
 function normalize(value: string): string {
   return traditionalToSimplified(value).toLocaleLowerCase();
+}
+
+function compactTitlePart(value: string): string {
+  return normalize(value).replace(/[-‐‑‒–—―_/\\|:：·・.,，。!！?？'"“”‘’\s]/g, "");
+}
+
+function isLanguageTag(value: string): boolean {
+  return languageTags.has(compactTitlePart(value));
+}
+
+function stripBracketedLanguageTags(value: string): string {
+  return value.replace(
+    /\(([^)]*)\)|\[([^\]]*)\]|（([^）]*)）|【([^】]*)】/g,
+    (match, roundTag?: string, squareTag?: string, fullWidthRoundTag?: string, fullWidthSquareTag?: string) => {
+      const tag = roundTag ?? squareTag ?? fullWidthRoundTag ?? fullWidthSquareTag ?? "";
+      return isLanguageTag(tag) ? "" : match;
+    }
+  );
+}
+
+function stripTrailingLanguageTag(value: string): string {
+  return value.replace(/\s*[-‐‑‒–—―_/\\|:：·・]\s*([^-‐‑‒–—―_/\\|:：·・()[\]（）【】]+)\s*$/, (match, tag) =>
+    isLanguageTag(tag) ? "" : match
+  );
+}
+
+function normalizeTitleForComparison(value: string): string {
+  return compactTitlePart(stripTrailingLanguageTag(stripBracketedLanguageTags(value)));
 }
 
 function firstArtist(track: TrackMetadata): string {
@@ -79,6 +126,27 @@ function artistNames(song: QqMusicSearchSong): string[] {
   return song.singer?.map((artist) => artist.name ?? "").filter((name) => name.length > 0) ?? [];
 }
 
+function formatDuration(seconds: number | undefined): string {
+  return seconds === undefined ? "unknown duration" : `${Number(seconds.toFixed(1))}s`;
+}
+
+function summarizeSong(song: QqMusicSearchSong): string {
+  const id = song.id === undefined ? song.mid ?? "unknown-id" : String(song.id);
+  const title = songTitle(song) || "unknown title";
+  const artists = artistNames(song).join(", ") || "unknown artist";
+  return `${id} "${title}" by ${artists} (${formatDuration(song.interval)})`;
+}
+
+function logSearchResults(query: string, songs: QqMusicSearchSong[]): void {
+  const preview = songs.slice(0, 5).map(summarizeSong).join("; ");
+  const suffix = preview.length === 0 ? "" : `: ${preview}`;
+  console.log(`[qqmusic] search "${query}": ${songs.length} result(s)${suffix}`);
+}
+
+function logMatchedSong(song: QqMusicSearchSong): void {
+  console.log(`[qqmusic] matched ${summarizeSong(song)}`);
+}
+
 function durationMatches(song: QqMusicSearchSong, track: TrackMetadata): boolean {
   if (track.durationSeconds === undefined || song.interval === undefined) {
     return true;
@@ -92,7 +160,12 @@ function matchesTrack(song: QqMusicSearchSong, track: TrackMetadata): boolean {
     return false;
   }
 
-  if (normalize(songTitle(song)) !== normalize(track.name)) {
+  const normalizedSongTitle = normalize(songTitle(song));
+  const normalizedTrackTitle = normalize(track.name);
+  if (
+    normalizedSongTitle !== normalizedTrackTitle &&
+    normalizeTitleForComparison(songTitle(song)) !== normalizeTitleForComparison(track.name)
+  ) {
     return false;
   }
 
@@ -140,7 +213,9 @@ async function searchSongs(fetchImpl: FetchLike, query: string): Promise<QqMusic
     }
   });
 
-  return payload?.req?.data?.body?.song?.list ?? [];
+  const songs = payload?.req?.data?.body?.song?.list ?? [];
+  logSearchResults(query, songs);
+  return songs;
 }
 
 async function getQrcLyrics(fetchImpl: FetchLike, songId: number): Promise<SyllableSyncedLyrics | undefined> {
@@ -177,6 +252,7 @@ export function createQqMusicProvider(fetchImpl: FetchLike = fetch): QqMusicProv
         if (matchedSong?.id === undefined) {
           continue;
         }
+        logMatchedSong(matchedSong);
 
         const lyrics = await getQrcLyrics(fetchImpl, matchedSong.id);
         if (lyrics !== undefined) {

@@ -1315,10 +1315,15 @@ body:has(.BeautifulLyricsPage.Fullscreen) {
 				cursor: pointer;
 			}
 
+			#Github svg,
 			#Cinema svg {
 				height: calc(var(--ViewControlSize) * 0.45);
 				width: auto;
 				aspect-ratio: 1;
+			}
+
+			#Github svg {
+				fill: currentColor;
 			}
 		}
 

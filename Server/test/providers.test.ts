@@ -196,7 +196,7 @@ describe("QQ Music provider", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("matches by exact duration when artist names differ between platforms", async () => {
+  it("matches the first search result by duration tolerance when metadata names differ", async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body));
       const request = body.req ?? body["music.musichallSong.PlayLyricInfo.GetPlayLyricInfo"];
@@ -212,10 +212,10 @@ describe("QQ Music provider", () => {
                       {
                         mid: "004Honjitsu",
                         id: 392699857,
-                        title: "Honjitsu Wa Diamond",
+                        title: "Honjitsu Wa Diamond - Karaoke",
                         singer: [{ name: "Kazuma Kiryu(Takaya Kuroda)" }],
                         album: { name: "YAKUZA 6: THE SONG OF LIFE ORIGINAL SOUNDTRACK" },
-                        interval: 106
+                        interval: 107
                       },
                       {
                         mid: "004MachineGun",

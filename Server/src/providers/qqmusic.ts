@@ -155,8 +155,12 @@ function durationMatches(song: QqMusicSearchSong, track: TrackMetadata): boolean
   return Math.abs(song.interval - track.durationSeconds) <= 5;
 }
 
-function exactDurationMatches(song: QqMusicSearchSong, track: TrackMetadata): boolean {
-  return track.durationSeconds !== undefined && song.interval !== undefined && song.interval === track.durationSeconds;
+function closeDurationMatches(song: QqMusicSearchSong, track: TrackMetadata, toleranceSeconds: number): boolean {
+  return (
+    track.durationSeconds !== undefined &&
+    song.interval !== undefined &&
+    Math.abs(song.interval - track.durationSeconds) <= toleranceSeconds
+  );
 }
 
 function matchesTrack(song: QqMusicSearchSong, track: TrackMetadata): boolean {
@@ -171,10 +175,6 @@ function matchesTrack(song: QqMusicSearchSong, track: TrackMetadata): boolean {
     normalizeTitleForComparison(songTitle(song)) !== normalizeTitleForComparison(track.name)
   ) {
     return false;
-  }
-
-  if (exactDurationMatches(song, track)) {
-    return true;
   }
 
   const normalizedSongArtists = artistNames(song).map(normalize);
@@ -256,7 +256,11 @@ export function createQqMusicProvider(fetchImpl: FetchLike = fetch): QqMusicProv
 
       for (const query of queryValues(track)) {
         const songs = await searchSongs(fetchImpl, query);
-        const matchedSong = songs.find((song) => matchesTrack(song, track));
+        const firstSong = songs[0];
+        const matchedSong =
+          firstSong?.id !== undefined && closeDurationMatches(firstSong, track, 1)
+            ? firstSong
+            : songs.find((song) => matchesTrack(song, track));
         if (matchedSong?.id === undefined) {
           continue;
         }

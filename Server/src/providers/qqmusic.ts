@@ -155,6 +155,10 @@ function durationMatches(song: QqMusicSearchSong, track: TrackMetadata): boolean
   return Math.abs(song.interval - track.durationSeconds) <= 5;
 }
 
+function exactDurationMatches(song: QqMusicSearchSong, track: TrackMetadata): boolean {
+  return track.durationSeconds !== undefined && song.interval !== undefined && song.interval === track.durationSeconds;
+}
+
 function matchesTrack(song: QqMusicSearchSong, track: TrackMetadata): boolean {
   if (song.id === undefined || songTitle(song).length === 0) {
     return false;
@@ -167,6 +171,10 @@ function matchesTrack(song: QqMusicSearchSong, track: TrackMetadata): boolean {
     normalizeTitleForComparison(songTitle(song)) !== normalizeTitleForComparison(track.name)
   ) {
     return false;
+  }
+
+  if (exactDurationMatches(song, track)) {
+    return true;
   }
 
   const normalizedSongArtists = artistNames(song).map(normalize);

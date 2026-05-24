@@ -3,7 +3,7 @@
 Beautiful Lyrics Reborn is a community-maintained revival of the original
 Beautiful Lyrics Spicetify extension. It keeps the fullscreen/card/page lyric
 experience alive and adds a new Cloudflare Worker lyrics service for Spotify,
-AMLLDB, QQ Music, NetEase, and LRCLIB fallbacks.
+AMLLDB, QQ Music, Lyrically/Paxsenix, and LRCLIB fallbacks.
 
 This repository contains both pieces:
 
@@ -25,11 +25,15 @@ https://lyrics.txw.qzz.io
 - Reborn lyrics provider priority:
   1. AMLLDB syllable lyrics.
   2. QQ Music QRC syllable lyrics.
-  3. NetEase YRC syllable lyrics.
-  4. Spotify line lyrics.
-  5. LRCLIB line lyrics.
-  6. Spotify static lyrics.
-  7. LRCLIB static lyrics.
+  3. Lyrically/Paxsenix Musixmatch word lyrics.
+  4. Lyrically/Paxsenix Deezer word lyrics.
+  5. Lyrically/Paxsenix Spotify proxy line lyrics.
+  6. Spotify line lyrics.
+  7. Lyrically/Paxsenix Deezer line lyrics.
+  8. Lyrically/Paxsenix YouTube line lyrics.
+  9. LRCLIB line lyrics.
+  10. Static fallbacks from Lyrically/Paxsenix Spotify proxy, Spotify,
+     Deezer, YouTube, Genius, and LRCLIB.
 
 ## Local Extension Install
 
@@ -69,20 +73,6 @@ npx wrangler deploy
 
 The default `wrangler.toml` binds the Worker to `lyrics.txw.qzz.io`.
 Change the route before deploying if you use your own domain.
-
-## Marketplace Publishing
-
-Spicetify Marketplace discovers public GitHub repositories by topic. To publish
-this extension:
-
-1. Push this repository to GitHub.
-2. Add the `spicetify-extensions` topic to the repository.
-3. Keep `manifest.json` in the repository root.
-4. Keep `Extension/Builds/Release/beautiful-lyrics-reborn.mjs` committed.
-
-Marketplace reads `manifest.json`, then installs the `main` file from the
-repository. No central Marketplace pull request is needed for normal
-extensions.
 
 ## Attribution And License
 

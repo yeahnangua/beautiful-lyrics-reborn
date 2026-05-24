@@ -195,4 +195,71 @@ describe("QQ Music provider", () => {
     expect(lyrics?.Type).toBe("Syllable");
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it("matches by exact duration when artist names differ between platforms", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      const request = body.req ?? body["music.musichallSong.PlayLyricInfo.GetPlayLyricInfo"];
+
+      if (request?.method === "DoSearchForQQMusicDesktop") {
+        return new Response(
+          JSON.stringify({
+            req: {
+              data: {
+                body: {
+                  song: {
+                    list: [
+                      {
+                        mid: "004Honjitsu",
+                        id: 392699857,
+                        title: "Honjitsu Wa Diamond",
+                        singer: [{ name: "Kazuma Kiryu(Takaya Kuroda)" }],
+                        album: { name: "YAKUZA 6: THE SONG OF LIFE ORIGINAL SOUNDTRACK" },
+                        interval: 106
+                      },
+                      {
+                        mid: "004MachineGun",
+                        id: 4982774,
+                        title: "MachineGun Kiss (Full Swing Edition)",
+                        singer: [{ name: "黑田崇矢" }],
+                        interval: 270
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          })
+        );
+      }
+
+      if (request?.method === "GetPlayLyricInfo") {
+        expect(request.param.songID).toBe(392699857);
+        return new Response(
+          JSON.stringify({
+            "music.musichallSong.PlayLyricInfo.GetPlayLyricInfo": {
+              data: {
+                qrc: 1,
+                lyric: pragueSquareQrcHex
+              }
+            }
+          })
+        );
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+
+    const provider = createQqMusicProvider(fetchMock as typeof fetch);
+    const lyrics = await provider.getSyllableLyrics({
+      id: "spotify",
+      name: "Honjitsu Wa Diamond",
+      artists: ["桐生一馬(黒田崇矢)"],
+      album: "YAKUZA 6: THE SONG OF LIFE ORIGINAL SOUNDTRACK",
+      durationSeconds: 106
+    });
+
+    expect(lyrics?.Type).toBe("Syllable");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

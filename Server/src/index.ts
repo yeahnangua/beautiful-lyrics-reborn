@@ -1,6 +1,6 @@
 import { amllDbProvider } from "./providers/amlldb";
 import { lrclibProvider } from "./providers/lrclib";
-import { neteaseProvider } from "./providers/netease";
+import { lyricallyProvider } from "./providers/lyrically";
 import { qqMusicProvider } from "./providers/qqmusic";
 import { spotifyProvider } from "./providers/spotify";
 import { createLyricsService, type LyricsService } from "./service";
@@ -9,7 +9,7 @@ import type { SpotifyClientContext, TrackMetadata } from "./types";
 const defaultService = createLyricsService({
   amlldb: amllDbProvider,
   qqmusic: qqMusicProvider,
-  netease: neteaseProvider,
+  lyrically: lyricallyProvider,
   spotify: spotifyProvider,
   lrclib: lrclibProvider
 });

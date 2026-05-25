@@ -420,6 +420,30 @@ describe("karaoke lyric conversion", () => {
     expect(firstLine.Lead.Syllables.map((syllable) => syllable.Text).join("")).toBe("Hello world");
   });
 
+  it("trims overlapping QQ QRC word durations", () => {
+    const result = convertQrcXmlToSyllableLyrics(
+      '<?xml version="1.0" encoding="utf-8"?><QrcInfos><LyricInfo LyricCount="1"><Lyric_1 LyricType="1" LyricContent="[65155,2016]现(65155,232)在(65387,280)却(65667,408)解(66075,304)不(66379,360)开(66639,532)" /></LyricInfo></QrcInfos>'
+    );
+    const firstLine = result?.Content[0];
+    expect(firstLine?.Type).toBe("Vocal");
+    if (firstLine?.Type !== "Vocal") {
+      throw new Error("expected first QRC entry to be a vocal line");
+    }
+
+    expect(firstLine.Lead.Syllables.at(-2)).toEqual({
+      Text: "不",
+      StartTime: 66.379,
+      EndTime: 66.639,
+      IsPartOfWord: true
+    });
+    expect(firstLine.Lead.Syllables.at(-1)).toEqual({
+      Text: "开",
+      StartTime: 66.639,
+      EndTime: 67.171,
+      IsPartOfWord: false
+    });
+  });
+
 });
 
 describe("LRCLIB provider", () => {

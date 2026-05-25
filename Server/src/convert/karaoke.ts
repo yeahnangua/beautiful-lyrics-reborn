@@ -29,6 +29,21 @@ function millisecondsToSeconds(value: number): number {
   return value / 1000;
 }
 
+function getWordEndMs(words: KaraokeWord[], index: number): number {
+  const word = words[index];
+  if (word === undefined) {
+    return 0;
+  }
+
+  const rawEndMs = word.startMs + word.durationMs;
+  const nextWord = words[index + 1];
+  if (nextWord === undefined || nextWord.startMs <= word.startMs) {
+    return rawEndMs;
+  }
+
+  return Math.min(rawEndMs, nextWord.startMs);
+}
+
 function convertKaraokeLines(lines: KaraokeLine[]): SyllableSyncedLyrics | undefined {
   const content: SyllableVocalSet[] = [];
 
@@ -38,12 +53,18 @@ function convertKaraokeLines(lines: KaraokeLine[]): SyllableSyncedLyrics | undef
       continue;
     }
 
-    const syllables: SyllableMetadata[] = timedWords.map((word, index) => ({
-      Text: word.text,
-      StartTime: millisecondsToSeconds(word.startMs),
-      EndTime: millisecondsToSeconds(word.startMs + word.durationMs),
-      IsPartOfWord: index < timedWords.length - 1
-    }));
+    const syllables: SyllableMetadata[] = timedWords
+      .map((word, index) => ({
+        Text: word.text,
+        StartTime: millisecondsToSeconds(word.startMs),
+        EndTime: millisecondsToSeconds(getWordEndMs(timedWords, index)),
+        IsPartOfWord: true
+      }))
+      .filter((syllable) => syllable.EndTime > syllable.StartTime)
+      .map((syllable, index, syllables) => ({
+        ...syllable,
+        IsPartOfWord: index < syllables.length - 1
+      }));
 
     const firstSyllable = syllables[0];
     const lastSyllable = syllables[syllables.length - 1];

@@ -99,6 +99,7 @@ const ScaleDamping = 0.6
 const ScaleFrequency = 0.7
 const GlowDamping = 0.5
 const GlowFrequency = 1
+const TimestampRegressionTolerance = 0.2
 
 const CreateSprings = () => {
 	return {
@@ -131,6 +132,7 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 
 	private State: LyricState = "Idle"
 	private IsSleeping: boolean = true
+	private LastDisplayTimestamp: (number | undefined)
 
 	private readonly ActivityChangedSignal = this.Maid.Give(new Signal<(isActive: boolean) => void>())
 	private readonly RequestedTimeSkipSignal = this.Maid.Give(new Signal<() => void>())
@@ -438,8 +440,19 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 
 	// Public Methods
 	public Animate(songTimestamp: number, deltaTime: number, isImmediate?: true) {
+		let displayTimestamp = songTimestamp
+		if (
+			(isImmediate !== true)
+			&& (this.LastDisplayTimestamp !== undefined)
+			&& (songTimestamp < this.LastDisplayTimestamp)
+			&& ((this.LastDisplayTimestamp - songTimestamp) <= TimestampRegressionTolerance)
+		) {
+			displayTimestamp = this.LastDisplayTimestamp
+		}
+		this.LastDisplayTimestamp = displayTimestamp
+
 		// Determine our relative time elements
-		const relativeTime = (songTimestamp - this.StartTime)
+		const relativeTime = (displayTimestamp - this.StartTime)
 		const timeScale = Clamp((relativeTime / this.Duration), 0, 1)
 
 		// Determine if we should update our visual-states

@@ -100,6 +100,13 @@ async function getJson<T>(fetchImpl: FetchLike, url: string): Promise<T | undefi
   });
 
   if (response.ok === false) {
+    const body = await response.text().catch(() => "");
+    const snippet = body.trim().slice(0, 240);
+    console.warn(
+      `[lyrically] ${new URL(url).pathname}: ${response.status} ${response.statusText}${
+        snippet.length > 0 ? ` ${snippet}` : ""
+      }`
+    );
     return undefined;
   }
 
@@ -122,6 +129,15 @@ function compact(value: string): string {
   return normalize(value).replace(/[-‐‑‒–—―_/\\|:：·・.,，。!！?？'"“”‘’()[\]（）【】\s]/g, "");
 }
 
+function removeVersionQualifiers(value: string): string {
+  const qualifier =
+    "remix|mix|live|version|ver\\.?|edit|remaster(?:ed)?|acoustic|instrumental|karaoke|cover|feat\\.?|ft\\.?|with|版|粤|粵|国语|國語|伴奏|翻唱";
+
+  return value
+    .replace(new RegExp(`[([{（【][^\\])}）】]*(?:${qualifier})[^\\])}）】]*[\\])}）】]`, "giu"), " ")
+    .replace(new RegExp(`\\s+[-‐‑‒–—―:：]\\s*[^-‐‑‒–—―:：]*(?:${qualifier})[^-‐‑‒–—―:：]*$`, "giu"), " ");
+}
+
 function firstArtist(track: TrackMetadata): string {
   return track.artists[0] ?? "";
 }
@@ -142,6 +158,22 @@ function titleMatches(candidate: string | undefined, track: TrackMetadata): bool
   const normalizedCandidate = compact(candidate);
   const normalizedTrack = compact(track.name);
   return normalizedCandidate === normalizedTrack || normalizedCandidate.includes(normalizedTrack);
+}
+
+function baseTitleMatches(candidate: string | undefined, track: TrackMetadata): boolean {
+  if (candidate === undefined || candidate.length === 0 || track.name.length === 0) {
+    return false;
+  }
+
+  const normalizedCandidate = compact(removeVersionQualifiers(candidate));
+  const normalizedTrack = compact(removeVersionQualifiers(track.name));
+  return (
+    normalizedCandidate.length > 0 &&
+    normalizedTrack.length > 0 &&
+    (normalizedCandidate === normalizedTrack ||
+      normalizedCandidate.includes(normalizedTrack) ||
+      normalizedTrack.includes(normalizedCandidate))
+  );
 }
 
 function artistMatches(candidate: string | undefined, track: TrackMetadata): boolean {
@@ -167,6 +199,26 @@ function parseDurationSeconds(duration: string | undefined): number | undefined 
   }
 
   return parts.reduce((total, part) => total * 60 + part, 0);
+}
+
+function rankYouTubeCandidate(video: YouTubeSearchVideo, track: TrackMetadata): number | undefined {
+  if (
+    video.videoId === undefined ||
+    artistMatches(video.author, track) === false ||
+    durationMatches(parseDurationSeconds(video.duration), track.durationSeconds, 10) === false
+  ) {
+    return undefined;
+  }
+
+  if (titleMatches(video.title, track)) {
+    return 0;
+  }
+
+  if (baseTitleMatches(video.title, track)) {
+    return 1;
+  }
+
+  return undefined;
 }
 
 function timedWordsToSyllableLyrics(lines: DeezerLyricLine[] | undefined): SyllableSyncedLyrics | undefined {
@@ -290,25 +342,35 @@ async function getYouTubeLyrics(fetchImpl: FetchLike, track: TrackMetadata): Pro
     )) ?? [];
   console.log(`[lyrically:youtube] search "${track.name} ${firstArtist(track)}": ${videos.length} result(s)`);
 
-  const matchedVideo = videos.find(
-    (video) =>
-      video.videoId !== undefined &&
-      titleMatches(video.title, track) &&
-      artistMatches(video.author, track) &&
-      durationMatches(parseDurationSeconds(video.duration), track.durationSeconds, 10)
-  );
-  if (matchedVideo?.videoId === undefined) {
+  const matchedVideos = videos
+    .map((video, index) => ({ video, index, rank: rankYouTubeCandidate(video, track) }))
+    .filter((candidate): candidate is { video: YouTubeSearchVideo; index: number; rank: number } => candidate.rank !== undefined)
+    .sort((left, right) => left.rank - right.rank || left.index - right.index)
+    .map((candidate) => candidate.video);
+  if (matchedVideos.length === 0) {
     return undefined;
   }
-  console.log(`[lyrically:youtube] matched ${matchedVideo.videoId} "${matchedVideo.title ?? "unknown title"}"`);
 
-  const payload = await getJson<unknown>(
-    fetchImpl,
-    buildUrl("/youtube/lyrics", {
-      id: matchedVideo.videoId
-    })
-  );
-  return parseLyricallyTextLyrics(payload, track.durationSeconds);
+  for (const matchedVideo of matchedVideos) {
+    if (matchedVideo.videoId === undefined) {
+      continue;
+    }
+    console.log(`[lyrically:youtube] matched ${matchedVideo.videoId} "${matchedVideo.title ?? "unknown title"}"`);
+
+    const payload = await getJson<unknown>(
+      fetchImpl,
+      buildUrl("/youtube/lyrics", {
+        id: matchedVideo.videoId
+      })
+    );
+    const lyrics = parseLyricallyTextLyrics(payload, track.durationSeconds);
+    if (lyrics !== undefined) {
+      return lyrics;
+    }
+    console.log(`[lyrically:youtube] lyrics ${matchedVideo.videoId}: no usable lyrics`);
+  }
+
+  return undefined;
 }
 
 async function searchDeezer(fetchImpl: FetchLike, track: TrackMetadata): Promise<DeezerSearchSong | undefined> {
@@ -350,10 +412,19 @@ async function getDeezerLyrics(fetchImpl: FetchLike, track: TrackMetadata): Prom
     })
   );
   if (payload === undefined || payload.isError === true) {
+    console.log(
+      `[lyrically:deezer] lyrics ${matchedSong.id}: ${
+        typeof payload?.plain_lyrics === "string" ? payload.plain_lyrics : "no lyrics found"
+      }`
+    );
     return undefined;
   }
 
-  return timedWordsToSyllableLyrics(payload.lyrics) ?? convertPlainTextToStatic(payload.plain_lyrics);
+  const lyrics = timedWordsToSyllableLyrics(payload.lyrics) ?? convertPlainTextToStatic(payload.plain_lyrics);
+  if (lyrics === undefined) {
+    console.log(`[lyrically:deezer] lyrics ${matchedSong.id}: no usable lyrics`);
+  }
+  return lyrics;
 }
 
 async function searchGenius(fetchImpl: FetchLike, track: TrackMetadata): Promise<string | undefined> {

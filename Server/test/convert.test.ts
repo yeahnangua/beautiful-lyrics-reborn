@@ -641,6 +641,64 @@ describe("Lyrically provider", () => {
     });
   });
 
+  it("tries later YouTube candidates when the first matched video has no lyrics", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/youtube/search")) {
+        return new Response(
+          JSON.stringify([
+            {
+              videoId: "bad",
+              title: "客官不可以 (Remix版) (feat. 小凌)",
+              author: "徐良",
+              duration: "3:48"
+            },
+            {
+              videoId: "good",
+              title: "客官不可以 (feat. 小凌)",
+              author: "徐良",
+              duration: "3:45"
+            }
+          ])
+        );
+      }
+      if (url.includes("/youtube/lyrics")) {
+        const id = new URL(url).searchParams.get("id");
+        if (id === "bad") {
+          return new Response(JSON.stringify({ detail: "upstream failed" }), { status: 500 });
+        }
+        if (id === "good") {
+          return new Response(JSON.stringify("[00:01.00]客官不可以"));
+        }
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+
+    const provider = createLyricallyProvider(fetchMock);
+    await expect(
+      provider.getYouTubeLyrics({
+        id: "spotifyTrack",
+        name: "客官不可以 - Remix版",
+        artists: ["徐良", "小凌"],
+        durationSeconds: 227
+      })
+    ).resolves.toEqual({
+      Type: "Line",
+      StartTime: 1,
+      EndTime: 227,
+      Content: [
+        {
+          Type: "Vocal",
+          Text: "客官不可以",
+          StartTime: 1,
+          EndTime: 227,
+          OppositeAligned: false
+        }
+      ]
+    });
+  });
+
   it("gets Lyrically Genius static lyrics by searching Genius", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

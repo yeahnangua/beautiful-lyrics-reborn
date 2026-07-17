@@ -66,7 +66,7 @@ export type SpotifyClientContext = {
 };
 
 export type ProviderClients = {
-  amlldb: AmllDbProvider;
+  // amlldb: AmllDbProvider;
   qqmusic: QqMusicProvider;
   lyrically: LyricallyProvider;
   spotify: SpotifyProvider;
@@ -99,7 +99,7 @@ export type QqMusicProvider = {
 };
 
 export type LyricallyProvider = {
-  getSyllableLyrics(track: TrackMetadata): Promise<SyllableSyncedLyrics | undefined>;
+  // getSyllableLyrics(track: TrackMetadata): Promise<SyllableSyncedLyrics | undefined>;
   getKugouLyrics(track: TrackMetadata, word: boolean): Promise<BeautifulLyrics | undefined>;
   getLyrics(track: TrackMetadata): Promise<BeautifulLyrics | undefined>;
   getYouTubeLyrics(track: TrackMetadata): Promise<BeautifulLyrics | undefined>;

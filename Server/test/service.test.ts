@@ -171,7 +171,7 @@ describe("lyrics service", () => {
     expect(providers.spotify.getLyrics).not.toHaveBeenCalled();
   });
 
-  it("uses Lyrically Spotify proxy line lyrics before direct Spotify when AMLLDB and QQ Music miss", async () => {
+  it("uses Lyrically Spotify proxy line lyrics when it wins the line race", async () => {
     const providers = createProviders();
     vi.mocked(providers.lyrically.getLyrics).mockResolvedValue({
       Type: "Line",
@@ -238,7 +238,47 @@ describe("lyrics service", () => {
       name: "Song",
       artists: ["Artist"]
     });
-    expect(providers.spotify.getLyrics).not.toHaveBeenCalled();
+    expect(providers.spotify.getLyrics).toHaveBeenCalledWith("track", "token", undefined);
+  });
+
+  it("returns the first available line lyrics without waiting for slower line providers", async () => {
+    const providers = createProviders();
+    let resolveLyrically!: (lyrics: undefined) => void;
+    vi.mocked(providers.lyrically.getLyrics).mockReturnValue(
+      new Promise((resolve) => {
+        resolveLyrically = resolve;
+      })
+    );
+    const spotifyLyrics = {
+      Type: "Line" as const,
+      StartTime: 1,
+      EndTime: 2,
+      Content: [
+        {
+          Type: "Vocal" as const,
+          Text: "Spotify line",
+          StartTime: 1,
+          EndTime: 2,
+          OppositeAligned: false
+        }
+      ]
+    };
+    vi.mocked(providers.spotify.getLyrics).mockResolvedValue(spotifyLyrics);
+
+    const service = createLyricsService(providers);
+    const request = service.getLyrics("track", "token", {
+      id: "track",
+      name: "Song",
+      artists: ["Artist"]
+    });
+
+    await vi.waitFor(() => {
+      expect(providers.spotify.getLyrics).toHaveBeenCalled();
+      expect(providers.lyrically.getYouTubeLyrics).toHaveBeenCalled();
+      expect(providers.lrclib.getLyrics).toHaveBeenCalled();
+    });
+    await expect(request).resolves.toEqual(spotifyLyrics);
+    resolveLyrically(undefined);
   });
 
   it("prefers Lyrically syllable lyrics before Spotify line lyrics", async () => {
@@ -464,7 +504,7 @@ describe("lyrics service", () => {
     expect(providers.spotify.getLyrics).toHaveBeenCalledWith("track", "token", undefined);
   });
 
-  it("prefers Lyrically line lyrics over LRCLIB line lyrics", async () => {
+  it("uses Lyrically line lyrics when it wins the line race", async () => {
     const providers = createProviders();
     vi.mocked(providers.spotify.getLyrics).mockResolvedValue(undefined);
     vi.mocked(providers.spotify.getTrackMetadata).mockResolvedValue({
@@ -516,7 +556,11 @@ describe("lyrics service", () => {
         }
       ]
     });
-    expect(providers.lrclib.getLyrics).not.toHaveBeenCalled();
+    expect(providers.lrclib.getLyrics).toHaveBeenCalledWith({
+      id: "track",
+      name: "Song",
+      artists: ["Artist"]
+    });
   });
 
   it("prefers LRCLIB line lyrics over Spotify static lyrics", async () => {

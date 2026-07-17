@@ -32,6 +32,8 @@ https://lyrics.txw.qzz.io
   6. Static fallbacks from Lyrically/Paxsenix Spotify proxy, Spotify,
      Deezer, YouTube, Genius, and LRCLIB.
 
+The syllable-lyrics phase has a 10-second total time budget before the Line race starts.
+
 ## Local Extension Install
 
 ```bash

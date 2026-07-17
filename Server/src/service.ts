@@ -1,5 +1,7 @@
 import type { BeautifulLyrics, ProviderClients, SpotifyClientContext, TrackMetadata } from "./types";
 
+const syllableSearchTimeoutMs = 10_000;
+
 export type LyricsService = {
   getLyrics(
     trackId: string,
@@ -19,80 +21,122 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
     ): Promise<BeautifulLyrics | undefined> {
       console.log(`[lyrics] ${trackId}: request started`);
 
-      const suppliedAmllDbSyllableLyrics = await providers.amlldb
-        .getSyllableLyrics(trackId, suppliedTrackMetadata)
-        .catch((error) => {
-          console.warn(`[lyrics] ${trackId}: amlldb failed`, error);
-          return undefined;
-        });
-      if (suppliedAmllDbSyllableLyrics !== undefined) {
-        console.log(`[lyrics] ${trackId}: using amlldb ${suppliedAmllDbSyllableLyrics.Type}`);
-        return suppliedAmllDbSyllableLyrics;
-      }
-      console.log(`[lyrics] ${trackId}: amlldb initial lookup unavailable`);
+      const syllableDeadline = Date.now() + syllableSearchTimeoutMs;
+      const syllableTimeout = Symbol();
+      const beforeSyllableDeadline = async <T>(query: () => Promise<T>): Promise<T> => {
+        const remaining = syllableDeadline - Date.now();
+        if (remaining <= 0) {
+          throw syllableTimeout;
+        }
 
-      const trackMetadata =
-        suppliedTrackMetadata ??
-        (await providers.spotify.getTrackMetadata(trackId, accessToken, clientContext).catch((error) => {
-          console.warn(`[lyrics] ${trackId}: spotify metadata failed`, error);
-          return undefined;
-        }));
-      if (trackMetadata !== undefined) {
-        console.log(
-          `[lyrics] ${trackId}: metadata "${trackMetadata.name}" by ${trackMetadata.artists.join(", ") || "unknown"}`
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        try {
+          return await Promise.race([
+            query(),
+            new Promise<never>((_, reject) => {
+              timeout = setTimeout(() => reject(syllableTimeout), remaining);
+            })
+          ]);
+        } finally {
+          if (timeout !== undefined) {
+            clearTimeout(timeout);
+          }
+        }
+      };
+      let trackMetadata = suppliedTrackMetadata;
+      let deezerLyrics: BeautifulLyrics | undefined;
+
+      try {
+        const suppliedAmllDbSyllableLyrics = await beforeSyllableDeadline(() =>
+          providers.amlldb.getSyllableLyrics(trackId, suppliedTrackMetadata).catch((error) => {
+            console.warn(`[lyrics] ${trackId}: amlldb failed`, error);
+            return undefined;
+          })
         );
-      }
+        if (suppliedAmllDbSyllableLyrics !== undefined) {
+          console.log(`[lyrics] ${trackId}: using amlldb ${suppliedAmllDbSyllableLyrics.Type}`);
+          return suppliedAmllDbSyllableLyrics;
+        }
+        console.log(`[lyrics] ${trackId}: amlldb initial lookup unavailable`);
 
-      const searchedAmllDbSyllableLyrics =
-        suppliedTrackMetadata === undefined && trackMetadata !== undefined
-          ? await providers.amlldb.getSyllableLyrics(trackId, trackMetadata).catch((error) => {
-              console.warn(`[lyrics] ${trackId}: amlldb failed`, error);
+        if (trackMetadata === undefined) {
+          trackMetadata = await beforeSyllableDeadline(() =>
+            providers.spotify.getTrackMetadata(trackId, accessToken, clientContext).catch((error) => {
+              console.warn(`[lyrics] ${trackId}: spotify metadata failed`, error);
               return undefined;
             })
-          : undefined;
-      if (searchedAmllDbSyllableLyrics !== undefined) {
-        console.log(`[lyrics] ${trackId}: using amlldb ${searchedAmllDbSyllableLyrics.Type}`);
-        return searchedAmllDbSyllableLyrics;
-      }
-      console.log(`[lyrics] ${trackId}: amlldb syllable lyrics unavailable`);
-
-      if (trackMetadata !== undefined) {
-        const qqMusicSyllableLyrics = await providers.qqmusic.getSyllableLyrics(trackMetadata).catch((error) => {
-          console.warn(`[lyrics] ${trackId}: qq music failed`, error);
-          return undefined;
-        });
-        if (qqMusicSyllableLyrics !== undefined) {
-          console.log(`[lyrics] ${trackId}: using qq music ${qqMusicSyllableLyrics.Type}`);
-          return qqMusicSyllableLyrics;
+          );
         }
-        console.log(`[lyrics] ${trackId}: qq music syllable lyrics unavailable`);
+        if (trackMetadata !== undefined) {
+          console.log(
+            `[lyrics] ${trackId}: metadata "${trackMetadata.name}" by ${trackMetadata.artists.join(", ") || "unknown"}`
+          );
+        }
+
+        const searchedAmllDbSyllableLyrics =
+          suppliedTrackMetadata === undefined && trackMetadata !== undefined
+            ? await beforeSyllableDeadline(() =>
+                providers.amlldb.getSyllableLyrics(trackId, trackMetadata).catch((error) => {
+                  console.warn(`[lyrics] ${trackId}: amlldb failed`, error);
+                  return undefined;
+                })
+              )
+            : undefined;
+        if (searchedAmllDbSyllableLyrics !== undefined) {
+          console.log(`[lyrics] ${trackId}: using amlldb ${searchedAmllDbSyllableLyrics.Type}`);
+          return searchedAmllDbSyllableLyrics;
+        }
+        console.log(`[lyrics] ${trackId}: amlldb syllable lyrics unavailable`);
+
+        const resolvedTrackMetadata = trackMetadata;
+        if (resolvedTrackMetadata !== undefined) {
+          const qqMusicSyllableLyrics = await beforeSyllableDeadline(() =>
+            providers.qqmusic.getSyllableLyrics(resolvedTrackMetadata).catch((error) => {
+              console.warn(`[lyrics] ${trackId}: qq music failed`, error);
+              return undefined;
+            })
+          );
+          if (qqMusicSyllableLyrics !== undefined) {
+            console.log(`[lyrics] ${trackId}: using qq music ${qqMusicSyllableLyrics.Type}`);
+            return qqMusicSyllableLyrics;
+          }
+          console.log(`[lyrics] ${trackId}: qq music syllable lyrics unavailable`);
+        }
+
+        const lyricallyTrackMetadata = trackMetadata ?? { id: trackId, name: "", artists: [] };
+        const lyricallySyllableLyrics = await beforeSyllableDeadline(() =>
+          providers.lyrically.getSyllableLyrics(lyricallyTrackMetadata).catch((error) => {
+            console.warn(`[lyrics] ${trackId}: lyrically failed`, error);
+            return undefined;
+          })
+        );
+        if (lyricallySyllableLyrics !== undefined) {
+          console.log(`[lyrics] ${trackId}: using lyrically ${lyricallySyllableLyrics.Type}`);
+          return lyricallySyllableLyrics;
+        }
+        console.log(`[lyrics] ${trackId}: lyrically syllable lyrics unavailable`);
+
+        deezerLyrics =
+          resolvedTrackMetadata === undefined
+            ? undefined
+            : await beforeSyllableDeadline(() =>
+                providers.lyrically.getDeezerLyrics(resolvedTrackMetadata).catch((error) => {
+                  console.warn(`[lyrics] ${trackId}: lyrically deezer failed`, error);
+                  return undefined;
+                })
+              );
+        if (deezerLyrics?.Type === "Syllable") {
+          console.log(`[lyrics] ${trackId}: using lyrically deezer ${deezerLyrics.Type}`);
+          return deezerLyrics;
+        }
+      } catch (error) {
+        if (error !== syllableTimeout) {
+          throw error;
+        }
+        console.warn(`[lyrics] ${trackId}: syllable lookup timed out after ${syllableSearchTimeoutMs / 1000} seconds`);
       }
 
       const lyricallyTrackMetadata = trackMetadata ?? { id: trackId, name: "", artists: [] };
-      const lyricallySyllableLyrics = await providers.lyrically
-        .getSyllableLyrics(lyricallyTrackMetadata)
-        .catch((error) => {
-          console.warn(`[lyrics] ${trackId}: lyrically failed`, error);
-          return undefined;
-        });
-      if (lyricallySyllableLyrics !== undefined) {
-        console.log(`[lyrics] ${trackId}: using lyrically ${lyricallySyllableLyrics.Type}`);
-        return lyricallySyllableLyrics;
-      }
-      console.log(`[lyrics] ${trackId}: lyrically syllable lyrics unavailable`);
-
-      const deezerLyrics =
-        trackMetadata === undefined
-          ? undefined
-          : await providers.lyrically.getDeezerLyrics(trackMetadata).catch((error) => {
-              console.warn(`[lyrics] ${trackId}: lyrically deezer failed`, error);
-              return undefined;
-            });
-      if (deezerLyrics?.Type === "Syllable") {
-        console.log(`[lyrics] ${trackId}: using lyrically deezer ${deezerLyrics.Type}`);
-        return deezerLyrics;
-      }
-
       const lyricallyLyricsPromise = providers.lyrically.getLyrics(lyricallyTrackMetadata).catch((error) => {
         console.warn(`[lyrics] ${trackId}: lyrically spotify proxy failed`, error);
         return undefined;

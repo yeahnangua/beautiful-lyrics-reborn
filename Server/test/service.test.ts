@@ -281,6 +281,45 @@ describe("lyrics service", () => {
     resolveLyrically(undefined);
   });
 
+  it("stops syllable lookups after 10 seconds and starts the line race", async () => {
+    vi.useFakeTimers();
+    try {
+      const providers = createProviders();
+      vi.mocked(providers.amlldb.getSyllableLyrics).mockReturnValue(new Promise(() => {}));
+      const spotifyLyrics = {
+        Type: "Line" as const,
+        StartTime: 1,
+        EndTime: 2,
+        Content: [
+          {
+            Type: "Vocal" as const,
+            Text: "Spotify line",
+            StartTime: 1,
+            EndTime: 2,
+            OppositeAligned: false
+          }
+        ]
+      };
+      vi.mocked(providers.spotify.getLyrics).mockResolvedValue(spotifyLyrics);
+
+      const service = createLyricsService(providers);
+      const request = service.getLyrics("track", "token", {
+        id: "track",
+        name: "Song",
+        artists: ["Artist"]
+      });
+
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(providers.spotify.getLyrics).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(providers.spotify.getLyrics).toHaveBeenCalled();
+      await expect(request).resolves.toEqual(spotifyLyrics);
+      expect(providers.qqmusic.getSyllableLyrics).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("prefers Lyrically syllable lyrics before Spotify line lyrics", async () => {
     const providers = createProviders();
     vi.mocked(providers.lyrically.getSyllableLyrics).mockResolvedValue({

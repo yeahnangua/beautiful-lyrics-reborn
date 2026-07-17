@@ -1,3 +1,4 @@
+import OpenCC from "opencc-js";
 // import { convertEnhancedLrcToSyllableLyrics } from "../convert/enhanced-lrc";
 import { convertLrcToLineLyrics } from "../convert/lrc";
 import { convertPlainTextToStatic } from "../convert/plain";
@@ -92,6 +93,7 @@ type GeniusLyricResponse = {
 
 const lyricallyBaseUrl = "https://lyrics.paxsenix.org";
 const userAgent = "beautiful-lyrics-reborn/1.0 (https://github.com/yeahnangua/beautiful-lyrics-reborn)";
+const traditionalToSimplified = OpenCC.Converter({ from: "tw", to: "cn" });
 
 function buildUrl(path: string, parameters: Record<string, string>): string {
   const url = new URL(path, lyricallyBaseUrl);
@@ -137,7 +139,7 @@ async function getJsonString(fetchImpl: FetchLike, url: string): Promise<string 
 }
 
 function normalize(value: string): string {
-  return value
+  return traditionalToSimplified(value)
     .toLocaleLowerCase()
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "");

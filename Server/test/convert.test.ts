@@ -567,20 +567,20 @@ describe("Lyrically provider", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input));
       if (url.pathname === "/kugou/search") {
-        expect(url.searchParams.get("q")).toBe("晴天 周杰伦");
+        expect(url.searchParams.get("q")).toBe("暖暖 梁靜茹");
         return new Response(
           JSON.stringify([
             {
-              hash: "hash",
-              title: "晴天",
-              artist: "周杰伦",
-              duration: 269
+              hash: "d7e7a2c2b33386e834238ac7cbc3524e",
+              title: "暖暖",
+              artist: "梁静茹",
+              duration: 243
             }
           ])
         );
       }
       if (url.pathname === "/kugou/lyrics") {
-        expect(url.searchParams.get("id")).toBe("hash");
+        expect(url.searchParams.get("id")).toBe("d7e7a2c2b33386e834238ac7cbc3524e");
         expect(url.searchParams.get("v")).toBe("2");
         return new Response(
           JSON.stringify({
@@ -589,8 +589,8 @@ describe("Lyrically provider", () => {
             lyrics: [
               {
                 text: [
-                  { text: "晴", part: true, timestamp: 1000, endtime: 1500 },
-                  { text: "天", part: false, timestamp: 1500, endtime: 2000 }
+                  { text: "暖", part: true, timestamp: 1000, endtime: 1500 },
+                  { text: "暖", part: false, timestamp: 1500, endtime: 2000 }
                 ],
                 timestamp: 1000,
                 endtime: 2000,
@@ -606,9 +606,9 @@ describe("Lyrically provider", () => {
     const provider = createLyricallyProvider(fetchMock);
     const track = {
       id: "spotifyTrack",
-      name: "晴天",
-      artists: ["周杰伦"],
-      durationSeconds: 269
+      name: "暖暖",
+      artists: ["梁靜茹"],
+      durationSeconds: 243
     };
 
     await expect(provider.getKugouLyrics(track, true)).resolves.toEqual({
@@ -623,8 +623,8 @@ describe("Lyrically provider", () => {
             StartTime: 1,
             EndTime: 2,
             Syllables: [
-              { Text: "晴", StartTime: 1, EndTime: 1.5, IsPartOfWord: true },
-              { Text: "天", StartTime: 1.5, EndTime: 2, IsPartOfWord: false }
+              { Text: "暖", StartTime: 1, EndTime: 1.5, IsPartOfWord: true },
+              { Text: "暖", StartTime: 1.5, EndTime: 2, IsPartOfWord: false }
             ]
           }
         }
@@ -637,7 +637,7 @@ describe("Lyrically provider", () => {
       Content: [
         {
           Type: "Vocal",
-          Text: "晴天",
+          Text: "暖暖",
           StartTime: 1,
           EndTime: 2,
           OppositeAligned: false

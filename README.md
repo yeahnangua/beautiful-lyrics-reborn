@@ -3,7 +3,7 @@
 Beautiful Lyrics Reborn is a community-maintained revival of the original
 Beautiful Lyrics Spicetify extension. It keeps the fullscreen/card/page lyric
 experience alive and adds a new Cloudflare Worker lyrics service for Spotify,
-AMLLDB, QQ Music, Lyrically/Paxsenix, and LRCLIB fallbacks.
+QQ Music, Lyrically/Paxsenix, and LRCLIB fallbacks.
 
 This repository contains both pieces:
 
@@ -23,8 +23,8 @@ https://lyrics.txw.qzz.io
 - Dynamic cover-art based backgrounds.
 - Romanization support for supported CJK lyrics.
 - Reborn lyrics provider flow:
-  1. The first available syllable lyrics from AMLLDB, QQ Music QRC,
-     Lyrically/Paxsenix Musixmatch, Kugou, or Deezer; Syllable providers are queried concurrently.
+  1. The first available syllable lyrics from QQ Music QRC,
+     Lyrically/Paxsenix Kugou, or Deezer; Syllable providers are queried concurrently.
   2. The first available line lyrics from Lyrically/Paxsenix Spotify proxy,
      Kugou, Spotify, Deezer, YouTube, or LRCLIB; Line providers are queried concurrently.
   3. Static fallbacks from Lyrically/Paxsenix Spotify proxy, Spotify,

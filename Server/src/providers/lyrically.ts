@@ -1,4 +1,4 @@
-import { convertEnhancedLrcToSyllableLyrics } from "../convert/enhanced-lrc";
+// import { convertEnhancedLrcToSyllableLyrics } from "../convert/enhanced-lrc";
 import { convertLrcToLineLyrics } from "../convert/lrc";
 import { convertPlainTextToStatic } from "../convert/plain";
 import type {
@@ -365,6 +365,7 @@ function parseLyricallyTextLyrics(payload: unknown, durationSeconds?: number): B
   return convertLrcToLineLyrics(possibleText, durationSeconds) ?? convertPlainTextToStatic(possibleText);
 }
 
+/*
 async function getMusixmatchWordLyrics(
   fetchImpl: FetchLike,
   track: TrackMetadata
@@ -380,6 +381,7 @@ async function getMusixmatchWordLyrics(
 
   return convertEnhancedLrcToSyllableLyrics(enhancedLrc, track.durationSeconds);
 }
+*/
 
 async function getSpotifyLineLyrics(fetchImpl: FetchLike, track: TrackMetadata): Promise<BeautifulLyrics | undefined> {
   const payload = await getJson<unknown>(
@@ -588,9 +590,11 @@ async function getGeniusLyrics(fetchImpl: FetchLike, track: TrackMetadata): Prom
 
 export function createLyricallyProvider(fetchImpl: FetchLike = fetch): LyricallyProvider {
   return {
+    /*
     async getSyllableLyrics(track: TrackMetadata): Promise<SyllableSyncedLyrics | undefined> {
       return getMusixmatchWordLyrics(fetchImpl, track);
     },
+    */
 
     async getKugouLyrics(track: TrackMetadata, word: boolean): Promise<BeautifulLyrics | undefined> {
       return getKugouLyrics(fetchImpl, track, word);

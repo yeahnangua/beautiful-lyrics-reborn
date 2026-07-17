@@ -23,13 +23,11 @@ https://lyrics.txw.qzz.io
 - Dynamic cover-art based backgrounds.
 - Romanization support for supported CJK lyrics.
 - Reborn lyrics provider flow:
-  1. AMLLDB syllable lyrics.
-  2. QQ Music QRC syllable lyrics.
-  3. Lyrically/Paxsenix Musixmatch word lyrics.
-  4. Lyrically/Paxsenix Deezer word lyrics.
-  5. The first available line lyrics from Lyrically/Paxsenix Spotify proxy,
+  1. The first available syllable lyrics from AMLLDB, QQ Music QRC,
+     Lyrically/Paxsenix Musixmatch, or Deezer; Syllable providers are queried concurrently.
+  2. The first available line lyrics from Lyrically/Paxsenix Spotify proxy,
      Spotify, Deezer, YouTube, or LRCLIB; Line providers are queried concurrently.
-  6. Static fallbacks from Lyrically/Paxsenix Spotify proxy, Spotify,
+  3. Static fallbacks from Lyrically/Paxsenix Spotify proxy, Spotify,
      Deezer, YouTube, Genius, and LRCLIB.
 
 The syllable-lyrics phase has a 10-second total time budget before the Line race starts.

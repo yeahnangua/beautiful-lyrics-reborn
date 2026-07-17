@@ -98,6 +98,55 @@ describe("lyrics service", () => {
     expect(providers.spotify.getLyrics).not.toHaveBeenCalled();
   });
 
+  it("returns the first available syllable lyrics without waiting for slower syllable providers", async () => {
+    const providers = createProviders();
+    let resolveAmllDb!: (lyrics: undefined) => void;
+    vi.mocked(providers.amlldb.getSyllableLyrics).mockReturnValue(
+      new Promise((resolve) => {
+        resolveAmllDb = resolve;
+      })
+    );
+    const qqMusicLyrics = {
+      Type: "Syllable" as const,
+      StartTime: 1,
+      EndTime: 2,
+      Content: [
+        {
+          Type: "Vocal" as const,
+          OppositeAligned: false,
+          Lead: {
+            StartTime: 1,
+            EndTime: 2,
+            Syllables: [
+              {
+                Text: "你",
+                StartTime: 1,
+                EndTime: 2,
+                IsPartOfWord: false
+              }
+            ]
+          }
+        }
+      ]
+    };
+    vi.mocked(providers.qqmusic.getSyllableLyrics).mockResolvedValue(qqMusicLyrics);
+
+    const service = createLyricsService(providers);
+    const request = service.getLyrics("track", "token", {
+      id: "track",
+      name: "Song",
+      artists: ["Artist"]
+    });
+
+    await vi.waitFor(() => {
+      expect(providers.qqmusic.getSyllableLyrics).toHaveBeenCalled();
+      expect(providers.lyrically.getSyllableLyrics).toHaveBeenCalled();
+      expect(providers.lyrically.getDeezerLyrics).toHaveBeenCalled();
+    });
+    await expect(request).resolves.toEqual(qqMusicLyrics);
+    resolveAmllDb(undefined);
+  });
+
   it("prefers QQ Music syllable lyrics before Spotify line lyrics", async () => {
     const providers = createProviders();
     vi.mocked(providers.qqmusic.getSyllableLyrics).mockResolvedValue({
@@ -314,7 +363,7 @@ describe("lyrics service", () => {
       await vi.advanceTimersByTimeAsync(1);
       expect(providers.spotify.getLyrics).toHaveBeenCalled();
       await expect(request).resolves.toEqual(spotifyLyrics);
-      expect(providers.qqmusic.getSyllableLyrics).not.toHaveBeenCalled();
+      expect(providers.qqmusic.getSyllableLyrics).toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

@@ -99,6 +99,7 @@ export type QqMusicProvider = {
 };
 
 export type LyricallyProvider = {
+  getKugouLyrics(track: TrackMetadata, word: boolean): Promise<BeautifulLyrics | undefined>;
   getLyrics(track: TrackMetadata): Promise<BeautifulLyrics | undefined>;
   getYouTubeLyrics(track: TrackMetadata): Promise<BeautifulLyrics | undefined>;
   getDeezerLyrics(track: TrackMetadata): Promise<BeautifulLyrics | undefined>;

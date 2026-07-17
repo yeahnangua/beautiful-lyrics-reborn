@@ -22,17 +22,14 @@ https://lyrics.txw.qzz.io
 - Fullscreen and page lyric views.
 - Dynamic cover-art based backgrounds.
 - Romanization support for supported CJK lyrics.
-- Reborn lyrics provider priority:
+- Reborn lyrics provider flow:
   1. AMLLDB syllable lyrics.
   2. QQ Music QRC syllable lyrics.
   3. Lyrically/Paxsenix Musixmatch word lyrics.
   4. Lyrically/Paxsenix Deezer word lyrics.
-  5. Lyrically/Paxsenix Spotify proxy line lyrics.
-  6. Spotify line lyrics.
-  7. Lyrically/Paxsenix Deezer line lyrics.
-  8. Lyrically/Paxsenix YouTube line lyrics.
-  9. LRCLIB line lyrics.
-  10. Static fallbacks from Lyrically/Paxsenix Spotify proxy, Spotify,
+  5. The first available line lyrics from Lyrically/Paxsenix Spotify proxy,
+     Spotify, Deezer, YouTube, or LRCLIB; Line providers are queried concurrently.
+  6. Static fallbacks from Lyrically/Paxsenix Spotify proxy, Spotify,
      Deezer, YouTube, Genius, and LRCLIB.
 
 ## Local Extension Install

@@ -93,50 +93,61 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
         return deezerLyrics;
       }
 
-      const lyricallyLyrics = await providers.lyrically.getLyrics(lyricallyTrackMetadata).catch((error) => {
+      const lyricallyLyricsPromise = providers.lyrically.getLyrics(lyricallyTrackMetadata).catch((error) => {
         console.warn(`[lyrics] ${trackId}: lyrically spotify proxy failed`, error);
         return undefined;
       });
-      if (lyricallyLyrics?.Type === "Line" || lyricallyLyrics?.Type === "Syllable") {
-        console.log(`[lyrics] ${trackId}: using lyrically spotify proxy ${lyricallyLyrics.Type}`);
-        return lyricallyLyrics;
-      }
-      if (lyricallyLyrics === undefined) {
-        console.log(`[lyrics] ${trackId}: lyrically spotify proxy lyrics unavailable`);
-      } else {
-        console.log(`[lyrics] ${trackId}: holding lyrically spotify proxy ${lyricallyLyrics.Type} as final fallback`);
-      }
-
-      const spotifyLyrics = await providers.spotify.getLyrics(trackId, accessToken, clientContext).catch((error) => {
+      const spotifyLyricsPromise = providers.spotify.getLyrics(trackId, accessToken, clientContext).catch((error) => {
         console.warn(`[lyrics] ${trackId}: spotify lyrics failed`, error);
         return undefined;
       });
-      if (spotifyLyrics?.Type === "Line") {
-        console.log(`[lyrics] ${trackId}: using spotify ${spotifyLyrics.Type}`);
-        return spotifyLyrics;
-      }
-      if (spotifyLyrics === undefined) {
-        console.log(`[lyrics] ${trackId}: spotify lyrics unavailable`);
-      } else {
-        console.log(`[lyrics] ${trackId}: holding spotify ${spotifyLyrics.Type} as final fallback`);
-      }
-
-      if (deezerLyrics?.Type === "Line") {
-        console.log(`[lyrics] ${trackId}: using lyrically deezer ${deezerLyrics.Type}`);
-        return deezerLyrics;
-      }
-
-      const youtubeLyrics =
+      const youtubeLyricsPromise =
         trackMetadata === undefined
-          ? undefined
-          : await providers.lyrically.getYouTubeLyrics(trackMetadata).catch((error) => {
+          ? Promise.resolve(undefined)
+          : providers.lyrically.getYouTubeLyrics(trackMetadata).catch((error) => {
               console.warn(`[lyrics] ${trackId}: lyrically youtube failed`, error);
               return undefined;
             });
-      if (youtubeLyrics !== undefined && youtubeLyrics.Type !== "Static") {
-        console.log(`[lyrics] ${trackId}: using lyrically youtube ${youtubeLyrics.Type}`);
-        return youtubeLyrics;
+      const fallbackLyricsPromise =
+        trackMetadata === undefined
+          ? Promise.resolve(undefined)
+          : providers.lrclib.getLyrics(trackMetadata).catch((error) => {
+              console.warn(`[lyrics] ${trackId}: lrclib failed`, error);
+              return undefined;
+            });
+      const synchronizedLyrics = await Promise.any([
+        deezerLyrics?.Type === "Line"
+          ? Promise.resolve(["lyrically deezer", deezerLyrics] as const)
+          : Promise.reject(),
+        lyricallyLyricsPromise.then((lyrics) =>
+          lyrics?.Type === "Line" || lyrics?.Type === "Syllable"
+            ? (["lyrically spotify proxy", lyrics] as const)
+            : Promise.reject()
+        ),
+        spotifyLyricsPromise.then((lyrics) =>
+          lyrics?.Type === "Line" ? (["spotify", lyrics] as const) : Promise.reject()
+        ),
+        youtubeLyricsPromise.then((lyrics) =>
+          lyrics !== undefined && lyrics.Type !== "Static"
+            ? (["lyrically youtube", lyrics] as const)
+            : Promise.reject()
+        ),
+        fallbackLyricsPromise.then((lyrics) =>
+          lyrics !== undefined && lyrics.Type !== "Static" ? (["lrclib", lyrics] as const) : Promise.reject()
+        )
+      ]).catch(() => undefined);
+      if (synchronizedLyrics !== undefined) {
+        const [source, lyrics] = synchronizedLyrics;
+        console.log(`[lyrics] ${trackId}: using ${source} ${lyrics.Type}`);
+        return lyrics;
       }
+
+      const [lyricallyLyrics, spotifyLyrics, youtubeLyrics, fallbackLyrics] = await Promise.all([
+        lyricallyLyricsPromise,
+        spotifyLyricsPromise,
+        youtubeLyricsPromise,
+        fallbackLyricsPromise
+      ]);
 
       if (trackMetadata === undefined) {
         console.log(`[lyrics] ${trackId}: no metadata, cannot use fallback`);
@@ -152,15 +163,6 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
       console.log(
         `[lyrics] ${trackId}: metadata "${trackMetadata.name}" by ${trackMetadata.artists.join(", ") || "unknown"}`
       );
-
-      const fallbackLyrics = await providers.lrclib.getLyrics(trackMetadata).catch((error) => {
-        console.warn(`[lyrics] ${trackId}: lrclib failed`, error);
-        return undefined;
-      });
-      if (fallbackLyrics !== undefined && fallbackLyrics.Type !== "Static") {
-        console.log(`[lyrics] ${trackId}: using lrclib ${fallbackLyrics.Type}`);
-        return fallbackLyrics;
-      }
 
       const geniusLyrics = await providers.lyrically.getGeniusLyrics(trackMetadata).catch((error) => {
         console.warn(`[lyrics] ${trackId}: lyrically genius failed`, error);

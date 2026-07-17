@@ -24,9 +24,9 @@ https://lyrics.txw.qzz.io
 - Romanization support for supported CJK lyrics.
 - Reborn lyrics provider flow:
   1. The first available syllable lyrics from AMLLDB, QQ Music QRC,
-     Lyrically/Paxsenix Musixmatch, or Deezer; Syllable providers are queried concurrently.
+     Lyrically/Paxsenix Musixmatch, Kugou, or Deezer; Syllable providers are queried concurrently.
   2. The first available line lyrics from Lyrically/Paxsenix Spotify proxy,
-     Spotify, Deezer, YouTube, or LRCLIB; Line providers are queried concurrently.
+     Kugou, Spotify, Deezer, YouTube, or LRCLIB; Line providers are queried concurrently.
   3. Static fallbacks from Lyrically/Paxsenix Spotify proxy, Spotify,
      Deezer, YouTube, Genius, and LRCLIB.
 

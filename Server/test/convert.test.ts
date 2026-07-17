@@ -561,6 +561,90 @@ describe("Lyrically provider", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("gets Kugou syllable and line lyrics by hash", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/kugou/search") {
+        expect(url.searchParams.get("q")).toBe("晴天 周杰伦");
+        return new Response(
+          JSON.stringify([
+            {
+              hash: "hash",
+              title: "晴天",
+              artist: "周杰伦",
+              duration: 269
+            }
+          ])
+        );
+      }
+      if (url.pathname === "/kugou/lyrics") {
+        expect(url.searchParams.get("id")).toBe("hash");
+        expect(url.searchParams.get("v")).toBe("2");
+        return new Response(
+          JSON.stringify({
+            provider: "kugou",
+            syncType: "Syllable",
+            lyrics: [
+              {
+                text: [
+                  { text: "晴", part: true, timestamp: 1000, endtime: 1500 },
+                  { text: "天", part: false, timestamp: 1500, endtime: 2000 }
+                ],
+                timestamp: 1000,
+                endtime: 2000,
+                oppositeTurn: false
+              }
+            ]
+          })
+        );
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+    const provider = createLyricallyProvider(fetchMock);
+    const track = {
+      id: "spotifyTrack",
+      name: "晴天",
+      artists: ["周杰伦"],
+      durationSeconds: 269
+    };
+
+    await expect(provider.getKugouLyrics(track, true)).resolves.toEqual({
+      Type: "Syllable",
+      StartTime: 1,
+      EndTime: 2,
+      Content: [
+        {
+          Type: "Vocal",
+          OppositeAligned: false,
+          Lead: {
+            StartTime: 1,
+            EndTime: 2,
+            Syllables: [
+              { Text: "晴", StartTime: 1, EndTime: 1.5, IsPartOfWord: true },
+              { Text: "天", StartTime: 1.5, EndTime: 2, IsPartOfWord: false }
+            ]
+          }
+        }
+      ]
+    });
+    await expect(provider.getKugouLyrics(track, false)).resolves.toEqual({
+      Type: "Line",
+      StartTime: 1,
+      EndTime: 2,
+      Content: [
+        {
+          Type: "Vocal",
+          Text: "晴天",
+          StartTime: 1,
+          EndTime: 2,
+          OppositeAligned: false
+        }
+      ]
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
   it("converts Lyrically Deezer word lyrics to Syllable output", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

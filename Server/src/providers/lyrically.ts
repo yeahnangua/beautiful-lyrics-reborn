@@ -3,6 +3,7 @@ import { convertLrcToLineLyrics } from "../convert/lrc";
 import { convertPlainTextToStatic } from "../convert/plain";
 import type {
   BeautifulLyrics,
+  LineSyncedLyrics,
   LyricallyProvider,
   StaticSyncedLyrics,
   SyllableMetadata,
@@ -26,22 +27,39 @@ type DeezerSearchResponse = {
   data?: DeezerSearchSong[];
 };
 
-type DeezerLyricWord = {
+type TimedLyricWord = {
   text?: string;
+  part?: boolean;
   timestamp?: number;
   endtime?: number;
 };
 
-type DeezerLyricLine = {
-  text?: DeezerLyricWord[];
+type TimedLyricLine = {
+  text?: TimedLyricWord[];
   timestamp?: number;
   endtime?: number;
+  oppositeTurn?: boolean;
 };
 
 type DeezerLyricResponse = {
   isError?: boolean;
   plain_lyrics?: string;
-  lyrics?: DeezerLyricLine[];
+  lyrics?: TimedLyricLine[];
+};
+
+type KugouSearchSong = {
+  hash?: string;
+  title?: string;
+  artist?: string;
+  duration?: number;
+};
+
+type KugouLyricLine = Omit<TimedLyricLine, "text"> & {
+  text?: string | TimedLyricWord[];
+};
+
+type KugouLyricResponse = {
+  lyrics?: KugouLyricLine[];
 };
 
 type YouTubeSearchVideo = {
@@ -221,12 +239,14 @@ function rankYouTubeCandidate(video: YouTubeSearchVideo, track: TrackMetadata): 
   return undefined;
 }
 
-function timedWordsToSyllableLyrics(lines: DeezerLyricLine[] | undefined): SyllableSyncedLyrics | undefined {
+function timedWordsToSyllableLyrics(lines: TimedLyricLine[] | undefined): SyllableSyncedLyrics | undefined {
   const content: SyllableVocalSet[] = [];
 
   for (const line of lines ?? []) {
+    const words = line.text ?? [];
+    const hasPartMetadata = words.some((word) => word.part !== undefined);
     const syllables: SyllableMetadata[] = [];
-    for (const word of line.text ?? []) {
+    for (const word of words) {
       if (
         word.text === undefined ||
         word.text.length === 0 ||
@@ -241,14 +261,16 @@ function timedWordsToSyllableLyrics(lines: DeezerLyricLine[] | undefined): Sylla
         Text: word.text,
         StartTime: word.timestamp / 1000,
         EndTime: word.endtime / 1000,
-        IsPartOfWord: false
+        IsPartOfWord: word.part ?? false
       });
     }
 
-    for (let index = 0; index < syllables.length - 1; index += 1) {
-      const syllable = syllables[index];
-      if (syllable !== undefined) {
-        syllable.IsPartOfWord = true;
+    if (hasPartMetadata === false) {
+      for (let index = 0; index < syllables.length - 1; index += 1) {
+        const syllable = syllables[index];
+        if (syllable !== undefined) {
+          syllable.IsPartOfWord = true;
+        }
       }
     }
 
@@ -260,7 +282,7 @@ function timedWordsToSyllableLyrics(lines: DeezerLyricLine[] | undefined): Sylla
 
     content.push({
       Type: "Vocal",
-      OppositeAligned: false,
+      OppositeAligned: line.oppositeTurn ?? false,
       Lead: {
         StartTime: first.StartTime,
         EndTime: last.EndTime,
@@ -279,6 +301,48 @@ function timedWordsToSyllableLyrics(lines: DeezerLyricLine[] | undefined): Sylla
     Type: "Syllable",
     StartTime: first.Lead.StartTime,
     EndTime: last.Lead.EndTime,
+    Content: content
+  };
+}
+
+function timedLinesToLineLyrics(
+  lines: KugouLyricLine[] | undefined,
+  durationSeconds?: number
+): LineSyncedLyrics | undefined {
+  const content = (lines ?? []).flatMap((line, index) => {
+    const text = (typeof line.text === "string" ? line.text : (line.text ?? []).map((word) => word.text ?? "").join(""))
+      .trim();
+    if (text.length === 0 || line.timestamp === undefined) {
+      return [];
+    }
+
+    const nextLine = lines?.[index + 1];
+    const endtime =
+      line.endtime ?? nextLine?.timestamp ?? (durationSeconds === undefined ? undefined : durationSeconds * 1000);
+    if (endtime === undefined || endtime <= line.timestamp) {
+      return [];
+    }
+
+    return [
+      {
+        Type: "Vocal" as const,
+        Text: text,
+        StartTime: line.timestamp / 1000,
+        EndTime: endtime / 1000,
+        OppositeAligned: line.oppositeTurn ?? false
+      }
+    ];
+  });
+  const first = content[0];
+  const last = content[content.length - 1];
+  if (first === undefined || last === undefined) {
+    return undefined;
+  }
+
+  return {
+    Type: "Line",
+    StartTime: first.StartTime,
+    EndTime: last.EndTime,
     Content: content
   };
 }
@@ -326,6 +390,60 @@ async function getSpotifyLineLyrics(fetchImpl: FetchLike, track: TrackMetadata):
   );
 
   return parseLyricallyTextLyrics(payload, track.durationSeconds);
+}
+
+async function searchKugou(fetchImpl: FetchLike, track: TrackMetadata): Promise<KugouSearchSong | undefined> {
+  const query = `${track.name} ${firstArtist(track)}`.trim();
+  if (track.name.length === 0 || firstArtist(track).length === 0) {
+    return undefined;
+  }
+
+  const songs =
+    (await getJson<KugouSearchSong[]>(
+      fetchImpl,
+      buildUrl("/kugou/search", {
+        q: query
+      })
+    )) ?? [];
+  console.log(`[lyrically:kugou] search "${query}": ${songs.length} result(s)`);
+
+  const matches = (song: KugouSearchSong, baseTitle: boolean) =>
+    song.hash !== undefined &&
+    (baseTitle ? baseTitleMatches(song.title, track) : titleMatches(song.title, track)) &&
+    artistMatches(song.artist, track) &&
+    durationMatches(song.duration, track.durationSeconds);
+  return songs.find((song) => matches(song, false)) ?? songs.find((song) => matches(song, true));
+}
+
+async function getKugouLyrics(
+  fetchImpl: FetchLike,
+  track: TrackMetadata,
+  word: boolean
+): Promise<BeautifulLyrics | undefined> {
+  const matchedSong = await searchKugou(fetchImpl, track);
+  if (matchedSong?.hash === undefined) {
+    return undefined;
+  }
+  console.log(`[lyrically:kugou] matched ${matchedSong.hash} "${matchedSong.title ?? "unknown title"}"`);
+
+  const payload = await getJson<KugouLyricResponse>(
+    fetchImpl,
+    buildUrl("/kugou/lyrics", {
+      id: matchedSong.hash,
+      word: String(word),
+      v: "2"
+    })
+  );
+  if (word) {
+    return timedWordsToSyllableLyrics(
+      payload?.lyrics?.map((line) => ({
+        ...line,
+        text: Array.isArray(line.text) ? line.text : []
+      }))
+    );
+  }
+
+  return timedLinesToLineLyrics(payload?.lyrics, track.durationSeconds);
 }
 
 async function getYouTubeLyrics(fetchImpl: FetchLike, track: TrackMetadata): Promise<BeautifulLyrics | undefined> {
@@ -472,6 +590,10 @@ export function createLyricallyProvider(fetchImpl: FetchLike = fetch): Lyrically
   return {
     async getSyllableLyrics(track: TrackMetadata): Promise<SyllableSyncedLyrics | undefined> {
       return getMusixmatchWordLyrics(fetchImpl, track);
+    },
+
+    async getKugouLyrics(track: TrackMetadata, word: boolean): Promise<BeautifulLyrics | undefined> {
+      return getKugouLyrics(fetchImpl, track, word);
     },
 
     async getLyrics(track: TrackMetadata): Promise<BeautifulLyrics | undefined> {

@@ -17,6 +17,7 @@ function createProviders(): ProviderClients {
     },
     lyrically: {
       getSyllableLyrics: vi.fn().mockResolvedValue(undefined),
+      getKugouLyrics: vi.fn().mockResolvedValue(undefined),
       getLyrics: vi.fn().mockResolvedValue(undefined),
       getYouTubeLyrics: vi.fn().mockResolvedValue(undefined),
       getDeezerLyrics: vi.fn().mockResolvedValue(undefined),
@@ -141,6 +142,14 @@ describe("lyrics service", () => {
     await vi.waitFor(() => {
       expect(providers.qqmusic.getSyllableLyrics).toHaveBeenCalled();
       expect(providers.lyrically.getSyllableLyrics).toHaveBeenCalled();
+      expect(providers.lyrically.getKugouLyrics).toHaveBeenCalledWith(
+        {
+          id: "track",
+          name: "Song",
+          artists: ["Artist"]
+        },
+        true
+      );
       expect(providers.lyrically.getDeezerLyrics).toHaveBeenCalled();
     });
     await expect(request).resolves.toEqual(qqMusicLyrics);
@@ -324,6 +333,14 @@ describe("lyrics service", () => {
     await vi.waitFor(() => {
       expect(providers.spotify.getLyrics).toHaveBeenCalled();
       expect(providers.lyrically.getYouTubeLyrics).toHaveBeenCalled();
+      expect(providers.lyrically.getKugouLyrics).toHaveBeenCalledWith(
+        {
+          id: "track",
+          name: "Song",
+          artists: ["Artist"]
+        },
+        false
+      );
       expect(providers.lrclib.getLyrics).toHaveBeenCalled();
     });
     await expect(request).resolves.toEqual(spotifyLyrics);

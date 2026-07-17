@@ -24,12 +24,15 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
       const syllableDeadline = Date.now() + syllableSearchTimeoutMs;
       let trackMetadata = suppliedTrackMetadata;
       let deezerLyrics: BeautifulLyrics | undefined;
+      // AMLLDB syllable lyrics are intentionally disabled.
+      /*
       const suppliedAmllDbLyricsPromise = providers.amlldb
         .getSyllableLyrics(trackId, suppliedTrackMetadata)
         .catch((error) => {
           console.warn(`[lyrics] ${trackId}: amlldb failed`, error);
           return undefined;
         });
+      */
       const trackMetadataPromise = (
         suppliedTrackMetadata === undefined
           ? providers.spotify.getTrackMetadata(trackId, accessToken, clientContext).catch((error) => {
@@ -46,6 +49,8 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
         }
         return metadata;
       });
+      // AMLLDB search fallback is intentionally disabled.
+      /*
       const searchedAmllDbLyricsPromise = trackMetadataPromise.then((metadata) =>
         suppliedTrackMetadata === undefined && metadata !== undefined && Date.now() < syllableDeadline
           ? providers.amlldb.getSyllableLyrics(trackId, metadata).catch((error) => {
@@ -54,6 +59,7 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
             })
           : undefined
       );
+      */
       const qqMusicLyricsPromise = trackMetadataPromise.then((metadata) =>
         metadata !== undefined && Date.now() < syllableDeadline
           ? providers.qqmusic.getSyllableLyrics(metadata).catch((error) => {
@@ -62,6 +68,7 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
             })
           : undefined
       );
+      
       const kugouSyllableLyricsPromise = trackMetadataPromise.then((metadata) =>
         metadata !== undefined && Date.now() < syllableDeadline
           ? providers.lyrically.getKugouLyrics(metadata, true).catch((error) => {
@@ -81,15 +88,18 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
         return deezerLyrics;
       });
       const syllableLyricsPromise = Promise.any([
+        /*
         suppliedAmllDbLyricsPromise.then((lyrics) =>
           lyrics === undefined ? Promise.reject() : (["amlldb", lyrics] as const)
         ),
         searchedAmllDbLyricsPromise.then((lyrics) =>
           lyrics === undefined ? Promise.reject() : (["amlldb", lyrics] as const)
         ),
+        */
         qqMusicLyricsPromise.then((lyrics) =>
           lyrics === undefined ? Promise.reject() : (["qq music", lyrics] as const)
         ),
+        
         kugouSyllableLyricsPromise.then((lyrics) =>
           lyrics?.Type === "Syllable" ? (["lyrically kugou", lyrics] as const) : Promise.reject()
         ),

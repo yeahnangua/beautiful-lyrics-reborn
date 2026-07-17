@@ -66,7 +66,7 @@ export type SpotifyClientContext = {
 };
 
 export type ProviderClients = {
-  amlldb: AmllDbProvider;
+  // amlldb: AmllDbProvider;
   qqmusic: QqMusicProvider;
   lyrically: LyricallyProvider;
   spotify: SpotifyProvider;

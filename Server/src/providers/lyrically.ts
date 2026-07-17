@@ -1,4 +1,4 @@
-
+// import { convertEnhancedLrcToSyllableLyrics } from "../convert/enhanced-lrc";
 import { convertLrcToLineLyrics } from "../convert/lrc";
 import { convertPlainTextToStatic } from "../convert/plain";
 import type {
@@ -363,6 +363,7 @@ function parseLyricallyTextLyrics(payload: unknown, durationSeconds?: number): B
 }
 
 
+
 async function getSpotifyLineLyrics(fetchImpl: FetchLike, track: TrackMetadata): Promise<BeautifulLyrics | undefined> {
   const payload = await getJson<unknown>(
     fetchImpl,
@@ -570,6 +571,7 @@ async function getGeniusLyrics(fetchImpl: FetchLike, track: TrackMetadata): Prom
 
 export function createLyricallyProvider(fetchImpl: FetchLike = fetch): LyricallyProvider {
   return {
+    
 
     async getKugouLyrics(track: TrackMetadata, word: boolean): Promise<BeautifulLyrics | undefined> {
       return getKugouLyrics(fetchImpl, track, word);

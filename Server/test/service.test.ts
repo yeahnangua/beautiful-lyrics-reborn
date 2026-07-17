@@ -5,9 +5,11 @@ import type { ProviderClients } from "../src/types";
 
 function createProviders(): ProviderClients {
   return {
+    /*
     amlldb: {
       getSyllableLyrics: vi.fn().mockResolvedValue(undefined)
     },
+    */
     qqmusic: {
       getSyllableLyrics: vi.fn().mockResolvedValue(undefined)
     },
@@ -45,6 +47,7 @@ describe("lyrics service", () => {
     expect(providers.lrclib.getLyrics).not.toHaveBeenCalled();
   });
 
+  /*
   it("returns AMLLDB syllable lyrics before trying Spotify", async () => {
     const providers = createProviders();
     vi.mocked(providers.amlldb.getSyllableLyrics).mockResolvedValue({
@@ -97,13 +100,14 @@ describe("lyrics service", () => {
     });
     expect(providers.spotify.getLyrics).not.toHaveBeenCalled();
   });
+  */
 
   it("returns the first available syllable lyrics without waiting for slower syllable providers", async () => {
     const providers = createProviders();
-    let resolveAmllDb!: (lyrics: undefined) => void;
-    vi.mocked(providers.amlldb.getSyllableLyrics).mockReturnValue(
+    let resolveDeezer!: (lyrics: undefined) => void;
+    vi.mocked(providers.lyrically.getDeezerLyrics).mockReturnValue(
       new Promise((resolve) => {
-        resolveAmllDb = resolve;
+        resolveDeezer = resolve;
       })
     );
     const qqMusicLyrics = {
@@ -151,7 +155,7 @@ describe("lyrics service", () => {
       expect(providers.lyrically.getDeezerLyrics).toHaveBeenCalled();
     });
     await expect(request).resolves.toEqual(qqMusicLyrics);
-    resolveAmllDb(undefined);
+    resolveDeezer(undefined);
   });
 
   it("prefers QQ Music syllable lyrics before Spotify line lyrics", async () => {
@@ -344,7 +348,7 @@ describe("lyrics service", () => {
     vi.useFakeTimers();
     try {
       const providers = createProviders();
-      vi.mocked(providers.amlldb.getSyllableLyrics).mockReturnValue(new Promise(() => {}));
+      vi.mocked(providers.qqmusic.getSyllableLyrics).mockReturnValue(new Promise(() => {}));
       const spotifyLyrics = {
         Type: "Line" as const,
         StartTime: 1,
@@ -379,6 +383,7 @@ describe("lyrics service", () => {
     }
   });
 
+  
 
   it("prefers Lyrically Deezer syllable lyrics before Lyrically Spotify proxy line lyrics", async () => {
     const providers = createProviders();

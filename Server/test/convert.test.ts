@@ -493,6 +493,7 @@ describe("LRCLIB provider", () => {
 });
 
 describe("Lyrically provider", () => {
+  
 
   it("gets Lyrically Spotify line lyrics", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {

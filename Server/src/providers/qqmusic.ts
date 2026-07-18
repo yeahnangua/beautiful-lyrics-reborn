@@ -204,28 +204,32 @@ async function postMusicu<T>(fetchImpl: FetchLike, body: unknown, retryOnTimeout
     return (await response.json()) as T;
   };
 
-  return retryOnTimeout ? withLyricRequestRetries((signal) => request(signal), "qqmusic lyrics") : request();
+  return retryOnTimeout ? withLyricRequestRetries((signal) => request(signal), "qqmusic request") : request();
 }
 
 async function searchSongs(fetchImpl: FetchLike, query: string): Promise<QqMusicSearchSong[]> {
-  const payload = await postMusicu<QqMusicSearchResponse>(fetchImpl, {
-    comm: {
-      ct: "19",
-      cv: "1859",
-      uin: "0"
-    },
-    req: {
-      method: "DoSearchForQQMusicDesktop",
-      module: "music.search.SearchCgiService",
-      param: {
-        grp: 1,
-        num_per_page: 8,
-        page_num: 1,
-        query,
-        search_type: 0
+  const payload = await postMusicu<QqMusicSearchResponse>(
+    fetchImpl,
+    {
+      comm: {
+        ct: "19",
+        cv: "1859",
+        uin: "0"
+      },
+      req: {
+        method: "DoSearchForQQMusicDesktop",
+        module: "music.search.SearchCgiService",
+        param: {
+          grp: 1,
+          num_per_page: 8,
+          page_num: 1,
+          query,
+          search_type: 0
+        }
       }
-    }
-  });
+    },
+    true
+  );
 
   const songs = payload?.req?.data?.body?.song?.list ?? [];
   logSearchResults(query, songs);

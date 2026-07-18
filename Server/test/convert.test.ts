@@ -532,7 +532,7 @@ describe("Lyrically provider", () => {
   });
 
   it("gets Kugou syllable and line lyrics by hash", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input));
       if (url.pathname === "/kugou/search") {
         expect(url.searchParams.get("q")).toBe("暖暖 梁靜茹");
@@ -550,6 +550,7 @@ describe("Lyrically provider", () => {
       if (url.pathname === "/kugou/lyrics") {
         expect(url.searchParams.get("id")).toBe("d7e7a2c2b33386e834238ac7cbc3524e");
         expect(url.searchParams.get("v")).toBe("2");
+        expect(init?.signal === undefined).toBe(url.searchParams.get("word") === "false");
         return new Response(
           JSON.stringify({
             provider: "kugou",
@@ -616,7 +617,7 @@ describe("Lyrically provider", () => {
   });
 
   it("gets NetEase syllable and line lyrics by song ID", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input));
       if (url.pathname === "/netease/search") {
         expect(url.searchParams.get("q")).toBe("暖暖 梁靜茹");
@@ -638,6 +639,7 @@ describe("Lyrically provider", () => {
       if (url.pathname === "/netease/lyrics") {
         expect(url.searchParams.get("id")).toBe("254141");
         expect(url.searchParams.get("v")).toBe("2");
+        expect(init?.signal === undefined).toBe(url.searchParams.get("word") === "false");
         if (url.searchParams.get("word") === "true") {
           return new Response(
             JSON.stringify({
@@ -715,7 +717,7 @@ describe("Lyrically provider", () => {
   });
 
   it("converts Lyrically Deezer word lyrics to Syllable output", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes("api.deezer.com/search/track")) {
         return new Response(
@@ -734,6 +736,7 @@ describe("Lyrically provider", () => {
       if (url.includes("/deezer/lyrics")) {
         expect(new URL(url).searchParams.get("id")).toBe("655095912");
         expect(new URL(url).searchParams.get("v")).toBe("2");
+        expect(init?.signal).toBeInstanceOf(AbortSignal);
         return new Response(
           JSON.stringify({
             id: "34352482",

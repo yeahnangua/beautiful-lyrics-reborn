@@ -2,6 +2,7 @@ import OpenCC from "opencc-js";
 import { decryptQrc } from "qrc-decoder";
 import { convertQrcXmlToSyllableLyrics } from "../convert/karaoke";
 import type { QqMusicProvider, SyllableSyncedLyrics, TrackMetadata } from "../types";
+import { withLyricRequestRetries } from "./request";
 
 type FetchLike = typeof fetch;
 
@@ -182,23 +183,28 @@ function matchesTrack(song: QqMusicSearchSong, track: TrackMetadata): boolean {
   return hasMatchingArtist && durationMatches(song, track);
 }
 
-async function postMusicu<T>(fetchImpl: FetchLike, body: unknown): Promise<T | undefined> {
-  const response = await fetchImpl(musicuUrl, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json;charset=utf-8",
-      Referer: "https://y.qq.com/",
-      "User-Agent": "Mozilla/5.0"
-    },
-    body: JSON.stringify(body)
-  });
+async function postMusicu<T>(fetchImpl: FetchLike, body: unknown, retryOnTimeout = false): Promise<T | undefined> {
+  const request = async (signal?: AbortSignal): Promise<T | undefined> => {
+    const response = await fetchImpl(musicuUrl, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json;charset=utf-8",
+        Referer: "https://y.qq.com/",
+        "User-Agent": "Mozilla/5.0"
+      },
+      body: JSON.stringify(body),
+      ...(signal === undefined ? {} : { signal })
+    });
 
-  if (response.ok === false) {
-    return undefined;
-  }
+    if (response.ok === false) {
+      return undefined;
+    }
 
-  return (await response.json()) as T;
+    return (await response.json()) as T;
+  };
+
+  return retryOnTimeout ? withLyricRequestRetries((signal) => request(signal), "qqmusic lyrics") : request();
 }
 
 async function searchSongs(fetchImpl: FetchLike, query: string): Promise<QqMusicSearchSong[]> {
@@ -227,17 +233,21 @@ async function searchSongs(fetchImpl: FetchLike, query: string): Promise<QqMusic
 }
 
 async function getQrcLyrics(fetchImpl: FetchLike, songId: number): Promise<SyllableSyncedLyrics | undefined> {
-  const payload = await postMusicu<QqMusicLyricResponse>(fetchImpl, {
-    "music.musichallSong.PlayLyricInfo.GetPlayLyricInfo": {
-      method: "GetPlayLyricInfo",
-      module: "music.musichallSong.PlayLyricInfo",
-      param: {
-        crypt: 0,
-        qrc: 1,
-        songID: songId
+  const payload = await postMusicu<QqMusicLyricResponse>(
+    fetchImpl,
+    {
+      "music.musichallSong.PlayLyricInfo.GetPlayLyricInfo": {
+        method: "GetPlayLyricInfo",
+        module: "music.musichallSong.PlayLyricInfo",
+        param: {
+          crypt: 0,
+          qrc: 1,
+          songID: songId
+        }
       }
-    }
-  });
+    },
+    true
+  );
 
   const lyricData = payload?.["music.musichallSong.PlayLyricInfo.GetPlayLyricInfo"]?.data;
   if (lyricData?.qrc !== 1 || lyricData.lyric === undefined || lyricData.lyric.length === 0) {

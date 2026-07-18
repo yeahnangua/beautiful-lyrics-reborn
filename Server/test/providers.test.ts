@@ -3,9 +3,36 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { createQqMusicProvider, decryptQrcHex } from "../src/providers/qqmusic";
+import { withLyricRequestRetries } from "../src/providers/request";
 
 const testDir = dirname(fileURLToPath(import.meta.url));
 const pragueSquareQrcHex = readFileSync(join(testDir, "fixtures/qq-prague-square-qrc.hex"), "utf8").trim();
+
+describe("lyric request retries", () => {
+  it("aborts each stalled request and retries at most twice", async () => {
+    vi.useFakeTimers();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const signals: AbortSignal[] = [];
+      const request = vi.fn((signal: AbortSignal) => {
+        signals.push(signal);
+        return new Promise<never>(() => {});
+      });
+      const result = withLyricRequestRetries(request, "test lyrics");
+      const rejection = expect(result).rejects.toThrow("timed out after 5 seconds");
+
+      await vi.advanceTimersByTimeAsync(15_000);
+      await rejection;
+
+      expect(request).toHaveBeenCalledTimes(3);
+      expect(signals).toHaveLength(3);
+      expect(signals.every((signal) => signal.aborted)).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+});
 
 describe("QQ Music provider", () => {
   it("decrypts QQ QRC hex into XML lyrics", () => {
@@ -21,6 +48,7 @@ describe("QQ Music provider", () => {
       const request = body.req ?? body["music.musichallSong.PlayLyricInfo.GetPlayLyricInfo"];
 
       if (request?.method === "DoSearchForQQMusicDesktop") {
+        expect(init?.signal).toBeUndefined();
         expect(request.param.query).toBe("布拉格广场 蔡依林");
         return new Response(
           JSON.stringify({
@@ -47,6 +75,7 @@ describe("QQ Music provider", () => {
       }
 
       if (request?.method === "GetPlayLyricInfo") {
+        expect(init?.signal).toBeInstanceOf(AbortSignal);
         expect(request.param.songID).toBe(13410);
         return new Response(
           JSON.stringify({

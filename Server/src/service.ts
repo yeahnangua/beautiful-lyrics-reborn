@@ -89,6 +89,14 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
             })
           : undefined
       );
+      const neteaseSyllableLyricsPromise = trackMetadataPromise.then((metadata) =>
+        metadata !== undefined && Date.now() < syllableDeadline
+          ? providers.lyrically.getNeteaseLyrics(metadata, true).catch((error) => {
+              console.warn(`[lyrics] ${trackId}: lyrically netease failed`, error);
+              return undefined;
+            })
+          : undefined
+      );
       const deezerLyricsPromise = trackMetadataPromise.then(async (metadata) => {
         if (metadata === undefined || Date.now() >= syllableDeadline) {
           return undefined;
@@ -118,6 +126,9 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
         */
         kugouSyllableLyricsPromise.then((lyrics) =>
           lyrics?.Type === "Syllable" ? (["lyrically kugou", lyrics] as const) : Promise.reject()
+        ),
+        neteaseSyllableLyricsPromise.then((lyrics) =>
+          lyrics?.Type === "Syllable" ? (["lyrically netease", lyrics] as const) : Promise.reject()
         ),
         deezerLyricsPromise.then((lyrics) =>
           lyrics?.Type === "Syllable" ? (["lyrically deezer", lyrics] as const) : Promise.reject()
@@ -160,6 +171,13 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
               console.warn(`[lyrics] ${trackId}: lyrically kugou failed`, error);
               return undefined;
             });
+      const neteaseLyricsPromise =
+        lineTrackMetadata === undefined
+          ? Promise.resolve(undefined)
+          : providers.lyrically.getNeteaseLyrics(lineTrackMetadata, false).catch((error) => {
+              console.warn(`[lyrics] ${trackId}: lyrically netease failed`, error);
+              return undefined;
+            });
       const spotifyLyricsPromise = providers.spotify.getLyrics(trackId, accessToken, clientContext).catch((error) => {
         console.warn(`[lyrics] ${trackId}: spotify lyrics failed`, error);
         return undefined;
@@ -189,6 +207,9 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
         ),
         kugouLyricsPromise.then((lyrics) =>
           lyrics?.Type === "Line" ? (["lyrically kugou", lyrics] as const) : Promise.reject()
+        ),
+        neteaseLyricsPromise.then((lyrics) =>
+          lyrics?.Type === "Line" ? (["lyrically netease", lyrics] as const) : Promise.reject()
         ),
         spotifyLyricsPromise.then((lyrics) =>
           lyrics?.Type === "Line" ? (["spotify", lyrics] as const) : Promise.reject()

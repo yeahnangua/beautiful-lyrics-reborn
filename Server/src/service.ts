@@ -1,6 +1,6 @@
 import type { BeautifulLyrics, ProviderClients, SpotifyClientContext, TrackMetadata } from "./types";
 
-const syllableSearchTimeoutMs = 10_000;
+const syllableSearchTimeoutMs = 20_000;
 
 export type LyricsService = {
   getLyrics(

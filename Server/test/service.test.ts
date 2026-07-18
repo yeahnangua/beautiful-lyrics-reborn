@@ -363,7 +363,7 @@ describe("lyrics service", () => {
     resolveLyrically(undefined);
   });
 
-  it("stops syllable lookups after 10 seconds and starts the line race", async () => {
+  it("stops syllable lookups after 20 seconds and starts the line race", async () => {
     vi.useFakeTimers();
     try {
       const providers = createProviders();
@@ -391,7 +391,7 @@ describe("lyrics service", () => {
         artists: ["Artist"]
       });
 
-      await vi.advanceTimersByTimeAsync(9_999);
+      await vi.advanceTimersByTimeAsync(19_999);
       expect(providers.spotify.getLyrics).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);
       expect(providers.spotify.getLyrics).toHaveBeenCalled();

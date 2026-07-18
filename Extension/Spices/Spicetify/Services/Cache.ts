@@ -136,6 +136,7 @@ const UpdateCacheAPI = (storeName: string, itemName: string, content: unknown): 
 type ExpireStoreInterface<ItemType> = {
 	GetItem: (itemName: string) => Promise<ItemType | undefined>;
 	SetItem: (itemName: string, content: ItemType) => Promise<ItemType>;
+	Clear: () => Promise<boolean>;
 }
 
 const RetrievedExpireStores: Set<string> = new Set()
@@ -152,6 +153,7 @@ export const GetExpireStore = <ItemType>(
 	// Return our public interface
 	return Object.freeze(
 		{
+			Clear: () => caches.delete(storeName),
 			GetItem: (itemName: string) => (
 				(IsDevelopment && forceNewData) ? Promise.resolve(undefined)
 				: (

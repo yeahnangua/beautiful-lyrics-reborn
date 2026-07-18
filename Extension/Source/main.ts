@@ -14,6 +14,7 @@ import {
 	SpotifyInternalFetch,
 	ShowNotification
 } from "@Spices/Spicetify/Services/Session.ts"
+import { ClearLyricsCache } from "@Spices/Spicetify/Services/Player/mod.ts"
 
 // Singletons
 import "./LyricViews/mod.ts"
@@ -67,6 +68,26 @@ const Load = async () => {
 	}
 
 	await OnSpotifyReady
+
+	{
+		const clearLyricsCacheMenuItem = new Spotify.Menu.Item(
+			"Clear lyrics cache",
+			false,
+			(menuItem) => {
+				menuItem.setState(false)
+				ClearLyricsCache()
+				.then(
+					() => ShowNotification("Lyrics cache cleared", "success", 5)
+				)
+				.catch(
+					(error) => ShowNotification(`Failed to clear lyrics cache (${error})`, "error", 10)
+				)
+			},
+			"lyrics"
+		)
+		clearLyricsCacheMenuItem.register()
+		GlobalMaid.Give(() => clearLyricsCacheMenuItem.deregister())
+	}
 
 	// Custom text rendering, still expirementing so not final yet
 	{

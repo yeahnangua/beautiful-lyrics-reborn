@@ -19,6 +19,7 @@ function createProviders(): ProviderClients {
     },
     lyrically: {
       getKugouLyrics: vi.fn().mockResolvedValue(undefined),
+      getNeteaseLyrics: vi.fn().mockResolvedValue(undefined),
       getLyrics: vi.fn().mockResolvedValue(undefined),
       getYouTubeLyrics: vi.fn().mockResolvedValue(undefined),
       getDeezerLyrics: vi.fn().mockResolvedValue(undefined),
@@ -145,6 +146,14 @@ describe("lyrics service", () => {
     await vi.waitFor(() => {
       expect(providers.qqmusic.getSyllableLyrics).toHaveBeenCalled();
       expect(providers.lyrically.getKugouLyrics).toHaveBeenCalledWith(
+        {
+          id: "track",
+          name: "Song",
+          artists: ["Artist"]
+        },
+        true
+      );
+      expect(providers.lyrically.getNeteaseLyrics).toHaveBeenCalledWith(
         {
           id: "track",
           name: "Song",
@@ -331,6 +340,14 @@ describe("lyrics service", () => {
       expect(providers.spotify.getLyrics).toHaveBeenCalled();
       expect(providers.lyrically.getYouTubeLyrics).toHaveBeenCalled();
       expect(providers.lyrically.getKugouLyrics).toHaveBeenCalledWith(
+        {
+          id: "track",
+          name: "Song",
+          artists: ["Artist"]
+        },
+        false
+      );
+      expect(providers.lyrically.getNeteaseLyrics).toHaveBeenCalledWith(
         {
           id: "track",
           name: "Song",

@@ -765,9 +765,11 @@ describe("Lyrically provider", () => {
       }
       if (url.includes("/deezer/lyrics")) {
         expect(new URL(url).searchParams.get("id")).toBe("655095912");
+        expect(new URL(url).searchParams.get("v")).toBe("2");
         return new Response(
           JSON.stringify({
             id: "34352482",
+            syncType: "Syllable",
             plain_lyrics: "White shirt now red",
             lyrics: [
               {
@@ -821,6 +823,68 @@ describe("Lyrically provider", () => {
               }
             ]
           }
+        }
+      ]
+    });
+  });
+
+  it("keeps Lyrically Deezer line lyrics as Line output", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.hostname === "api.deezer.com") {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 3602074142,
+                title: "Choosin' Texas",
+                duration: 190,
+                artist: { name: "Ella Langley" }
+              }
+            ]
+          })
+        );
+      }
+      if (url.pathname === "/deezer/lyrics") {
+        expect(url.searchParams.get("id")).toBe("3602074142");
+        expect(url.searchParams.get("v")).toBe("2");
+        return new Response(
+          JSON.stringify({
+            syncType: "Line",
+            lyrics: [
+              {
+                text: [{ text: "Just when I thought I got him to fall in love with Tennessee" }],
+                timestamp: 17330,
+                endtime: 23310
+              }
+            ],
+            isError: false
+          })
+        );
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+
+    const provider = createLyricallyProvider(fetchMock);
+    await expect(
+      provider.getDeezerLyrics({
+        id: "spotifyTrack",
+        name: "Choosin' Texas",
+        artists: ["Ella Langley"],
+        durationSeconds: 190
+      })
+    ).resolves.toEqual({
+      Type: "Line",
+      StartTime: 17.33,
+      EndTime: 23.31,
+      Content: [
+        {
+          Type: "Vocal",
+          Text: "Just when I thought I got him to fall in love with Tennessee",
+          StartTime: 17.33,
+          EndTime: 23.31,
+          OppositeAligned: false
         }
       ]
     });

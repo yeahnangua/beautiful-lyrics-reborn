@@ -2,6 +2,7 @@ import OpenCC from "opencc-js";
 // import { convertEnhancedLrcToSyllableLyrics } from "../convert/enhanced-lrc";
 import { convertLrcToLineLyrics } from "../convert/lrc";
 import { convertPlainTextToStatic } from "../convert/plain";
+import { withLyricRequestRetries } from "./request";
 import type {
   BeautifulLyrics,
   LineSyncedLyrics,
@@ -131,26 +132,33 @@ function buildExternalUrl(url: string, parameters: Record<string, string>): stri
   return parsedUrl.toString();
 }
 
-async function getJson<T>(fetchImpl: FetchLike, url: string): Promise<T | undefined> {
-  const response = await fetchImpl(url, {
-    headers: {
-      Accept: "application/json",
-      "User-Agent": userAgent
+async function getJson<T>(fetchImpl: FetchLike, url: string, retryOnTimeout = false): Promise<T | undefined> {
+  const request = async (signal?: AbortSignal): Promise<T | undefined> => {
+    const response = await fetchImpl(url, {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": userAgent
+      },
+      ...(signal === undefined ? {} : { signal })
+    });
+
+    if (response.ok === false) {
+      const body = await response.text().catch(() => "");
+      const snippet = body.trim().slice(0, 240);
+      console.warn(
+        `[lyrically] ${new URL(url).pathname}: ${response.status} ${response.statusText}${
+          snippet.length > 0 ? ` ${snippet}` : ""
+        }`
+      );
+      return undefined;
     }
-  });
 
-  if (response.ok === false) {
-    const body = await response.text().catch(() => "");
-    const snippet = body.trim().slice(0, 240);
-    console.warn(
-      `[lyrically] ${new URL(url).pathname}: ${response.status} ${response.statusText}${
-        snippet.length > 0 ? ` ${snippet}` : ""
-      }`
-    );
-    return undefined;
-  }
+    return (await response.json()) as T;
+  };
 
-  return (await response.json()) as T;
+  return retryOnTimeout
+    ? withLyricRequestRetries((signal) => request(signal), new URL(url).pathname)
+    : request();
 }
 
 async function getJsonString(fetchImpl: FetchLike, url: string): Promise<string | undefined> {
@@ -456,7 +464,8 @@ async function getKugouLyrics(
       id: matchedSong.hash,
       word: String(word),
       v: "2"
-    })
+    }),
+    word
   );
   if (word) {
     return timedWordsToSyllableLyrics(
@@ -504,7 +513,8 @@ async function getNeteaseLyrics(
       id: String(matchedSong.id),
       word: String(word),
       v: "2"
-    })
+    }),
+    word
   );
   if (word) {
     return timedWordsToSyllableLyrics(
@@ -603,7 +613,8 @@ async function getDeezerLyrics(fetchImpl: FetchLike, track: TrackMetadata): Prom
     buildUrl("/deezer/lyrics", {
       id: String(matchedSong.id),
       v: "2"
-    })
+    }),
+    true
   );
   if (payload === undefined || payload.isError === true) {
     console.log(

@@ -48,7 +48,7 @@ describe("QQ Music provider", () => {
       const request = body.req ?? body["music.musichallSong.PlayLyricInfo.GetPlayLyricInfo"];
 
       if (request?.method === "DoSearchForQQMusicDesktop") {
-        expect(init?.signal).toBeUndefined();
+        expect(init?.signal).toBeInstanceOf(AbortSignal);
         expect(request.param.query).toBe("布拉格广场 蔡依林");
         return new Response(
           JSON.stringify({

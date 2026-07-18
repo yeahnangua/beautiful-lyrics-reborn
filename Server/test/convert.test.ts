@@ -532,9 +532,11 @@ describe("Lyrically provider", () => {
   });
 
   it("gets Kugou syllable and line lyrics by hash", async () => {
+    let syllableRequest = true;
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input));
       if (url.pathname === "/kugou/search") {
+        expect(init?.signal === undefined).toBe(syllableRequest === false);
         expect(url.searchParams.get("q")).toBe("暖暖 梁靜茹");
         return new Response(
           JSON.stringify([
@@ -550,7 +552,7 @@ describe("Lyrically provider", () => {
       if (url.pathname === "/kugou/lyrics") {
         expect(url.searchParams.get("id")).toBe("d7e7a2c2b33386e834238ac7cbc3524e");
         expect(url.searchParams.get("v")).toBe("2");
-        expect(init?.signal === undefined).toBe(url.searchParams.get("word") === "false");
+        expect(init?.signal === undefined).toBe(syllableRequest === false);
         return new Response(
           JSON.stringify({
             provider: "kugou",
@@ -599,6 +601,7 @@ describe("Lyrically provider", () => {
         }
       ]
     });
+    syllableRequest = false;
     await expect(provider.getKugouLyrics(track, false)).resolves.toEqual({
       Type: "Line",
       StartTime: 1,
@@ -617,9 +620,11 @@ describe("Lyrically provider", () => {
   });
 
   it("gets NetEase syllable and line lyrics by song ID", async () => {
+    let syllableRequest = true;
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input));
       if (url.pathname === "/netease/search") {
+        expect(init?.signal === undefined).toBe(syllableRequest === false);
         expect(url.searchParams.get("q")).toBe("暖暖 梁靜茹");
         return new Response(
           JSON.stringify({
@@ -639,7 +644,7 @@ describe("Lyrically provider", () => {
       if (url.pathname === "/netease/lyrics") {
         expect(url.searchParams.get("id")).toBe("254141");
         expect(url.searchParams.get("v")).toBe("2");
-        expect(init?.signal === undefined).toBe(url.searchParams.get("word") === "false");
+        expect(init?.signal === undefined).toBe(syllableRequest === false);
         if (url.searchParams.get("word") === "true") {
           return new Response(
             JSON.stringify({
@@ -699,6 +704,7 @@ describe("Lyrically provider", () => {
         }
       ]
     });
+    syllableRequest = false;
     await expect(provider.getNeteaseLyrics(track, false)).resolves.toEqual({
       Type: "Line",
       StartTime: 1,
@@ -720,6 +726,7 @@ describe("Lyrically provider", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes("api.deezer.com/search/track")) {
+        expect(init?.signal).toBeInstanceOf(AbortSignal);
         return new Response(
           JSON.stringify({
             data: [
@@ -800,9 +807,10 @@ describe("Lyrically provider", () => {
   });
 
   it("keeps Lyrically Deezer line lyrics as Line output", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input));
       if (url.hostname === "api.deezer.com") {
+        expect(init?.signal).toBeInstanceOf(AbortSignal);
         return new Response(
           JSON.stringify({
             data: [
@@ -817,6 +825,7 @@ describe("Lyrically provider", () => {
         );
       }
       if (url.pathname === "/deezer/lyrics") {
+        expect(init?.signal).toBeInstanceOf(AbortSignal);
         expect(url.searchParams.get("id")).toBe("3602074142");
         expect(url.searchParams.get("v")).toBe("2");
         return new Response(

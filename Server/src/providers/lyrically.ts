@@ -405,7 +405,11 @@ async function getSpotifyLineLyrics(fetchImpl: FetchLike, track: TrackMetadata):
   return parseLyricallyTextLyrics(payload, track.durationSeconds);
 }
 
-async function searchKugou(fetchImpl: FetchLike, track: TrackMetadata): Promise<KugouSearchSong | undefined> {
+async function searchKugou(
+  fetchImpl: FetchLike,
+  track: TrackMetadata,
+  retryOnTimeout: boolean
+): Promise<KugouSearchSong | undefined> {
   const query = `${track.name} ${firstArtist(track)}`.trim();
   if (track.name.length === 0 || firstArtist(track).length === 0) {
     return undefined;
@@ -416,7 +420,8 @@ async function searchKugou(fetchImpl: FetchLike, track: TrackMetadata): Promise<
       fetchImpl,
       buildUrl("/kugou/search", {
         q: query
-      })
+      }),
+      retryOnTimeout
     )) ?? [];
   console.log(`[lyrically:kugou] search "${query}": ${songs.length} result(s)`);
 
@@ -433,7 +438,7 @@ async function getKugouLyrics(
   track: TrackMetadata,
   word: boolean
 ): Promise<BeautifulLyrics | undefined> {
-  const matchedSong = await searchKugou(fetchImpl, track);
+  const matchedSong = await searchKugou(fetchImpl, track, word);
   if (matchedSong?.hash === undefined) {
     return undefined;
   }
@@ -472,7 +477,8 @@ async function getNeteaseLyrics(
 
   const payload = await getJson<NeteaseSearchResponse>(
     fetchImpl,
-    buildUrl("/netease/search", { q: query })
+    buildUrl("/netease/search", { q: query }),
+    word
   );
   const songs = payload?.result?.songs ?? [];
   console.log(`[lyrically:netease] search "${query}": ${songs.length} result(s)`);
@@ -568,7 +574,8 @@ async function searchDeezer(fetchImpl: FetchLike, track: TrackMetadata): Promise
 
   const payload = await getJson<DeezerSearchResponse>(
     fetchImpl,
-    buildExternalUrl("https://api.deezer.com/search/track", { q: query })
+    buildExternalUrl("https://api.deezer.com/search/track", { q: query }),
+    true
   );
   const songs = payload?.data ?? [];
   console.log(`[lyrically:deezer] search "${query}": ${songs.length} result(s)`);

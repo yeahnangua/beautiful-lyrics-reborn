@@ -349,6 +349,14 @@ const TransformedLyricsStore = GetExpireStore<TransformedLyrics | false>(
 	},
 	true
 )
+export const ClearLyricsCache = (): Promise<void> => (
+	Promise.all(
+		[
+			ProviderLyricsStore.Clear(),
+			TransformedLyricsStore.Clear()
+		]
+	).then(() => undefined)
+)
 
 export let SongLyrics: (TransformedLyrics | undefined) = undefined
 export let HaveSongLyricsLoaded: boolean = false

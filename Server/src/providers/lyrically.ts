@@ -63,6 +63,25 @@ type KugouLyricResponse = {
   lyrics?: KugouLyricLine[];
 };
 
+type NeteaseSearchSong = {
+  id?: number;
+  name?: string;
+  duration?: number;
+  artists?: Array<{ name?: string }>;
+};
+
+type NeteaseSearchResponse = {
+  result?: { songs?: NeteaseSearchSong[] };
+};
+
+type NeteaseLyricResponse = KugouLyricResponse & {
+  metadata?: {
+    rawData?: {
+      lrc?: { lyric?: string };
+    };
+  };
+};
+
 type YouTubeSearchVideo = {
   videoId?: string;
   title?: string;
@@ -450,6 +469,57 @@ async function getKugouLyrics(
   return timedLinesToLineLyrics(payload?.lyrics, track.durationSeconds);
 }
 
+async function getNeteaseLyrics(
+  fetchImpl: FetchLike,
+  track: TrackMetadata,
+  word: boolean
+): Promise<BeautifulLyrics | undefined> {
+  const query = `${track.name} ${firstArtist(track)}`.trim();
+  if (track.name.length === 0 || firstArtist(track).length === 0) {
+    return undefined;
+  }
+
+  const payload = await getJson<NeteaseSearchResponse>(
+    fetchImpl,
+    buildUrl("/netease/search", { q: query })
+  );
+  const songs = payload?.result?.songs ?? [];
+  console.log(`[lyrically:netease] search "${query}": ${songs.length} result(s)`);
+
+  const matches = (song: NeteaseSearchSong, baseTitle: boolean) =>
+    song.id !== undefined &&
+    (baseTitle ? baseTitleMatches(song.name, track) : titleMatches(song.name, track)) &&
+    artistMatches(song.artists?.map((artist) => artist.name ?? "").join(", "), track) &&
+    durationMatches(song.duration === undefined ? undefined : song.duration / 1000, track.durationSeconds);
+  const matchedSong = songs.find((song) => matches(song, false)) ?? songs.find((song) => matches(song, true));
+  if (matchedSong?.id === undefined) {
+    return undefined;
+  }
+  console.log(`[lyrically:netease] matched ${matchedSong.id} "${matchedSong.name ?? "unknown title"}"`);
+
+  const lyricsPayload = await getJson<NeteaseLyricResponse>(
+    fetchImpl,
+    buildUrl("/netease/lyrics", {
+      id: String(matchedSong.id),
+      word: String(word),
+      v: "2"
+    })
+  );
+  if (word) {
+    return timedWordsToSyllableLyrics(
+      lyricsPayload?.lyrics?.map((line) => ({
+        ...line,
+        text: Array.isArray(line.text) ? line.text : []
+      }))
+    );
+  }
+
+  return (
+    timedLinesToLineLyrics(lyricsPayload?.lyrics, track.durationSeconds) ??
+    convertLrcToLineLyrics(lyricsPayload?.metadata?.rawData?.lrc?.lyric, track.durationSeconds)
+  );
+}
+
 async function getYouTubeLyrics(fetchImpl: FetchLike, track: TrackMetadata): Promise<BeautifulLyrics | undefined> {
   if (track.name.length === 0 || firstArtist(track).length === 0) {
     return undefined;
@@ -600,6 +670,10 @@ export function createLyricallyProvider(fetchImpl: FetchLike = fetch): Lyrically
 
     async getKugouLyrics(track: TrackMetadata, word: boolean): Promise<BeautifulLyrics | undefined> {
       return getKugouLyrics(fetchImpl, track, word);
+    },
+
+    async getNeteaseLyrics(track: TrackMetadata, word: boolean): Promise<BeautifulLyrics | undefined> {
+      return getNeteaseLyrics(fetchImpl, track, word);
     },
 
     async getLyrics(track: TrackMetadata): Promise<BeautifulLyrics | undefined> {

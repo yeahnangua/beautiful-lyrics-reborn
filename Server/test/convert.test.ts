@@ -647,6 +647,105 @@ describe("Lyrically provider", () => {
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
+  it("gets NetEase syllable and line lyrics by song ID", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/netease/search") {
+        expect(url.searchParams.get("q")).toBe("暖暖 梁靜茹");
+        return new Response(
+          JSON.stringify({
+            result: {
+              songs: [
+                {
+                  id: 254141,
+                  name: "暖暖",
+                  duration: 243160,
+                  artists: [{ name: "梁静茹" }]
+                }
+              ]
+            }
+          })
+        );
+      }
+      if (url.pathname === "/netease/lyrics") {
+        expect(url.searchParams.get("id")).toBe("254141");
+        expect(url.searchParams.get("v")).toBe("2");
+        if (url.searchParams.get("word") === "true") {
+          return new Response(
+            JSON.stringify({
+              provider: "netease",
+              syncType: "Syllable",
+              lyrics: [
+                {
+                  text: [
+                    { text: "暖", part: true, timestamp: 1000, endtime: 1500 },
+                    { text: "暖", part: false, timestamp: 1500, endtime: 2000 }
+                  ],
+                  timestamp: 1000,
+                  endtime: 2000,
+                  oppositeTurn: false
+                }
+              ]
+            })
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            provider: "netease",
+            syncType: "Line",
+            lyrics: [],
+            metadata: { rawData: { lrc: { lyric: "[00:01.00]暖暖" } } }
+          })
+        );
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+    const provider = createLyricallyProvider(fetchMock);
+    const track = {
+      id: "spotifyTrack",
+      name: "暖暖",
+      artists: ["梁靜茹"],
+      durationSeconds: 243
+    };
+
+    await expect(provider.getNeteaseLyrics(track, true)).resolves.toEqual({
+      Type: "Syllable",
+      StartTime: 1,
+      EndTime: 2,
+      Content: [
+        {
+          Type: "Vocal",
+          OppositeAligned: false,
+          Lead: {
+            StartTime: 1,
+            EndTime: 2,
+            Syllables: [
+              { Text: "暖", StartTime: 1, EndTime: 1.5, IsPartOfWord: true },
+              { Text: "暖", StartTime: 1.5, EndTime: 2, IsPartOfWord: false }
+            ]
+          }
+        }
+      ]
+    });
+    await expect(provider.getNeteaseLyrics(track, false)).resolves.toEqual({
+      Type: "Line",
+      StartTime: 1,
+      EndTime: 243,
+      Content: [
+        {
+          Type: "Vocal",
+          Text: "暖暖",
+          StartTime: 1,
+          EndTime: 243,
+          OppositeAligned: false
+        }
+      ]
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
   it("converts Lyrically Deezer word lyrics to Syllable output", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

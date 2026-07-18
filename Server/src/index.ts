@@ -4,7 +4,8 @@ import { lyricallyProvider } from "./providers/lyrically";
 import { qqMusicProvider } from "./providers/qqmusic";
 import { spotifyProvider } from "./providers/spotify";
 import { createLyricsService, type LyricsService } from "./service";
-import type { SpotifyClientContext, TrackMetadata } from "./types";
+import type { BeautifulLyrics, SpotifyClientContext, TrackMetadata } from "./types";
+import { dashboardHtml } from "./dashboard";
 
 const defaultService = createLyricsService({
   // amlldb: amllDbProvider,
@@ -111,9 +112,62 @@ function extractTrackMetadata(url: URL, trackId: string): TrackMetadata | undefi
   return trackMetadata;
 }
 
-export function createWorker(service: LyricsService): ExportedHandler {
+type WorkerEnv = {
+  STATS?: AnalyticsEngineDataset;
+  STATS_ACCOUNT_ID?: string;
+  STATS_API_TOKEN?: string;
+};
+
+function recordOutcome(env: WorkerEnv, lyrics: BeautifulLyrics | undefined): void {
+  const outcome = lyrics === undefined ? "none" : lyrics.Type.toLowerCase();
+  env.STATS?.writeDataPoint({ blobs: [outcome], indexes: [outcome] });
+}
+
+async function statsResponse(env: WorkerEnv, url: URL): Promise<Response> {
+  if (env.STATS_ACCOUNT_ID === undefined || env.STATS_API_TOKEN === undefined) {
+    return new Response("Stats not configured", { status: 503, headers: corsHeaders });
+  }
+
+  const days = Math.min(90, Math.max(1, Number(url.searchParams.get("days")) || 30));
+  const sql = `SELECT blob1 AS outcome, sum(_sample_interval) AS n
+    FROM lyrics_outcomes
+    WHERE timestamp > NOW() - INTERVAL '${days}' DAY
+    GROUP BY outcome`;
+
+  const response = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${env.STATS_ACCOUNT_ID}/analytics_engine/sql`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.STATS_API_TOKEN}` },
+      body: sql
+    }
+  );
+  if (!response.ok) {
+    return new Response(`Stats query failed: ${await response.text()}`, {
+      status: 502,
+      headers: corsHeaders
+    });
+  }
+
+  const { data } = (await response.json()) as { data: { outcome: string; n: number }[] };
+  const counts: Record<string, number> = { syllable: 0, line: 0, static: 0, none: 0 };
+  for (const row of data) {
+    counts[row.outcome] = (counts[row.outcome] ?? 0) + Number(row.n);
+  }
+  const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
+  const stats = Object.fromEntries(
+    Object.entries(counts).map(([outcome, n]) => [
+      outcome,
+      { count: n, percent: total === 0 ? 0 : Math.round((n / total) * 1000) / 10 }
+    ])
+  );
+
+  return jsonResponse({ days, total, ...stats });
+}
+
+export function createWorker(service: LyricsService): ExportedHandler<WorkerEnv> {
   return {
-    async fetch(request: Request): Promise<Response> {
+    async fetch(request: Request, env: WorkerEnv): Promise<Response> {
       if (request.method === "OPTIONS") {
         return new Response(null, {
           status: 204,
@@ -122,6 +176,18 @@ export function createWorker(service: LyricsService): ExportedHandler {
       }
 
       const url = new URL(request.url);
+
+      if (request.method === "GET" && url.pathname === "/") {
+        return new Response(dashboardHtml, {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "text/html; charset=utf-8" }
+        });
+      }
+
+      if (request.method === "GET" && url.pathname === "/stats") {
+        return statsResponse(env, url);
+      }
+
       const routeMatch = /^\/lyrics\/([^/]+)$/.exec(url.pathname);
 
       if (request.method !== "GET" || routeMatch === null) {
@@ -154,6 +220,8 @@ export function createWorker(service: LyricsService): ExportedHandler {
         extractTrackMetadata(url, trackId),
         extractSpotifyClientContext(request)
       );
+
+      recordOutcome(env, lyrics);
 
       if (lyrics === undefined) {
         return emptyLyricsResponse();

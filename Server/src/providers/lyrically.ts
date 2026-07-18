@@ -44,6 +44,7 @@ type TimedLyricLine = {
 
 type DeezerLyricResponse = {
   isError?: boolean;
+  syncType?: string;
   plain_lyrics?: string;
   lyrics?: TimedLyricLine[];
 };
@@ -600,7 +601,8 @@ async function getDeezerLyrics(fetchImpl: FetchLike, track: TrackMetadata): Prom
   const payload = await getJson<DeezerLyricResponse>(
     fetchImpl,
     buildUrl("/deezer/lyrics", {
-      id: String(matchedSong.id)
+      id: String(matchedSong.id),
+      v: "2"
     })
   );
   if (payload === undefined || payload.isError === true) {
@@ -612,7 +614,12 @@ async function getDeezerLyrics(fetchImpl: FetchLike, track: TrackMetadata): Prom
     return undefined;
   }
 
-  const lyrics = timedWordsToSyllableLyrics(payload.lyrics) ?? convertPlainTextToStatic(payload.plain_lyrics);
+  const lyrics =
+    (payload.syncType === "Syllable"
+      ? timedWordsToSyllableLyrics(payload.lyrics)
+      : payload.syncType === "Line"
+        ? timedLinesToLineLyrics(payload.lyrics, track.durationSeconds)
+        : undefined) ?? convertPlainTextToStatic(payload.plain_lyrics);
   if (lyrics === undefined) {
     console.log(`[lyrically:deezer] lyrics ${matchedSong.id}: no usable lyrics`);
   }

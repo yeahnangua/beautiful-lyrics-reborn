@@ -4,7 +4,7 @@ import { IsDevelopment } from "./Session.ts"
 // Configuration Types
 export type ExpirationSettings = {
 	Duration: number;
-	Unit: ("Weeks" | "Months");
+	Unit: ("Days" | "Weeks" | "Months");
 }
 
 // Instant Store Types
@@ -183,7 +183,9 @@ export const GetExpireStore = <ItemType>(
 				// Determine when we expire
 				const expireAtDate = new Date()
 				expireAtDate.setHours(0, 0, 0, 0)
-				if (itemExpirationSettings.Unit == "Weeks") {
+				if (itemExpirationSettings.Unit == "Days") {
+					expireAtDate.setDate(expireAtDate.getDate() + itemExpirationSettings.Duration)
+				} else if (itemExpirationSettings.Unit == "Weeks") {
 					expireAtDate.setDate(expireAtDate.getDate() + (itemExpirationSettings.Duration * 7))
 				} else {
 					expireAtDate.setMonth(expireAtDate.getMonth() + itemExpirationSettings.Duration)

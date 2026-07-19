@@ -19,6 +19,7 @@ function createProviders(): ProviderClients {
     },
     lyrically: {
       // getSyllableLyrics: vi.fn().mockResolvedValue(undefined),
+      getAppleMusicLyrics: vi.fn().mockResolvedValue(undefined),
       getKugouLyrics: vi.fn().mockResolvedValue(undefined),
       getNeteaseLyrics: vi.fn().mockResolvedValue(undefined),
       getLyrics: vi.fn().mockResolvedValue(undefined),

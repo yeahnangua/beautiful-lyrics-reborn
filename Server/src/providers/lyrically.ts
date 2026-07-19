@@ -66,6 +66,19 @@ type KugouLyricResponse = {
   lyrics?: KugouLyricLine[];
 };
 
+type AppleMusicSearchSong = {
+  trackId?: number;
+  trackName?: string;
+  artistName?: string;
+  trackTimeMillis?: number;
+};
+
+type AppleMusicSearchResponse = {
+  results?: AppleMusicSearchSong[];
+};
+
+type AppleMusicLyricResponse = KugouLyricResponse;
+
 type NeteaseSearchSong = {
   id?: number;
   name?: string;
@@ -452,6 +465,80 @@ async function getSpotifyLineLyrics(fetchImpl: FetchLike, track: TrackMetadata):
   return parseLyricallyTextLyrics(payload, track.durationSeconds);
 }
 
+async function searchAppleMusic(
+  fetchImpl: FetchLike,
+  track: TrackMetadata
+): Promise<AppleMusicSearchSong | undefined> {
+  if (track.name.length === 0) {
+    return undefined;
+  }
+
+  const query = `${track.name} ${firstArtist(track)}`.trim();
+  const payload = await getJson<AppleMusicSearchResponse>(
+    fetchImpl,
+    buildExternalUrl("https://itunes.apple.com/search", {
+      term: query,
+      media: "music",
+      entity: "song",
+      limit: "10"
+    }),
+    true
+  );
+  const songs = asArray(payload?.results, "apple music search");
+  console.log(`[lyrically:apple] search "${query}": ${songs.length} result(s)`);
+
+  // The iTunes storefront localizes artist names ("五月天" ↔ "Mayday"), so the artist can
+  // only ever strengthen a match — title and duration decide.
+  const candidates = songs.filter(
+    (song) =>
+      song.trackId !== undefined &&
+      durationMatches(
+        song.trackTimeMillis === undefined ? undefined : song.trackTimeMillis / 1000,
+        track.durationSeconds
+      )
+  );
+  return (
+    candidates.find((song) => titleMatches(song.trackName, track) && artistMatches(song.artistName, track)) ??
+    candidates.find((song) => titleMatches(song.trackName, track)) ??
+    candidates.find((song) => baseTitleMatches(song.trackName, track) && artistMatches(song.artistName, track)) ??
+    candidates.find((song) => baseTitleMatches(song.trackName, track))
+  );
+}
+
+async function getAppleMusicLyrics(fetchImpl: FetchLike, track: TrackMetadata): Promise<BeautifulLyrics | undefined> {
+  const matchedSong = await searchAppleMusic(fetchImpl, track);
+  if (matchedSong?.trackId === undefined) {
+    return undefined;
+  }
+  console.log(`[lyrically:apple] matched ${matchedSong.trackId} "${matchedSong.trackName ?? "unknown title"}"`);
+
+  const payload = await getJson<AppleMusicLyricResponse>(
+    fetchImpl,
+    buildUrl("/apple-music/lyrics", {
+      id: String(matchedSong.trackId),
+      v: "2"
+    }),
+    true
+  );
+  const lyrics =
+    payload?.syncType === "Syllable" || payload?.syncType === "Word"
+      ? timedWordsToSyllableLyrics(
+          payload.lyrics?.map((line) => ({
+            ...line,
+            text: Array.isArray(line.text) ? line.text : []
+          }))
+        )
+      : timedLinesToLineLyrics(payload?.lyrics, track.durationSeconds);
+  if (lyrics === undefined) {
+    console.log(
+      `[lyrically:apple] lyrics ${matchedSong.trackId}: no usable lyrics (syncType ${
+        payload?.syncType ?? "unknown"
+      }, ${asArray(payload?.lyrics).length} timed line(s))`
+    );
+  }
+  return lyrics;
+}
+
 async function searchKugou(
   fetchImpl: FetchLike,
   track: TrackMetadata,
@@ -742,6 +829,10 @@ export function createLyricallyProvider(fetchImpl: FetchLike = fetch): Lyrically
       return getMusixmatchWordLyrics(fetchImpl, track);
     },
     */
+
+    async getAppleMusicLyrics(track: TrackMetadata): Promise<BeautifulLyrics | undefined> {
+      return getAppleMusicLyrics(fetchImpl, track);
+    },
 
     async getKugouLyrics(track: TrackMetadata, word: boolean): Promise<BeautifulLyrics | undefined> {
       return getKugouLyrics(fetchImpl, track, word);

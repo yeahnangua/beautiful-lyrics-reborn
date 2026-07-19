@@ -58,6 +58,7 @@ export type TrackMetadata = {
   album?: string;
   durationSeconds?: number;
   isrc?: string;
+  appleMusicId?: string;
 };
 
 export type SpotifyClientContext = {

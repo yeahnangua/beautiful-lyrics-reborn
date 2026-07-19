@@ -179,7 +179,14 @@ function matchesTrack(song: QqMusicSearchSong, track: TrackMetadata): boolean {
   }
 
   const normalizedSongArtists = artistNames(song).map(normalize);
-  const hasMatchingArtist = track.artists.some((artist) => normalizedSongArtists.includes(normalize(artist)));
+  // ponytail: bidirectional includes — Spotify names like "JOLIN蔡依林" must match QQ names like "蔡依林";
+  // the exact-title and duration checks backstop short-substring false positives.
+  const hasMatchingArtist = track.artists.some((artist) => {
+    const normalizedArtist = normalize(artist);
+    return normalizedSongArtists.some(
+      (songArtist) => songArtist.includes(normalizedArtist) || normalizedArtist.includes(songArtist)
+    );
+  });
   return hasMatchingArtist && durationMatches(song, track);
 }
 
@@ -231,7 +238,8 @@ async function searchSongs(fetchImpl: FetchLike, query: string): Promise<QqMusic
     true
   );
 
-  const songs = payload?.req?.data?.body?.song?.list ?? [];
+  const list = payload?.req?.data?.body?.song?.list;
+  const songs = Array.isArray(list) ? list : [];
   logSearchResults(query, songs);
   return songs;
 }

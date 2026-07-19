@@ -163,6 +163,11 @@ async function getJson<T>(fetchImpl: FetchLike, url: string, retryOnTimeout = fa
 
 
 
+// APIs occasionally return an error object where an array is promised; the cast in getJson cannot catch that.
+function asArray<T>(value: T[] | undefined): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
 function normalize(value: string): string {
   return traditionalToSimplified(value)
     .toLocaleLowerCase()
@@ -227,7 +232,12 @@ function artistMatches(candidate: string | undefined, track: TrackMetadata): boo
   }
 
   const normalizedCandidate = normalize(candidate);
-  return track.artists.some((artist) => normalizedCandidate.includes(normalize(artist)));
+  // ponytail: bidirectional includes — Spotify names like "JOLIN蔡依林" must match provider names like "蔡依林";
+  // short-substring false positives are backstopped by the title and duration checks.
+  return track.artists.some((artist) => {
+    const normalizedArtist = normalize(artist);
+    return normalizedCandidate.includes(normalizedArtist) || normalizedArtist.includes(normalizedCandidate);
+  });
 }
 
 function parseDurationSeconds(duration: string | undefined): number | undefined {
@@ -415,14 +425,15 @@ async function searchKugou(
     return undefined;
   }
 
-  const songs =
-    (await getJson<KugouSearchSong[]>(
+  const songs = asArray(
+    await getJson<KugouSearchSong[]>(
       fetchImpl,
       buildUrl("/kugou/search", {
         q: query
       }),
       retryOnTimeout
-    )) ?? [];
+    )
+  );
   console.log(`[lyrically:kugou] search "${query}": ${songs.length} result(s)`);
 
   const matches = (song: KugouSearchSong, baseTitle: boolean) =>
@@ -480,7 +491,7 @@ async function getNeteaseLyrics(
     buildUrl("/netease/search", { q: query }),
     word
   );
-  const songs = payload?.result?.songs ?? [];
+  const songs = asArray(payload?.result?.songs);
   console.log(`[lyrically:netease] search "${query}": ${songs.length} result(s)`);
 
   const matches = (song: NeteaseSearchSong, baseTitle: boolean) =>
@@ -523,13 +534,14 @@ async function getYouTubeLyrics(fetchImpl: FetchLike, track: TrackMetadata): Pro
     return undefined;
   }
 
-  const videos =
-    (await getJson<YouTubeSearchVideo[]>(
+  const videos = asArray(
+    await getJson<YouTubeSearchVideo[]>(
       fetchImpl,
       buildUrl("/youtube/search", {
         q: `${track.name} ${firstArtist(track)}`
       })
-    )) ?? [];
+    )
+  );
   console.log(`[lyrically:youtube] search "${track.name} ${firstArtist(track)}": ${videos.length} result(s)`);
 
   const matchedVideos = videos
@@ -577,7 +589,7 @@ async function searchDeezer(fetchImpl: FetchLike, track: TrackMetadata): Promise
     buildExternalUrl("https://api.deezer.com/search/track", { q: query }),
     true
   );
-  const songs = payload?.data ?? [];
+  const songs = asArray(payload?.data);
   console.log(`[lyrically:deezer] search "${query}": ${songs.length} result(s)`);
 
   return songs.find(
@@ -635,7 +647,7 @@ async function searchGenius(fetchImpl: FetchLike, track: TrackMetadata): Promise
     fetchImpl,
     buildExternalUrl("https://genius.com/api/search/song", { q: query })
   );
-  const hits = payload?.response?.sections?.flatMap((section) => section.hits ?? []) ?? [];
+  const hits = asArray(payload?.response?.sections).flatMap((section) => asArray(section.hits));
   console.log(`[lyrically:genius] search "${query}": ${hits.length} result(s)`);
 
   const matchedHit = hits.find((hit) => {

@@ -109,6 +109,11 @@ function extractTrackMetadata(url: URL, trackId: string): TrackMetadata | undefi
     trackMetadata.isrc = isrc;
   }
 
+  const appleMusicId = nonEmptyParameter(url, "apple_id");
+  if (appleMusicId !== undefined && /^\d+$/.test(appleMusicId)) {
+    trackMetadata.appleMusicId = appleMusicId;
+  }
+
   return trackMetadata;
 }
 

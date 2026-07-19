@@ -569,7 +569,7 @@ describe("Lyrically provider", () => {
       const url = new URL(String(input));
       if (url.pathname === "/kugou/search") {
         expect(init?.signal === undefined).toBe(syllableRequest === false);
-        expect(url.searchParams.get("q")).toBe("暖暖 梁靜茹");
+        expect(url.searchParams.get("q")).toBe(syllableRequest ? "暖暖" : "暖暖 梁靜茹");
         return new Response(
           JSON.stringify([
             {
@@ -657,7 +657,7 @@ describe("Lyrically provider", () => {
       const url = new URL(String(input));
       if (url.pathname === "/netease/search") {
         expect(init?.signal === undefined).toBe(syllableRequest === false);
-        expect(url.searchParams.get("q")).toBe("暖暖 梁靜茹");
+        expect(url.searchParams.get("q")).toBe(syllableRequest ? "暖暖" : "暖暖 梁靜茹");
         return new Response(
           JSON.stringify({
             result: {

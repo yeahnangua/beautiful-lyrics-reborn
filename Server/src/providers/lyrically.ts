@@ -62,6 +62,7 @@ type KugouLyricLine = Omit<TimedLyricLine, "text"> & {
 };
 
 type KugouLyricResponse = {
+  syncType?: string;
   lyrics?: KugouLyricLine[];
 };
 
@@ -167,8 +168,15 @@ async function getJsonString(fetchImpl: FetchLike, url: string): Promise<string 
 }
 
 // APIs occasionally return an error object where an array is promised; the cast in getJson cannot catch that.
-function asArray<T>(value: T[] | undefined): T[] {
-  return Array.isArray(value) ? value : [];
+// Passing a label logs the stray payload so rate-limit errors hiding behind HTTP 200 show up in CF logs.
+function asArray<T>(value: T[] | undefined, label?: string): T[] {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (value !== undefined && label !== undefined) {
+    console.warn(`[lyrically] ${label}: expected an array, got ${JSON.stringify(value)?.slice(0, 240)}`);
+  }
+  return [];
 }
 
 function normalize(value: string): string {
@@ -397,6 +405,15 @@ function parseLyricallyTextLyrics(payload: unknown, durationSeconds?: number): B
   }
 
   const record = payload as Record<string, unknown>;
+  if (Array.isArray(record.lyrics)) {
+    const timedLines = record.lyrics as KugouLyricLine[];
+    return record.syncType === "Syllable" || record.syncType === "Word"
+      ? timedWordsToSyllableLyrics(
+          timedLines.map((line) => ({ ...line, text: Array.isArray(line.text) ? line.text : [] }))
+        )
+      : timedLinesToLineLyrics(timedLines, durationSeconds);
+  }
+
   const possibleText = record.lyrics ?? record.plain_lyrics;
   if (typeof possibleText !== "string") {
     return undefined;
@@ -427,7 +444,8 @@ async function getSpotifyLineLyrics(fetchImpl: FetchLike, track: TrackMetadata):
   const payload = await getJson<unknown>(
     fetchImpl,
     buildUrl("/spotify/lyrics", {
-      id: track.id
+      id: track.id,
+      v: "2"
     })
   );
 
@@ -437,9 +455,11 @@ async function getSpotifyLineLyrics(fetchImpl: FetchLike, track: TrackMetadata):
 async function searchKugou(
   fetchImpl: FetchLike,
   track: TrackMetadata,
-  retryOnTimeout: boolean
+  word: boolean
 ): Promise<KugouSearchSong | undefined> {
-  const query = `${track.name} ${firstArtist(track)}`.trim();
+  // ponytail: word searches query the title only to reduce upstream rate limiting;
+  // the artist and duration matching below filters the wider result set.
+  const query = word ? track.name : `${track.name} ${firstArtist(track)}`.trim();
   if (track.name.length === 0 || firstArtist(track).length === 0) {
     return undefined;
   }
@@ -448,10 +468,12 @@ async function searchKugou(
     await getJson<KugouSearchSong[]>(
       fetchImpl,
       buildUrl("/kugou/search", {
-        q: query
+        q: query,
+        v: "2"
       }),
-      retryOnTimeout
-    )
+      word
+    ),
+    "kugou search"
   );
   console.log(`[lyrically:kugou] search "${query}": ${songs.length} result(s)`);
 
@@ -483,16 +505,22 @@ async function getKugouLyrics(
     }),
     word
   );
-  if (word) {
-    return timedWordsToSyllableLyrics(
-      payload?.lyrics?.map((line) => ({
-        ...line,
-        text: Array.isArray(line.text) ? line.text : []
-      }))
+  const lyrics = word
+    ? timedWordsToSyllableLyrics(
+        payload?.lyrics?.map((line) => ({
+          ...line,
+          text: Array.isArray(line.text) ? line.text : []
+        }))
+      )
+    : timedLinesToLineLyrics(payload?.lyrics, track.durationSeconds);
+  if (lyrics === undefined) {
+    console.log(
+      `[lyrically:kugou] lyrics ${matchedSong.hash}: no usable ${word ? "word" : "line"} lyrics (syncType ${
+        payload?.syncType ?? "unknown"
+      }, ${asArray(payload?.lyrics).length} timed line(s))`
     );
   }
-
-  return timedLinesToLineLyrics(payload?.lyrics, track.durationSeconds);
+  return lyrics;
 }
 
 async function getNeteaseLyrics(
@@ -500,17 +528,19 @@ async function getNeteaseLyrics(
   track: TrackMetadata,
   word: boolean
 ): Promise<BeautifulLyrics | undefined> {
-  const query = `${track.name} ${firstArtist(track)}`.trim();
+  // ponytail: word searches query the title only to reduce upstream rate limiting;
+  // the artist and duration matching below filters the wider result set.
+  const query = word ? track.name : `${track.name} ${firstArtist(track)}`.trim();
   if (track.name.length === 0 || firstArtist(track).length === 0) {
     return undefined;
   }
 
   const payload = await getJson<NeteaseSearchResponse>(
     fetchImpl,
-    buildUrl("/netease/search", { q: query }),
+    buildUrl("/netease/search", { q: query, v: "2" }),
     word
   );
-  const songs = asArray(payload?.result?.songs);
+  const songs = asArray(payload?.result?.songs, "netease search");
   console.log(`[lyrically:netease] search "${query}": ${songs.length} result(s)`);
 
   const matches = (song: NeteaseSearchSong, baseTitle: boolean) =>
@@ -533,19 +563,23 @@ async function getNeteaseLyrics(
     }),
     word
   );
-  if (word) {
-    return timedWordsToSyllableLyrics(
-      lyricsPayload?.lyrics?.map((line) => ({
-        ...line,
-        text: Array.isArray(line.text) ? line.text : []
-      }))
+  const lyrics = word
+    ? timedWordsToSyllableLyrics(
+        lyricsPayload?.lyrics?.map((line) => ({
+          ...line,
+          text: Array.isArray(line.text) ? line.text : []
+        }))
+      )
+    : (timedLinesToLineLyrics(lyricsPayload?.lyrics, track.durationSeconds) ??
+      convertLrcToLineLyrics(lyricsPayload?.metadata?.rawData?.lrc?.lyric, track.durationSeconds));
+  if (lyrics === undefined) {
+    console.log(
+      `[lyrically:netease] lyrics ${matchedSong.id}: no usable ${word ? "word" : "line"} lyrics (syncType ${
+        lyricsPayload?.syncType ?? "unknown"
+      }, ${asArray(lyricsPayload?.lyrics).length} timed line(s))`
     );
   }
-
-  return (
-    timedLinesToLineLyrics(lyricsPayload?.lyrics, track.durationSeconds) ??
-    convertLrcToLineLyrics(lyricsPayload?.metadata?.rawData?.lrc?.lyric, track.durationSeconds)
-  );
+  return lyrics;
 }
 
 async function getYouTubeLyrics(fetchImpl: FetchLike, track: TrackMetadata): Promise<BeautifulLyrics | undefined> {
@@ -557,9 +591,11 @@ async function getYouTubeLyrics(fetchImpl: FetchLike, track: TrackMetadata): Pro
     await getJson<YouTubeSearchVideo[]>(
       fetchImpl,
       buildUrl("/youtube/search", {
-        q: `${track.name} ${firstArtist(track)}`
+        q: `${track.name} ${firstArtist(track)}`,
+        v: "2"
       })
-    )
+    ),
+    "youtube search"
   );
   console.log(`[lyrically:youtube] search "${track.name} ${firstArtist(track)}": ${videos.length} result(s)`);
 
@@ -581,7 +617,8 @@ async function getYouTubeLyrics(fetchImpl: FetchLike, track: TrackMetadata): Pro
     const payload = await getJson<unknown>(
       fetchImpl,
       buildUrl("/youtube/lyrics", {
-        id: matchedVideo.videoId
+        id: matchedVideo.videoId,
+        v: "2"
       })
     );
     const lyrics = parseLyricallyTextLyrics(payload, track.durationSeconds);
@@ -608,7 +645,7 @@ async function searchDeezer(fetchImpl: FetchLike, track: TrackMetadata): Promise
     buildExternalUrl("https://api.deezer.com/search/track", { q: query }),
     true
   );
-  const songs = asArray(payload?.data);
+  const songs = asArray(payload?.data, "deezer search");
   console.log(`[lyrically:deezer] search "${query}": ${songs.length} result(s)`);
 
   return songs.find(
@@ -666,7 +703,7 @@ async function searchGenius(fetchImpl: FetchLike, track: TrackMetadata): Promise
     fetchImpl,
     buildExternalUrl("https://genius.com/api/search/song", { q: query })
   );
-  const hits = asArray(payload?.response?.sections).flatMap((section) => asArray(section.hits));
+  const hits = asArray(payload?.response?.sections, "genius search").flatMap((section) => asArray(section.hits));
   console.log(`[lyrically:genius] search "${query}": ${hits.length} result(s)`);
 
   const matchedHit = hits.find((hit) => {
@@ -687,7 +724,8 @@ async function getGeniusLyrics(fetchImpl: FetchLike, track: TrackMetadata): Prom
   const payload = await getJson<GeniusLyricResponse>(
     fetchImpl,
     buildUrl("/genius/lyrics", {
-      url: geniusUrl
+      url: geniusUrl,
+      v: "2"
     })
   );
   if (payload === undefined || payload.error === true) {

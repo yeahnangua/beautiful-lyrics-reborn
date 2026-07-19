@@ -18,7 +18,9 @@ type QqMusicSearchSong = {
 };
 
 type QqMusicSearchResponse = {
+  code?: number;
   req?: {
+    code?: number;
     data?: {
       body?: {
         song?: {
@@ -60,10 +62,6 @@ const languageTags = new Set([
   "英文"
 ]);
 
-function uniqueValues(values: string[]): string[] {
-  return [...new Set(values.map((value) => value.trim()).filter((value) => value.length > 0))];
-}
-
 function normalize(value: string): string {
   return traditionalToSimplified(value).toLocaleLowerCase();
 }
@@ -98,17 +96,6 @@ function normalizeTitleForComparison(value: string): string {
 
 function firstArtist(track: TrackMetadata): string {
   return track.artists[0] ?? "";
-}
-
-function queryValues(track: TrackMetadata): string[] {
-  const simplifiedTitle = traditionalToSimplified(track.name);
-  const simplifiedArtist = traditionalToSimplified(firstArtist(track));
-  return uniqueValues([
-    `${simplifiedTitle} ${simplifiedArtist}`,
-    `${track.name} ${firstArtist(track)}`,
-    simplifiedTitle,
-    track.name
-  ]);
 }
 
 export function decryptQrcHex(hex: string): string | undefined {
@@ -205,6 +192,11 @@ async function postMusicu<T>(fetchImpl: FetchLike, body: unknown, retryOnTimeout
     });
 
     if (response.ok === false) {
+      const body = await response.text().catch(() => "");
+      const snippet = body.trim().slice(0, 240);
+      console.warn(
+        `[qqmusic] request failed: ${response.status} ${response.statusText}${snippet.length > 0 ? ` ${snippet}` : ""}`
+      );
       return undefined;
     }
 
@@ -240,6 +232,12 @@ async function searchSongs(fetchImpl: FetchLike, query: string): Promise<QqMusic
 
   const list = payload?.req?.data?.body?.song?.list;
   const songs = Array.isArray(list) ? list : [];
+  // A genuine empty result carries code 0 and an empty list; a block/rate limit carries a non-zero code and no list.
+  if (payload !== undefined && Array.isArray(list) === false) {
+    console.warn(
+      `[qqmusic] search "${query}": no song list (code ${payload.code ?? "?"}, req code ${payload.req?.code ?? "?"})`
+    );
+  }
   logSearchResults(query, songs);
   return songs;
 }
@@ -276,25 +274,20 @@ export function createQqMusicProvider(fetchImpl: FetchLike = fetch): QqMusicProv
         return undefined;
       }
 
-      for (const query of queryValues(track)) {
-        const songs = await searchSongs(fetchImpl, query);
-        const firstSong = songs[0];
-        const matchedSong =
-          firstSong?.id !== undefined && closeDurationMatches(firstSong, track, 1)
-            ? firstSong
-            : songs.find((song) => matchesTrack(song, track));
-        if (matchedSong?.id === undefined) {
-          continue;
-        }
-        logMatchedSong(matchedSong);
-
-        const lyrics = await getQrcLyrics(fetchImpl, matchedSong.id);
-        if (lyrics !== undefined) {
-          return lyrics;
-        }
+      // ponytail: one title-only search (simplified) to stay under QQ rate limits;
+      // artist and duration matching below picks the right song from the wider results.
+      const songs = await searchSongs(fetchImpl, traditionalToSimplified(track.name));
+      const firstSong = songs[0];
+      const matchedSong =
+        firstSong?.id !== undefined && closeDurationMatches(firstSong, track, 1)
+          ? firstSong
+          : songs.find((song) => matchesTrack(song, track));
+      if (matchedSong?.id === undefined) {
+        return undefined;
       }
+      logMatchedSong(matchedSong);
 
-      return undefined;
+      return getQrcLyrics(fetchImpl, matchedSong.id);
     }
   };
 }

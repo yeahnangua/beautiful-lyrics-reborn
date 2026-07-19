@@ -24,6 +24,7 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
       const syllableDeadline = Date.now() + syllableSearchTimeoutMs;
       let trackMetadata = suppliedTrackMetadata;
       let deezerLyrics: BeautifulLyrics | undefined;
+      let appleMusicLyrics: BeautifulLyrics | undefined;
       // AMLLDB syllable lyrics are intentionally disabled.
       /*
       const suppliedAmllDbLyricsPromise = providers.amlldb
@@ -85,6 +86,16 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
             })
           : undefined
       );
+      const appleMusicLyricsPromise = trackMetadataPromise.then(async (metadata) => {
+        if (metadata === undefined || Date.now() >= syllableDeadline) {
+          return undefined;
+        }
+        appleMusicLyrics = await providers.lyrically.getAppleMusicLyrics(metadata).catch((error) => {
+          console.warn(`[lyrics] ${trackId}: lyrically apple music failed`, error);
+          return undefined;
+        });
+        return appleMusicLyrics;
+      });
       const deezerLyricsPromise = trackMetadataPromise.then(async (metadata) => {
         if (metadata === undefined || Date.now() >= syllableDeadline) {
           return undefined;
@@ -106,6 +117,9 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
         */
         qqMusicLyricsPromise.then((lyrics) =>
           lyrics === undefined ? Promise.reject() : (["qq music", lyrics] as const)
+        ),
+        appleMusicLyricsPromise.then((lyrics) =>
+          lyrics?.Type === "Syllable" ? (["lyrically apple music", lyrics] as const) : Promise.reject()
         ),
         
         kugouSyllableLyricsPromise.then((lyrics) =>
@@ -143,6 +157,7 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
 
       const lineTrackMetadata = trackMetadata;
       const lineDeezerLyrics = deezerLyrics;
+      const lineAppleMusicLyrics = appleMusicLyrics;
       const lyricallyTrackMetadata = lineTrackMetadata ?? { id: trackId, name: "", artists: [] };
       const lyricallyLyricsPromise = providers.lyrically.getLyrics(lyricallyTrackMetadata).catch((error) => {
         console.warn(`[lyrics] ${trackId}: lyrically spotify proxy failed`, error);
@@ -181,6 +196,9 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
               return undefined;
             });
       const synchronizedLyrics = await Promise.any([
+        lineAppleMusicLyrics?.Type === "Line"
+          ? Promise.resolve(["lyrically apple music", lineAppleMusicLyrics] as const)
+          : Promise.reject(),
         lineDeezerLyrics?.Type === "Line"
           ? Promise.resolve(["lyrically deezer", lineDeezerLyrics] as const)
           : Promise.reject(),

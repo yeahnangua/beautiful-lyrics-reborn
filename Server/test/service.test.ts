@@ -18,6 +18,7 @@ function createProviders(): ProviderClients {
       getTrackMetadata: vi.fn().mockResolvedValue(undefined)
     },
     lyrically: {
+      getAppleMusicLyrics: vi.fn().mockResolvedValue(undefined),
       getKugouLyrics: vi.fn().mockResolvedValue(undefined),
       getNeteaseLyrics: vi.fn().mockResolvedValue(undefined),
       getLyrics: vi.fn().mockResolvedValue(undefined),

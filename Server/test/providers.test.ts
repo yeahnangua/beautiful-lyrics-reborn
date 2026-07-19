@@ -295,6 +295,60 @@ describe("QQ Music provider", () => {
 });
 
 describe("lyrically provider", () => {
+  it("gets Apple Music syllable lyrics via iTunes search despite localized artist names", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+
+      if (url.hostname === "itunes.apple.com" && url.pathname === "/search") {
+        expect(url.searchParams.get("term")).toBe("倔強 五月天");
+        expect(url.searchParams.get("entity")).toBe("song");
+        return new Response(
+          JSON.stringify({
+            results: [
+              { trackId: 183919743, trackName: "倔強", artistName: "Mayday", trackTimeMillis: 261560 }
+            ]
+          })
+        );
+      }
+
+      if (url.pathname === "/apple-music/lyrics") {
+        expect(url.searchParams.get("id")).toBe("183919743");
+        expect(url.searchParams.get("v")).toBe("2");
+        return new Response(
+          JSON.stringify({
+            provider: "apple_music",
+            syncType: "Syllable",
+            lyrics: [
+              {
+                timestamp: 1000,
+                endtime: 2000,
+                text: [
+                  { text: "倔", part: true, timestamp: 1000, endtime: 1500 },
+                  { text: "強", part: false, timestamp: 1500, endtime: 2000 }
+                ]
+              }
+            ]
+          })
+        );
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+
+    const provider = createLyricallyProvider(fetchMock as typeof fetch);
+    const lyrics = await provider.getAppleMusicLyrics({
+      id: "spotify",
+      name: "倔強",
+      artists: ["五月天"],
+      durationSeconds: 261
+    });
+
+    expect(lyrics).toMatchObject({ Type: "Syllable", StartTime: 1 });
+    expect(logSpy).toHaveBeenCalledWith('[lyrically:apple] matched 183919743 "倔強"');
+    logSpy.mockRestore();
+  });
+
   it("returns undefined and logs the payload when kugou search returns a non-array payload", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);

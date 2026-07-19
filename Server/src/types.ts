@@ -100,6 +100,7 @@ export type QqMusicProvider = {
 
 export type LyricallyProvider = {
   // getSyllableLyrics(track: TrackMetadata): Promise<SyllableSyncedLyrics | undefined>;
+  getAppleMusicLyrics(track: TrackMetadata): Promise<BeautifulLyrics | undefined>;
   getKugouLyrics(track: TrackMetadata, word: boolean): Promise<BeautifulLyrics | undefined>;
   getNeteaseLyrics(track: TrackMetadata, word: boolean): Promise<BeautifulLyrics | undefined>;
   getLyrics(track: TrackMetadata): Promise<BeautifulLyrics | undefined>;

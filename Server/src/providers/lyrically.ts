@@ -506,16 +506,24 @@ async function searchAppleMusic(
 }
 
 async function getAppleMusicLyrics(fetchImpl: FetchLike, track: TrackMetadata): Promise<BeautifulLyrics | undefined> {
-  const matchedSong = await searchAppleMusic(fetchImpl, track);
-  if (matchedSong?.trackId === undefined) {
-    return undefined;
+  // The client resolves the Apple id from its own IP when it can — iTunes search rate-limits
+  // Cloudflare's shared egress IPs, so the server-side search below is a best-effort fallback.
+  let trackId = track.appleMusicId;
+  if (trackId === undefined) {
+    const matchedSong = await searchAppleMusic(fetchImpl, track);
+    if (matchedSong?.trackId === undefined) {
+      return undefined;
+    }
+    trackId = String(matchedSong.trackId);
+    console.log(`[lyrically:apple] matched ${trackId} "${matchedSong.trackName ?? "unknown title"}"`);
+  } else {
+    console.log(`[lyrically:apple] using client-supplied id ${trackId}`);
   }
-  console.log(`[lyrically:apple] matched ${matchedSong.trackId} "${matchedSong.trackName ?? "unknown title"}"`);
 
   const payload = await getJson<AppleMusicLyricResponse>(
     fetchImpl,
     buildUrl("/apple-music/lyrics", {
-      id: String(matchedSong.trackId),
+      id: String(trackId),
       v: "2"
     }),
     true
@@ -531,7 +539,7 @@ async function getAppleMusicLyrics(fetchImpl: FetchLike, track: TrackMetadata): 
       : timedLinesToLineLyrics(payload?.lyrics, track.durationSeconds);
   if (lyrics === undefined) {
     console.log(
-      `[lyrically:apple] lyrics ${matchedSong.trackId}: no usable lyrics (syncType ${
+      `[lyrically:apple] lyrics ${trackId}: no usable lyrics (syncType ${
         payload?.syncType ?? "unknown"
       }, ${asArray(payload?.lyrics).length} timed line(s))`
     );

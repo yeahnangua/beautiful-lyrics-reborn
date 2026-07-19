@@ -349,6 +349,46 @@ describe("lyrically provider", () => {
     logSpy.mockRestore();
   });
 
+  it("skips the iTunes search when the client supplies an Apple Music id", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      expect(url.hostname).not.toBe("itunes.apple.com");
+
+      if (url.pathname === "/apple-music/lyrics") {
+        expect(url.searchParams.get("id")).toBe("183919743");
+        return new Response(
+          JSON.stringify({
+            provider: "apple_music",
+            syncType: "Syllable",
+            lyrics: [
+              {
+                timestamp: 1000,
+                endtime: 2000,
+                text: [{ text: "倔強", part: false, timestamp: 1000, endtime: 2000 }]
+              }
+            ]
+          })
+        );
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+
+    const provider = createLyricallyProvider(fetchMock as typeof fetch);
+    const lyrics = await provider.getAppleMusicLyrics({
+      id: "spotify",
+      name: "倔強",
+      artists: ["五月天"],
+      durationSeconds: 261,
+      appleMusicId: "183919743"
+    });
+
+    expect(lyrics).toMatchObject({ Type: "Syllable" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    logSpy.mockRestore();
+  });
+
   it("returns undefined and logs the payload when kugou search returns a non-array payload", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);

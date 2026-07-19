@@ -394,6 +394,51 @@ const BuildLyricsRequestURL = (song: StreamedSongMetadata): string => {
 
 	return url.toString()
 }
+// iTunes rate-limits Cloudflare's shared egress IPs, so the Apple Music id is resolved
+// client-side from the user's own IP and handed to the server via apple_id.
+const ResolveAppleMusicId = (lyricsRequestURL: string): Promise<string | undefined> => {
+	const lyricsUrl = new URL(lyricsRequestURL)
+	const trackName = lyricsUrl.searchParams.get("track_name")
+	const artistName = lyricsUrl.searchParams.get("artist_name")
+	const duration = Number(lyricsUrl.searchParams.get("duration"))
+	if ((trackName === null) || (trackName.length === 0)) {
+		return Promise.resolve(undefined)
+	}
+
+	const searchUrl = new URL("https://itunes.apple.com/search")
+	searchUrl.searchParams.set("term", `${trackName} ${artistName ?? ""}`.trim())
+	searchUrl.searchParams.set("media", "music")
+	searchUrl.searchParams.set("entity", "song")
+	searchUrl.searchParams.set("limit", "10")
+
+	return (
+		fetch(searchUrl.toString(), { signal: AbortSignal.timeout(4000) })
+		.then(response => ((response.ok === false) ? undefined : response.json()))
+		.then(
+			(payload?: { results?: { trackId?: number; trackName?: string; trackTimeMillis?: number }[] }) => {
+				const results = (Array.isArray(payload?.results) ? payload.results : [])
+				const lowerTrackName = trackName.toLowerCase()
+				const matched = results.find(
+					result => (
+						(result.trackId !== undefined)
+						&& (result.trackName !== undefined)
+						&& (
+							result.trackName.toLowerCase().includes(lowerTrackName)
+							|| lowerTrackName.includes(result.trackName.toLowerCase())
+						)
+						&& (
+							(Number.isFinite(duration) === false) || (duration <= 0)
+							|| (result.trackTimeMillis === undefined)
+							|| (Math.abs((result.trackTimeMillis / 1000) - duration) <= 5)
+						)
+					)
+				)
+				return ((matched?.trackId === undefined) ? undefined : String(matched.trackId))
+			}
+		)
+		.catch(() => undefined)
+	)
+}
 const LoadSongLyrics = () => {
 	// Remove our prior lyric state
 	HaveSongLyricsLoaded = false, SongLyrics = undefined
@@ -415,19 +460,25 @@ const LoadSongLyrics = () => {
 			providerLyrics => {
 				if (providerLyrics === undefined) { // Otherwise, get our lyrics
 					return (
-						GetSpotifyAccessToken()
+						Promise.all([GetSpotifyAccessToken(), ResolveAppleMusicId(lyricsRequestURL)])
 						.then(
-							accessToken => fetch(
-								lyricsRequestURL,
-								{
-									method: "GET",
-									headers: {
-										Authorization: `Bearer ${accessToken}`,
-										"X-Spotify-App-Platform": SpotifyPlatform.PlatformData.app_platform,
-										"X-Spotify-App-Version": SpotifyPlatform.version
-									}
+							([accessToken, appleMusicId]) => {
+								const requestUrl = new URL(lyricsRequestURL)
+								if (appleMusicId !== undefined) {
+									requestUrl.searchParams.set("apple_id", appleMusicId)
 								}
-							)
+								return fetch(
+									requestUrl.toString(),
+									{
+										method: "GET",
+										headers: {
+											Authorization: `Bearer ${accessToken}`,
+											"X-Spotify-App-Platform": SpotifyPlatform.PlatformData.app_platform,
+											"X-Spotify-App-Version": SpotifyPlatform.version
+										}
+									}
+								)
+							}
 						)
 						.then(
 							(response) => {

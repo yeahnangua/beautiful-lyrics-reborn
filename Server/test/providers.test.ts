@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
+import { createLyricallyProvider } from "../src/providers/lyrically";
 import { createQqMusicProvider, decryptQrcHex } from "../src/providers/qqmusic";
 import { withLyricRequestRetries } from "../src/providers/request";
 
@@ -290,5 +291,59 @@ describe("QQ Music provider", () => {
 
     expect(lyrics?.Type).toBe("Syllable");
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("lyrically provider", () => {
+  it("returns undefined instead of throwing when kugou search returns a non-array payload", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: false, message: "rate limited" })));
+
+    const provider = createLyricallyProvider(fetchMock as typeof fetch);
+    const lyrics = await provider.getKugouLyrics(
+      { id: "spotify", name: "天空", artists: ["JOLIN蔡依林"], durationSeconds: 259 },
+      true
+    );
+
+    expect(lyrics).toBeUndefined();
+    expect(logSpy).toHaveBeenCalledWith('[lyrically:kugou] search "天空 JOLIN蔡依林": 0 result(s)');
+    logSpy.mockRestore();
+  });
+
+  it("matches a provider artist name contained in the track artist name", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+
+      if (url.pathname === "/netease/search") {
+        return new Response(
+          JSON.stringify({
+            result: {
+              songs: [{ id: 189419, name: "天空", duration: 259000, artists: [{ name: "蔡依林" }] }]
+            }
+          })
+        );
+      }
+
+      if (url.pathname === "/netease/lyrics") {
+        expect(url.searchParams.get("id")).toBe("189419");
+        return new Response(
+          JSON.stringify({
+            lyrics: [{ text: "我睁开眼睛看着天空", timestamp: 1000, endtime: 4000 }]
+          })
+        );
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+
+    const provider = createLyricallyProvider(fetchMock as typeof fetch);
+    const lyrics = await provider.getNeteaseLyrics(
+      { id: "spotify", name: "天空", artists: ["JOLIN蔡依林"], durationSeconds: 259 },
+      false
+    );
+
+    expect(lyrics?.Type).toBe("Line");
+    logSpy.mockRestore();
   });
 });

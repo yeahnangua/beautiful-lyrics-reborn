@@ -43,14 +43,14 @@ describe("QQ Music provider", () => {
     expect(xml).toContain("[ti:布拉格广场]");
   });
 
-  it("searches with simplified title first and converts QRC lyrics", async () => {
+  it("searches with the simplified title only and converts QRC lyrics", async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body));
       const request = body.req ?? body["music.musichallSong.PlayLyricInfo.GetPlayLyricInfo"];
 
       if (request?.method === "DoSearchForQQMusicDesktop") {
         expect(init?.signal).toBeInstanceOf(AbortSignal);
-        expect(request.param.query).toBe("布拉格广场 蔡依林");
+        expect(request.param.query).toBe("布拉格广场");
         return new Response(
           JSON.stringify({
             req: {
@@ -151,7 +151,7 @@ describe("QQ Music provider", () => {
     });
 
     expect(logSpy).toHaveBeenCalledWith(
-      '[qqmusic] search "布拉格广场 蔡依林": 1 result(s): 13410 "布拉格广场" by 蔡依林, 周杰伦 (294s)'
+      '[qqmusic] search "布拉格广场": 1 result(s): 13410 "布拉格广场" by 蔡依林, 周杰伦 (294s)'
     );
 
     logSpy.mockRestore();
@@ -163,7 +163,7 @@ describe("QQ Music provider", () => {
       const request = body.req ?? body["music.musichallSong.PlayLyricInfo.GetPlayLyricInfo"];
 
       if (request?.method === "DoSearchForQQMusicDesktop") {
-        expect(request.param.query).toBe("暗里着迷 - 粤 刘德华");
+        expect(request.param.query).toBe("暗里着迷 - 粤");
         return new Response(
           JSON.stringify({
             req: {
@@ -295,8 +295,9 @@ describe("QQ Music provider", () => {
 });
 
 describe("lyrically provider", () => {
-  it("returns undefined instead of throwing when kugou search returns a non-array payload", async () => {
+  it("returns undefined and logs the payload when kugou search returns a non-array payload", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: false, message: "rate limited" })));
 
     const provider = createLyricallyProvider(fetchMock as typeof fetch);
@@ -306,7 +307,49 @@ describe("lyrically provider", () => {
     );
 
     expect(lyrics).toBeUndefined();
-    expect(logSpy).toHaveBeenCalledWith('[lyrically:kugou] search "天空 JOLIN蔡依林": 0 result(s)');
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[lyrically] kugou search: expected an array, got {"ok":false,"message":"rate limited"}'
+    );
+    expect(logSpy).toHaveBeenCalledWith('[lyrically:kugou] search "天空": 0 result(s)');
+    logSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it("logs the sync type when a matched netease song has no word lyrics", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+
+      if (url.pathname === "/netease/search") {
+        expect(url.searchParams.get("v")).toBe("2");
+        return new Response(
+          JSON.stringify({
+            result: {
+              songs: [{ id: 386175, name: "倔强", duration: 261000, artists: [{ name: "五月天" }] }]
+            }
+          })
+        );
+      }
+
+      if (url.pathname === "/netease/lyrics") {
+        return new Response(
+          JSON.stringify({ provider: "netease", syncType: "None", source: "api", lyrics: [] })
+        );
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+
+    const provider = createLyricallyProvider(fetchMock as typeof fetch);
+    const lyrics = await provider.getNeteaseLyrics(
+      { id: "spotify", name: "倔強", artists: ["五月天"], durationSeconds: 261 },
+      true
+    );
+
+    expect(lyrics).toBeUndefined();
+    expect(logSpy).toHaveBeenCalledWith(
+      "[lyrically:netease] lyrics 386175: no usable word lyrics (syncType None, 0 timed line(s))"
+    );
     logSpy.mockRestore();
   });
 

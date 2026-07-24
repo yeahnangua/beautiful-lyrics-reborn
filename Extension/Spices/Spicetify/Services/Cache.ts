@@ -135,7 +135,7 @@ const UpdateCacheAPI = (storeName: string, itemName: string, content: unknown): 
 
 type ExpireStoreInterface<ItemType> = {
 	GetItem: (itemName: string) => Promise<ItemType | undefined>;
-	SetItem: (itemName: string, content: ItemType) => Promise<ItemType>;
+	SetItem: (itemName: string, content: ItemType, expirationOverride?: ExpirationSettings) => Promise<ItemType>;
 	Clear: () => Promise<boolean>;
 }
 
@@ -181,16 +181,17 @@ export const GetExpireStore = <ItemType>(
 					)
 				)
 			),
-			SetItem: (itemName: string, content: ItemType) => {
+			SetItem: (itemName: string, content: ItemType, expirationOverride?: ExpirationSettings) => {
 				// Determine when we expire
+				const expirationSettings = (expirationOverride ?? itemExpirationSettings)
 				const expireAtDate = new Date()
 				expireAtDate.setHours(0, 0, 0, 0)
-				if (itemExpirationSettings.Unit == "Days") {
-					expireAtDate.setDate(expireAtDate.getDate() + itemExpirationSettings.Duration)
-				} else if (itemExpirationSettings.Unit == "Weeks") {
-					expireAtDate.setDate(expireAtDate.getDate() + (itemExpirationSettings.Duration * 7))
+				if (expirationSettings.Unit == "Days") {
+					expireAtDate.setDate(expireAtDate.getDate() + expirationSettings.Duration)
+				} else if (expirationSettings.Unit == "Weeks") {
+					expireAtDate.setDate(expireAtDate.getDate() + (expirationSettings.Duration * 7))
 				} else {
-					expireAtDate.setMonth(expireAtDate.getMonth() + itemExpirationSettings.Duration)
+					expireAtDate.setMonth(expireAtDate.getMonth() + expirationSettings.Duration)
 					expireAtDate.setDate(0)
 				}
 				const expireAt = expireAtDate.getTime()

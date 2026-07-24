@@ -14,7 +14,7 @@ import {
 	SpotifyPlayer, SpotifyPlatform, SpotifyURI, SpotifyRequestBuilder,
 	GetSpotifyAccessToken
 } from "../Session.ts"
-import { GetExpireStore } from '../Cache.ts'
+import { GetExpireStore, type ExpirationSettings } from '../Cache.ts'
 
 // Our Modules
 import {
@@ -358,6 +358,17 @@ export const ClearLyricsCache = (): Promise<void> => (
 	).then(() => undefined)
 )
 
+// Syllable lyrics are the best result a song can get, so they can safely live for a month
+// (30 days, since the "Months" unit expires at month boundaries); everything else keeps
+// the short default so a better source appearing later gets picked up.
+const SyllableLyricsExpiration: ExpirationSettings = {
+	Duration: 30,
+	Unit: "Days"
+}
+const LyricsCacheExpiration = (lyrics: (ProviderLyrics | TransformedLyrics | false)): (ExpirationSettings | undefined) => (
+	((lyrics !== false) && (lyrics.Type === "Syllable")) ? SyllableLyricsExpiration : undefined
+)
+
 export let SongLyrics: (TransformedLyrics | undefined) = undefined
 export let HaveSongLyricsLoaded: boolean = false
 const BuildLyricsRequestURL = (song: StreamedSongMetadata): string => {
@@ -503,7 +514,7 @@ const LoadSongLyrics = () => {
 						.then(
 							(providerLyrics) => {
 								const lyrics = (providerLyrics ?? false)
-								ProviderLyricsStore.SetItem(songAtUpdate.Id, lyrics)
+								ProviderLyricsStore.SetItem(songAtUpdate.Id, lyrics, LyricsCacheExpiration(lyrics))
 								return lyrics
 							}
 						)
@@ -533,7 +544,7 @@ const LoadSongLyrics = () => {
 						.then(
 							transformedLyrics => {
 								// Save our information
-								TransformedLyricsStore.SetItem(songAtUpdate.Id, transformedLyrics)
+								TransformedLyricsStore.SetItem(songAtUpdate.Id, transformedLyrics, LyricsCacheExpiration(transformedLyrics))
 
 								// Now return our information
 								return (transformedLyrics || undefined)

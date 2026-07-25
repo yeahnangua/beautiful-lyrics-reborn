@@ -1016,7 +1016,7 @@ export default class PageView implements Giveable {
 						const notFullscreen = (document.fullscreenElement === null)
 						if (shouldBeFullscreen === notFullscreen) {
 							if (shouldBeFullscreen) {
-								delete SpotifyHistory.location.state.FromPlaybar // Consume this flag (prevents non-user input fullscreen)
+								delete SpotifyHistory.location.state?.FromPlaybar // Consume this flag (prevents non-user input fullscreen)
 								document.documentElement.requestFullscreen()
 							} else {
 								document.exitFullscreen()

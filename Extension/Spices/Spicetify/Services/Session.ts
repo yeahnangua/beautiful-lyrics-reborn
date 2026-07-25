@@ -10,8 +10,10 @@ export type HistoryLocation = {
 	pathname: string;
 	search: string;
 	hash: string;
+	// Spotify's own navigations carry a state object, but locations pushed as plain
+	// strings (including ours) have an undefined state on current Spotify versions
 	// deno-lint-ignore no-explicit-any
-	state: Record<string, any>;
+	state: Record<string, any> | undefined;
 }
 
 // Create our Global-Maid (keeps track of all our sub-processes)

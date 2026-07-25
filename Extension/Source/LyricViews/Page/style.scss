@@ -21,6 +21,11 @@ body:has(.BeautifulLyricsPage) {
 		}
 	}
 
+	// Gold tint highlighting that Cinema mode works again after the state crash fix
+	#Cinema {
+		background: linear-gradient(rgb(255 200 87 / 24%), rgb(255 200 87 / 24%)), rgb(21 22 23 / 72%);
+	}
+
 	#Close svg {
 		height: calc(var(--ViewControlSize) * 0.4);
 		width: auto;

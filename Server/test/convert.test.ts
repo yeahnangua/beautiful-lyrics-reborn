@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { decodeEntitiesDeep, decodeHtmlEntities } from "../src/convert/entities";
 import { convertPlainTextToStatic } from "../src/convert/plain";
 import { convertEnhancedLrcToSyllableLyrics } from "../src/convert/enhanced-lrc";
 import { convertLrcToLineLyrics, parseLrcTimestamp } from "../src/convert/lrc";
@@ -8,6 +9,34 @@ import { convertQrcXmlToSyllableLyrics, convertYrcToSyllableLyrics } from "../sr
 import { createAmllDbProvider } from "../src/providers/amlldb";
 import { createLrclibProvider } from "../src/providers/lrclib";
 import { createLyricallyProvider } from "../src/providers/lyrically";
+
+describe("entity decoding", () => {
+  it("decodes named, decimal, and hex entities", () => {
+    expect(decodeHtmlEntities("you&apos;re &amp; I&#39;m &#x27;here&#x27; &lt;now&gt;")).toBe(
+      "you're & I'm 'here' <now>"
+    );
+  });
+
+  it("leaves unknown entities and invalid code points untouched", () => {
+    expect(decodeHtmlEntities("&unknown; 100&#1234567890;")).toBe("&unknown; 100&#1234567890;");
+  });
+
+  it("decodes Text fields nested in lyric structures", () => {
+    expect(
+      decodeEntitiesDeep({
+        Type: "Line",
+        StartTime: 1,
+        EndTime: 2,
+        Content: [{ Type: "Vocal", Text: "don&apos;t", StartTime: 1, EndTime: 2, OppositeAligned: false }]
+      })
+    ).toEqual({
+      Type: "Line",
+      StartTime: 1,
+      EndTime: 2,
+      Content: [{ Type: "Vocal", Text: "don't", StartTime: 1, EndTime: 2, OppositeAligned: false }]
+    });
+  });
+});
 
 describe("plain lyric conversion", () => {
   it("converts non-empty plain text lines to Static lyrics", () => {

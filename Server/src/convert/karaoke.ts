@@ -1,4 +1,5 @@
 import type { SyllableMetadata, SyllableSyncedLyrics, SyllableVocalSet } from "../types";
+import { decodeHtmlEntities } from "./entities";
 
 type KaraokeWord = {
   text: string;
@@ -15,15 +16,6 @@ const yrcWordPattern = /\((\d+),(\d+)(?:,\d+)?\)([^(]+)/g;
 const qrcLyricContentPattern = /\bLyricContent\s*=\s*"([^"]*)"/i;
 const qrcLinePattern = /^\[\s*(\d+)\s*,\s*(\d+)\s*\](.*)$/;
 const qrcWordTimingPattern = /\(\s*(\d+)\s*,\s*(\d+)\s*\)/;
-
-function decodeXmlEntities(value: string): string {
-  return value
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, "&");
-}
 
 function millisecondsToSeconds(value: number): number {
   return value / 1000;
@@ -130,7 +122,7 @@ function parseQrcLine(line: string): KaraokeLine | undefined {
       break;
     }
 
-    const text = decodeXmlEntities(remainder.slice(0, timingMatch.index));
+    const text = decodeHtmlEntities(remainder.slice(0, timingMatch.index));
     const startMs = Number(timingMatch[1]);
     const durationMs = Number(timingMatch[2]);
     if (Number.isFinite(startMs) && Number.isFinite(durationMs) && text.length > 0) {
@@ -161,7 +153,7 @@ export function convertQrcXmlToSyllableLyrics(qrcXml: string | undefined | null)
     return undefined;
   }
 
-  const lyricContent = decodeXmlEntities(qrcLyricContentPattern.exec(qrcXml)?.[1] ?? "");
+  const lyricContent = decodeHtmlEntities(qrcLyricContentPattern.exec(qrcXml)?.[1] ?? "");
   if (lyricContent.length === 0) {
     return undefined;
   }

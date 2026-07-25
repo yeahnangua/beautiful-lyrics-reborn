@@ -1,3 +1,4 @@
+import { decodeEntitiesDeep } from "./convert/entities";
 import type { BeautifulLyrics, ProviderClients, SpotifyClientContext, TrackMetadata } from "./types";
 
 const syllableSearchTimeoutMs = 20_000;
@@ -12,7 +13,7 @@ export type LyricsService = {
 };
 
 export function createLyricsService(providers: ProviderClients): LyricsService {
-  return {
+  const service: LyricsService = {
     async getLyrics(
       trackId: string,
       accessToken: string,
@@ -298,5 +299,11 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
 
       return undefined;
     }
+  };
+
+  // Single exit point: whichever provider won, its text leaves here entity-free.
+  return {
+    getLyrics: (...args) =>
+      service.getLyrics(...args).then((lyrics) => (lyrics === undefined ? undefined : decodeEntitiesDeep(lyrics)))
   };
 }

@@ -34,6 +34,20 @@ function createProviders(): ProviderClients {
 }
 
 describe("lyrics service", () => {
+  it("decodes leaked HTML entities in whatever lyrics a provider returns", async () => {
+    const providers = createProviders();
+    vi.mocked(providers.spotify.getLyrics).mockResolvedValue({
+      Type: "Static",
+      Lines: [{ Text: "you&apos;re &amp; I&#39;m" }]
+    });
+
+    const service = createLyricsService(providers);
+    await expect(service.getLyrics("track", "token")).resolves.toEqual({
+      Type: "Static",
+      Lines: [{ Text: "you're & I'm" }]
+    });
+  });
+
   it("returns Spotify static lyrics when no metadata is available for fallbacks", async () => {
     const providers = createProviders();
     vi.mocked(providers.spotify.getLyrics).mockResolvedValue({

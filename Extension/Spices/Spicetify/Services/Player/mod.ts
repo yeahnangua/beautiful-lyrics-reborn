@@ -853,34 +853,34 @@ OnSpotifyReady.then(
 						IsLocal determines whether or not we are playing on the current device
 						OR if we are playing on a different device (device switching).
 
-						For local playback, we can use the Clients C++ Transport to get the current position.
-						Otherwise, we have to request for a timestamp resync to get the current position.
+						Spotify 1.2.94+ stopped live-updating the C++ Transport position during playback:
+						_contextPlayer.getPositionState() now returns the position as of the last
+						play/pause/seek only, so reading it live freezes the lyrics. Instead we
+						extrapolate from the state timestamp ourselves (same as Spotify's own playback-bar).
+						Non-local playback additionally kicks resume() to force timestamp resyncs
+						after device switches.
 					*/
-					isLocallyPlaying
-					? (
-						(SpotifyPlatform.PlayerAPI._contextPlayer.getPositionState({}) as Promise<{position: bigint}>)
-						.then(({ position }) => ({ StartedSyncAt: startedAt, Position: Number(position) }))
+					(
+						((isLocallyPlaying === false) && (canSyncNonLocalTimestamp > 0))
+						? SpotifyPlatform.PlayerAPI._contextPlayer.resume({})
+						: Promise.resolve()
 					)
-					: (
-						(
-							(canSyncNonLocalTimestamp > 0) ? SpotifyPlatform.PlayerAPI._contextPlayer.resume({})
-							: Promise.resolve()
-						)
-						.then(
-							() => {
+					.then(
+						() => {
+							if (isLocallyPlaying === false) {
 								canSyncNonLocalTimestamp = Math.max(0, (canSyncNonLocalTimestamp - 1))
-								return (
-									IsPlaying ? {
-										StartedSyncAt: startedAt,
-										Position: (
-											SpotifyPlatform.PlayerAPI._state.positionAsOfTimestamp
-											+ (Date.now() - SpotifyPlatform.PlayerAPI._state.timestamp)
-										)
-									}
-									: { Position: SpotifyPlatform.PlayerAPI._state.positionAsOfTimestamp }
-								)
 							}
-						)
+							return (
+								IsPlaying ? {
+									StartedSyncAt: startedAt,
+									Position: (
+										SpotifyPlatform.PlayerAPI._state.positionAsOfTimestamp
+										+ (Date.now() - SpotifyPlatform.PlayerAPI._state.timestamp)
+									)
+								}
+								: { Position: SpotifyPlatform.PlayerAPI._state.positionAsOfTimestamp }
+							)
+						}
 					)
 				)
 				.then((position: SyncedPostiion) => syncedPosition = position )

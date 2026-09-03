@@ -64,7 +64,7 @@ const Load = async () => {
 				font.load().then(font => document.fonts.add(font))
 			)
 		}
-		await Promise.all(fontPromises)
+		await Promise.allSettled(fontPromises)
 	}
 
 	await OnSpotifyReady

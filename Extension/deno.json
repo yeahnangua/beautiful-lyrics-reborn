@@ -1,7 +1,9 @@
 {
+	"nodeModulesDir": "auto",
+
 	"tasks": {
 		"test": "deno run --allow-read --allow-run --allow-net --allow-env --allow-write ./Tasks/Test.ts",
-		"release": "deno run --allow-read --allow-run --allow-net --allow-env --allow-write ./Tasks/Release.ts"
+		"release": "deno run --allow-read --allow-run --allow-net --allow-env --allow-write ./Tasks/BuildRelease.ts"
 	},
 
 	"compilerOptions": {

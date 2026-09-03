@@ -1,7 +1,7 @@
 {
 	"$schema": "https://schemas.socalifornian.live/Spices/Build/Schema.json",
 	"Name": "beautiful-lyrics-reborn",
-	"Version": "5.2.0",
+	"Version": "5.2.1",
 
 	"ReleaseLocation": {
 		"Type": "GitHub",

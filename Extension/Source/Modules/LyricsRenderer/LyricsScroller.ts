@@ -22,7 +22,7 @@ const DistanceToMaximumBlur = 4 // Any vocals beyond this unit of distance away 
 const BlurScale = 1.25 // How much we scale the blur by
 
 // Behavior Constants
-const UserScrollingStopsAfter = 0.75 // Determines how long after the user stops scrolling that we allow auto-scrolling
+const UserScrollingStopsAfter = 7 // Determines how long after the user stops scrolling that we allow auto-scrolling
 const AutoScrollingStopsAfter = (1 / 30) // Determines how long after the last auto-scroll that we mark that aren't anymore
 
 // Helper Method
@@ -127,7 +127,11 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 				this.Maid.Give(
 					Timeout(
 						UserScrollingStopsAfter,
-						() => this.MoveToActiveLyrics()
+						() => {
+							// Resume automatic scrolling once the user has been idle long enough.
+							this.ToggleAutoScrollBlock(false)
+							this.MoveToActiveLyrics()
+						}
 					),
 					"WaitForUserToStopScrolling"
 				)

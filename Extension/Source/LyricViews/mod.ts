@@ -87,7 +87,12 @@ OnSpotifyReady
 				ViewMaid.Give(Timeout(1, CheckForSongExistence))
 			}
 
-			SetPlaybarPageIconActiveState = (isActive: boolean) => lyricsButton.active = isActive
+			lyricsButton.element.id = "BeautifulLyricsPageButton"
+			SetPlaybarPageIconActiveState = (isActive: boolean) => {
+				lyricsButton.active = isActive
+				lyricsButton.element.setAttribute("aria-pressed", String(isActive))
+			}
+			SetPlaybarPageIconActiveState(false)
 		}
 
 		// Fullscreen Button

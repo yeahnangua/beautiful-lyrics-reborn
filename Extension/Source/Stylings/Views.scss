@@ -1,4 +1,13 @@
 /* Playbar Icon */
+// Spotify no longer guarantees the legacy playbar button reset.
+button:has(.LyricsPageIcon),
+#BeautifulLyricsFullscreenButton {
+	appearance: none;
+	background: transparent !important;
+	border: none;
+	box-shadow: none;
+}
+
 button:has(.LyricsPageIcon) {
 	margin-right: 2px;
 

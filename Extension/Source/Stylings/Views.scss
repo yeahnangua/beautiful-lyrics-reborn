@@ -1,19 +1,38 @@
-/* Playbar Icon */
-// Spotify no longer guarantees the legacy playbar button reset.
-button:has(.LyricsPageIcon),
-#BeautifulLyricsFullscreenButton {
+/* Playbar Icons */
+// Own the interaction states: Spotify may remove its legacy playbar classes.
+:is(#BeautifulLyricsPageButton, #BeautifulLyricsFullscreenButton) {
 	appearance: none;
 	background: transparent !important;
 	border: none;
 	box-shadow: none;
+	color: var(--text-subdued, #b3b3b3) !important;
+	cursor: pointer;
+	position: relative;
+
+	&:hover,
+	&:focus-visible {
+		color: var(--text-base, #fff) !important;
+	}
+
+	&[aria-pressed="true"] {
+		color: var(--text-positive, #1ed760) !important;
+
+		&::after {
+			content: "";
+			position: absolute;
+			width: 4px;
+			height: 4px;
+			border-radius: 50%;
+			background: currentColor;
+			bottom: 0;
+			left: 50%;
+			transform: translateX(-50%) !important;
+		}
+	}
 }
 
-button:has(.LyricsPageIcon) {
+#BeautifulLyricsPageButton {
 	margin-right: 2px;
-
-	&:after {
-		transform: translateX(-370%) translateY(-40%) !important;
-	}
 }
 
 .LyricsPageIcon {
@@ -63,8 +82,6 @@ body:has(.Root__main-view-overlay .BeautifulLyricsPage:is(.Fullscreen)) {
 }
 
 #BeautifulLyricsFullscreenButton {
-	color: rgba(var(--spice-rgb-selected-row),.7) !important;
-
 	svg {
 		fill: currentColor;
 	}

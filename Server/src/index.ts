@@ -1,4 +1,5 @@
 // import { amllDbProvider } from "./providers/amlldb";
+import { kugouProvider } from "./providers/kugou";
 import { lrclibProvider } from "./providers/lrclib";
 import { lyricallyProvider } from "./providers/lyrically";
 import { musixmatchProvider } from "./providers/musixmatch";
@@ -12,6 +13,7 @@ import { dashboardHtml } from "./dashboard";
 const defaultService = createLyricsService({
   // amlldb: amllDbProvider,
   qqmusic: qqMusicProvider,
+  kugou: kugouProvider,
   netease: neteaseProvider,
   musixmatch: musixmatchProvider,
   lyrically: lyricallyProvider,

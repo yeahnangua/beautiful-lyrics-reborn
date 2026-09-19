@@ -13,6 +13,9 @@ function createProviders(): ProviderClients {
     qqmusic: {
       getSyllableLyrics: vi.fn().mockResolvedValue(undefined)
     },
+    kugou: {
+      getSyllableLyrics: vi.fn().mockResolvedValue(undefined)
+    },
     netease: {
       getSyllableLyrics: vi.fn().mockResolvedValue(undefined)
     },
@@ -40,7 +43,7 @@ function createProviders(): ProviderClients {
 }
 
 describe("lyrics service", () => {
-  it.each(["netease", "musixmatch"] as const)("uses %s direct word lyrics before the line fallback", async (source) => {
+  it.each(["kugou", "netease", "musixmatch"] as const)("uses %s direct word lyrics before the line fallback", async (source) => {
     const providers = createProviders();
     const lyrics = {
       Type: "Syllable" as const,
@@ -63,8 +66,9 @@ describe("lyrics service", () => {
     expect(providers.spotify.getLyrics).not.toHaveBeenCalled();
   });
 
-  it("keeps line fallbacks working when both direct providers fail", async () => {
+  it("keeps line fallbacks working when direct providers fail", async () => {
     const providers = createProviders();
+    vi.mocked(providers.kugou.getSyllableLyrics).mockRejectedValue(new Error("KuGou unavailable"));
     vi.mocked(providers.netease.getSyllableLyrics).mockRejectedValue(new Error("NetEase unavailable"));
     vi.mocked(providers.musixmatch.getSyllableLyrics).mockRejectedValue(new Error("Musixmatch unavailable"));
     const lyrics = { Type: "Line" as const, StartTime: 1, EndTime: 2, Content: [] };

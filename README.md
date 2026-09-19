@@ -3,7 +3,7 @@
 Beautiful Lyrics Reborn is a community-maintained revival of the original
 Beautiful Lyrics Spicetify extension. It keeps the fullscreen/card/page lyric
 experience alive and adds a new Cloudflare Worker lyrics service for Spotify,
-QQ Music, NetEase, Musixmatch, Lyrically/Paxsenix, and LRCLIB fallbacks.
+QQ Music, KuGou, NetEase, Musixmatch, Lyrically/Paxsenix, and LRCLIB fallbacks.
 
 This repository contains both pieces:
 
@@ -23,7 +23,7 @@ https://lyrics.txw.qzz.io
 - Dynamic cover-art based backgrounds.
 - Romanization support for supported CJK lyrics.
 - Reborn lyrics provider flow:
-  1. The first available syllable lyrics from direct QQ Music QRC, NetEase YRC,
+  1. The first available syllable lyrics from direct QQ Music QRC, KuGou KRC, NetEase YRC,
      or Musixmatch RichSync, plus Lyrically/Paxsenix Apple Music, Kugou,
      NetEase, and Deezer; syllable providers are queried concurrently.
   2. The first available line lyrics from Lyrically/Paxsenix Spotify proxy,
@@ -33,9 +33,11 @@ https://lyrics.txw.qzz.io
 
 The syllable-lyrics phase has a 20-second total time budget before the Line race starts.
 
-The direct NetEase and Musixmatch providers do not use Paxsenix. NetEase matches
-the title, artist, and duration before retrieving YRC. Musixmatch acquires and
-caches an anonymous token, sends the Spotify track URI to improve matching, and
+The direct KuGou, NetEase, and Musixmatch providers do not use Paxsenix. KuGou and
+NetEase match the title, artist, and duration before retrieving KRC or YRC.
+KuGou decodes native word timings and skips unverified UGC candidates.
+Musixmatch acquires and caches an anonymous token, sends the Spotify track URI
+to improve matching, and
 uses RichSync only when the track has word timing. A missing or restricted result
 leaves the other providers available. Upstream availability and rate limits can
 vary by server IP; no user credentials are bundled with these providers.
@@ -94,3 +96,8 @@ The NetEase and Musixmatch provider adaptations credit Spicetify's
 [lyrics-plus](https://github.com/spicetify/cli/tree/main/CustomApps/lyrics-plus).
 Their upstream LGPL-2.1 terms and provenance are preserved in `NOTICE.md` and
 `LICENSES/Spicetify-LGPL-2.1.txt`.
+
+The KuGou provider and KRC decoder/parser credit
+[lrcmux](https://github.com/f1nniboy/lrcmux) by f1nniboy. Its MIT copyright and
+permission notice are preserved in `LICENSES/lrcmux-MIT.txt`; see `NOTICE.md`
+for the upstream revision and adapted files.

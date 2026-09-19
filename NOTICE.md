@@ -38,3 +38,18 @@ These adaptations retain the upstream GNU Lesser General Public License v2.1;
 the complete license is included in LICENSES/Spicetify-LGPL-2.1.txt. They are
 distributed without warranty. The surrounding Reborn service retains its
 AGPL-3.0-or-later license.
+
+lrcmux KuGou adaptation
+----------------------
+
+Server/src/providers/kugou.ts and Server/src/convert/krc.ts adapt KuGou requests,
+KRC decoding, and timing parsing from lrcmux by f1nniboy:
+
+https://github.com/f1nniboy/lrcmux
+Upstream revision: 2b03822e2611b3eea27d1ff5b44d1ddcfd2a15cd
+Upstream files: internal/providers/kugou/provider.go, decode.go, and parse.go.
+
+Changes dated 2026-09-19 use HTTPS and native fetch, validate matching tracks,
+try alternate matching candidates, decode using Web Streams, and convert
+relative word timings to Beautiful Lyrics objects. The upstream MIT copyright
+and permission notice are included in LICENSES/lrcmux-MIT.txt.

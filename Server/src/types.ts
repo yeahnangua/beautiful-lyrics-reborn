@@ -69,6 +69,7 @@ export type SpotifyClientContext = {
 export type ProviderClients = {
   // amlldb: AmllDbProvider;
   qqmusic: QqMusicProvider;
+  kugou: SyllableLyricsProvider;
   netease: SyllableLyricsProvider;
   musixmatch: SyllableLyricsProvider;
   lyrically: LyricallyProvider;

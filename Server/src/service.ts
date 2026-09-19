@@ -70,6 +70,22 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
             })
           : undefined
       );
+      const neteaseDirectLyricsPromise = trackMetadataPromise.then((metadata) =>
+        metadata !== undefined && Date.now() < syllableDeadline
+          ? providers.netease.getSyllableLyrics(metadata).catch((error) => {
+              console.warn(`[lyrics] ${trackId}: netease direct failed`, error);
+              return undefined;
+            })
+          : undefined
+      );
+      const musixmatchLyricsPromise = trackMetadataPromise.then((metadata) =>
+        metadata !== undefined && Date.now() < syllableDeadline
+          ? providers.musixmatch.getSyllableLyrics(metadata).catch((error) => {
+              console.warn(`[lyrics] ${trackId}: musixmatch direct failed`, error);
+              return undefined;
+            })
+          : undefined
+      );
       // Lyrically Musixmatch syllable lyrics are intentionally disabled.
       /*
       const lyricallySyllableLyricsPromise = trackMetadataPromise.then((metadata) =>
@@ -130,6 +146,12 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
         */
         qqMusicLyricsPromise.then((lyrics) =>
           lyrics === undefined ? Promise.reject() : (["qq music", lyrics] as const)
+        ),
+        neteaseDirectLyricsPromise.then((lyrics) =>
+          lyrics === undefined ? Promise.reject() : (["netease direct", lyrics] as const)
+        ),
+        musixmatchLyricsPromise.then((lyrics) =>
+          lyrics === undefined ? Promise.reject() : (["musixmatch direct", lyrics] as const)
         ),
         appleMusicLyricsPromise.then((lyrics) =>
           lyrics?.Type === "Syllable" ? (["lyrically apple music", lyrics] as const) : Promise.reject()

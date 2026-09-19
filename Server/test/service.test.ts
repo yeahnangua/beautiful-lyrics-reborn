@@ -13,6 +13,12 @@ function createProviders(): ProviderClients {
     qqmusic: {
       getSyllableLyrics: vi.fn().mockResolvedValue(undefined)
     },
+    netease: {
+      getSyllableLyrics: vi.fn().mockResolvedValue(undefined)
+    },
+    musixmatch: {
+      getSyllableLyrics: vi.fn().mockResolvedValue(undefined)
+    },
     spotify: {
       getLyrics: vi.fn().mockResolvedValue(undefined),
       getTrackMetadata: vi.fn().mockResolvedValue(undefined)
@@ -34,6 +40,40 @@ function createProviders(): ProviderClients {
 }
 
 describe("lyrics service", () => {
+  it.each(["netease", "musixmatch"] as const)("uses %s direct word lyrics before the line fallback", async (source) => {
+    const providers = createProviders();
+    const lyrics = {
+      Type: "Syllable" as const,
+      StartTime: 1,
+      EndTime: 2,
+      Content: [{
+        Type: "Vocal" as const,
+        OppositeAligned: false,
+        Lead: {
+          StartTime: 1,
+          EndTime: 2,
+          Syllables: [{ Text: "word", StartTime: 1, EndTime: 2, IsPartOfWord: false }]
+        }
+      }]
+    };
+    vi.mocked(providers[source].getSyllableLyrics).mockResolvedValue(lyrics);
+    const metadata = { id: "track", name: "Song", artists: ["Artist"] };
+    expect(await createLyricsService(providers).getLyrics("track", "token", metadata)).toEqual(lyrics);
+    expect(providers[source].getSyllableLyrics).toHaveBeenCalledWith(metadata);
+    expect(providers.spotify.getLyrics).not.toHaveBeenCalled();
+  });
+
+  it("keeps line fallbacks working when both direct providers fail", async () => {
+    const providers = createProviders();
+    vi.mocked(providers.netease.getSyllableLyrics).mockRejectedValue(new Error("NetEase unavailable"));
+    vi.mocked(providers.musixmatch.getSyllableLyrics).mockRejectedValue(new Error("Musixmatch unavailable"));
+    const lyrics = { Type: "Line" as const, StartTime: 1, EndTime: 2, Content: [] };
+    vi.mocked(providers.spotify.getLyrics).mockResolvedValue(lyrics);
+    expect(await createLyricsService(providers).getLyrics("track", "token", {
+      id: "track", name: "Song", artists: ["Artist"]
+    })).toEqual(lyrics);
+  });
+
   it("decodes leaked HTML entities in whatever lyrics a provider returns", async () => {
     const providers = createProviders();
     vi.mocked(providers.spotify.getLyrics).mockResolvedValue({

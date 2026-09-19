@@ -16,3 +16,8 @@ invocation_logs = true
 
 [observability.traces]
 enabled = false
+
+[assets]
+directory = "../Extension/Builds/Release"
+binding = "RELEASE_ASSETS"
+run_worker_first = true

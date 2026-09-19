@@ -1,23 +1,30 @@
 name: Build Extension Release
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - ".github/workflows/build-extension-release.yml"
       - "Extension/**"
+      - "Universal/**"
+      - "Pinyin/**"
+      - "Server/**"
   push:
     branches:
       - main
     paths:
       - ".github/workflows/build-extension-release.yml"
       - "Extension/**"
+      - "Universal/**"
+      - "Pinyin/**"
+      - "Server/**"
 
 permissions:
   contents: write
 
 concurrency:
   group: build-extension-release-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-release:
@@ -54,29 +61,51 @@ jobs:
 
       - name: Build release bundle
         working-directory: Extension
+        run: deno task release
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test loader
+        run: node --test Extension/Tests/*.test.mjs
+
+      - name: Test Worker
+        working-directory: Server
         run: |
-          deno run -A - <<'TS'
-          import Bundle from "./Spices/Build/Bundle.ts";
-
-          const output = await Bundle({ Type: "Offline" });
-
-          await Deno.mkdir("./Builds/Release", { recursive: true });
-          await Deno.writeTextFile(
-            "./Builds/Release/beautiful-lyrics-reborn.mjs",
-            output as string,
-          );
-          TS
+          npm ci
+          npm test
+          npm run typecheck
+          npx wrangler deploy --dry-run
 
       - name: Commit release bundle
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         run: |
-          if git diff --quiet -- Extension/Builds/Release/beautiful-lyrics-reborn.mjs; then
+          git add Extension/Builds/Release
+          if git diff --cached --quiet; then
             echo "Release bundle is already up to date."
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Extension/Builds/Release/beautiful-lyrics-reborn.mjs
           git commit -m "build: update extension release bundle"
           git push
+
+      - name: Publish Worker and immutable release assets
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        working-directory: Server
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Configure CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID to publish the update pointer and assets."
+            exit 1
+          fi
+          npx wrangler deploy
+
+      - name: Verify published release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: node Extension/Tasks/VerifyPublishedRelease.mjs

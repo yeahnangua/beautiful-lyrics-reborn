@@ -78,5 +78,3 @@ export async function startReleaseLoader(fallback, runtime = globalThis) {
     runtime.Spicetify?.showNotification?.("Beautiful Lyrics Reborn could not load. Reload Spotify to retry.", true, 10000);
   }
 }
-
-await startReleaseLoader({"schema":1,"version":"5.2.1","sha256":"cf42911ae7ba2e6224963b62ccffa48efd2cb3a93ea88056137d361f5d14f4e0","file":"beautiful-lyrics-reborn.cf42911ae7ba2e62.mjs"});

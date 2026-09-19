@@ -1,3 +1,4 @@
+import { extensionReleaseResponse } from "./extension-release";
 // import { amllDbProvider } from "./providers/amlldb";
 import { kugouProvider } from "./providers/kugou";
 import { lrclibProvider } from "./providers/lrclib";
@@ -122,6 +123,7 @@ function extractTrackMetadata(url: URL, trackId: string): TrackMetadata | undefi
 }
 
 type WorkerEnv = {
+  RELEASE_ASSETS?: Fetcher;
   STATS?: AnalyticsEngineDataset;
   STATS_ACCOUNT_ID?: string;
   STATS_API_TOKEN?: string;
@@ -185,6 +187,10 @@ export function createWorker(service: LyricsService): ExportedHandler<WorkerEnv>
       }
 
       const url = new URL(request.url);
+
+      if (request.method === "GET" && url.pathname.startsWith("/extension/")) {
+        return extensionReleaseResponse(request, env.RELEASE_ASSETS);
+      }
 
       if (request.method === "GET" && url.pathname === "/") {
         return new Response(dashboardHtml, {

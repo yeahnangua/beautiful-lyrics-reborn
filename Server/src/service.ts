@@ -70,6 +70,14 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
             })
           : undefined
       );
+      const kugouDirectLyricsPromise = trackMetadataPromise.then((metadata) =>
+        metadata !== undefined && Date.now() < syllableDeadline
+          ? providers.kugou.getSyllableLyrics(metadata).catch((error) => {
+              console.warn(`[lyrics] ${trackId}: kugou direct failed`, error);
+              return undefined;
+            })
+          : undefined
+      );
       const neteaseDirectLyricsPromise = trackMetadataPromise.then((metadata) =>
         metadata !== undefined && Date.now() < syllableDeadline
           ? providers.netease.getSyllableLyrics(metadata).catch((error) => {
@@ -146,6 +154,9 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
         */
         qqMusicLyricsPromise.then((lyrics) =>
           lyrics === undefined ? Promise.reject() : (["qq music", lyrics] as const)
+        ),
+        kugouDirectLyricsPromise.then((lyrics) =>
+          lyrics === undefined ? Promise.reject() : (["kugou direct", lyrics] as const)
         ),
         neteaseDirectLyricsPromise.then((lyrics) =>
           lyrics === undefined ? Promise.reject() : (["netease direct", lyrics] as const)

@@ -101,3 +101,21 @@ The KuGou provider and KRC decoder/parser credit
 [lrcmux](https://github.com/f1nniboy/lrcmux) by f1nniboy. Its MIT copyright and
 permission notice are preserved in `LICENSES/lrcmux-MIT.txt`; see `NOTICE.md`
 for the upstream revision and adapted files.
+
+## Extension Releases And Updates
+
+The Marketplace entry is a small, stable loader. `cd Extension && deno task release`
+creates a SHA-256-named payload, `latest.json`, and the loader. The manifest entry
+path stays unchanged so Marketplace continues to recognize existing installs.
+
+The loader checks `https://lyrics.txw.qzz.io/extension/latest.json` at startup
+without caching, verifies the downloaded payload's full SHA-256, and checks for
+updates every five minutes. It prompts for a Spotify reload instead of executing
+two releases in the same session. If the latest release cannot be fetched, it
+tries the last successfully loaded release and the loader's embedded release,
+with jsDelivr as a secondary download source. This is a network fallback, not a
+guarantee of offline operation. Local development installs remain offline bundles.
+
+Publishing also requires deploying the Worker and its release assets together.
+See [the publishing guide](docs/spicetify-marketplace-publishing.md) for CI secrets,
+first-time migration, verification, and rollback.

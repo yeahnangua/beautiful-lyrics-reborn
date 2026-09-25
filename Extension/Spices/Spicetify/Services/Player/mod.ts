@@ -21,6 +21,7 @@ import {
 	TransformProviderLyrics,
 	type ProviderLyrics, type TransformedLyrics, type RomanizedLanguage
 } from "./LyricUtilities.ts"
+import { SimplifySearchText } from "./SearchText.ts"
 
 // Re-export some useful types
 export type { RomanizedLanguage, TransformedLyrics }
@@ -334,7 +335,7 @@ const LoadSongDetails = () => {
 
 // Handle our Lyrics
 const ProviderLyricsStore = GetExpireStore<ProviderLyrics | false>(
-	"Player_ProviderLyrics", 6,
+	"Player_ProviderLyrics", 7,
 	{
 		Duration: 2,
 		Unit: "Days"
@@ -342,7 +343,7 @@ const ProviderLyricsStore = GetExpireStore<ProviderLyrics | false>(
 	true
 )
 const TransformedLyricsStore = GetExpireStore<TransformedLyrics | false>(
-	"Player_TransformedLyrics", 6,
+	"Player_TransformedLyrics", 7,
 	{
 		Duration: 2,
 		Unit: "Days"
@@ -378,7 +379,7 @@ const BuildLyricsRequestURL = (song: StreamedSongMetadata): string => {
 
 	const trackName = metadata?.title || track?.name
 	if (trackName !== undefined && trackName.length > 0) {
-		url.searchParams.set("track_name", FilterSongName(trackName))
+		url.searchParams.set("track_name", SimplifySearchText(FilterSongName(trackName)))
 	}
 
 	const artistNames = (
@@ -391,12 +392,12 @@ const BuildLyricsRequestURL = (song: StreamedSongMetadata): string => {
 		artistNames.push(metadata.artist_name)
 	}
 	for (const artistName of artistNames) {
-		url.searchParams.append("artist_name", artistName)
+		url.searchParams.append("artist_name", SimplifySearchText(artistName))
 	}
 
 	const albumName = metadata?.album_title || track?.album?.name
 	if (albumName !== undefined && albumName.length > 0) {
-		url.searchParams.set("album_name", albumName)
+		url.searchParams.set("album_name", SimplifySearchText(albumName))
 	}
 
 	if (Number.isFinite(song.Duration) && song.Duration > 0) {
@@ -407,7 +408,7 @@ const BuildLyricsRequestURL = (song: StreamedSongMetadata): string => {
 }
 // iTunes rate-limits Cloudflare's shared egress IPs, so the Apple Music id is resolved
 // client-side from the user's own IP and handed to the server via apple_id.
-const ResolveAppleMusicId = (lyricsRequestURL: string): Promise<string | undefined> => {
+const ResolveAppleMusicId = (lyricsRequestURL: string): Promise<{ id: string; title: string } | undefined> => {
 	const lyricsUrl = new URL(lyricsRequestURL)
 	const trackName = lyricsUrl.searchParams.get("track_name")
 	const artistName = lyricsUrl.searchParams.get("artist_name")
@@ -417,7 +418,7 @@ const ResolveAppleMusicId = (lyricsRequestURL: string): Promise<string | undefin
 	}
 
 	const searchUrl = new URL("https://itunes.apple.com/search")
-	searchUrl.searchParams.set("term", `${trackName} ${artistName ?? ""}`.trim())
+	searchUrl.searchParams.set("term", SimplifySearchText(`${trackName} ${artistName ?? ""}`.trim()))
 	searchUrl.searchParams.set("media", "music")
 	searchUrl.searchParams.set("entity", "song")
 	searchUrl.searchParams.set("limit", "10")
@@ -428,23 +429,23 @@ const ResolveAppleMusicId = (lyricsRequestURL: string): Promise<string | undefin
 		.then(
 			(payload?: { results?: { trackId?: number; trackName?: string; trackTimeMillis?: number }[] }) => {
 				const results = (Array.isArray(payload?.results) ? payload.results : [])
-				const lowerTrackName = trackName.toLowerCase()
-				const matched = results.find(
-					result => (
-						(result.trackId !== undefined)
-						&& (result.trackName !== undefined)
-						&& (
-							result.trackName.toLowerCase().includes(lowerTrackName)
-							|| lowerTrackName.includes(result.trackName.toLowerCase())
-						)
+				const lowerTrackName = SimplifySearchText(trackName).toLowerCase()
+				const matched = results.find(result => {
+					if ((result.trackId === undefined) || (result.trackName === undefined)) {
+						return false
+					}
+					const resultTrackName = SimplifySearchText(result.trackName).toLowerCase()
+					return (
+						(resultTrackName.includes(lowerTrackName) || lowerTrackName.includes(resultTrackName))
 						&& (
 							(Number.isFinite(duration) === false) || (duration <= 0)
 							|| (result.trackTimeMillis === undefined)
 							|| (Math.abs((result.trackTimeMillis / 1000) - duration) <= 5)
 						)
 					)
-				)
-				return ((matched?.trackId === undefined) ? undefined : String(matched.trackId))
+				})
+				return ((matched?.trackId === undefined || matched.trackName === undefined)
+					? undefined : { id: String(matched.trackId), title: matched.trackName })
 			}
 		)
 		.catch(() => undefined)
@@ -473,10 +474,11 @@ const LoadSongLyrics = () => {
 					return (
 						Promise.all([GetSpotifyAccessToken(), ResolveAppleMusicId(lyricsRequestURL)])
 						.then(
-							([accessToken, appleMusicId]) => {
+							([accessToken, appleMusicTrack]) => {
 								const requestUrl = new URL(lyricsRequestURL)
-								if (appleMusicId !== undefined) {
-									requestUrl.searchParams.set("apple_id", appleMusicId)
+								if (appleMusicTrack !== undefined) {
+									requestUrl.searchParams.set("apple_id", appleMusicTrack.id)
+									requestUrl.searchParams.set("apple_title", appleMusicTrack.title)
 								}
 								return fetch(
 									requestUrl.toString(),

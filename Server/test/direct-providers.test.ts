@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { convertRichsyncToSyllableLyrics } from "../src/convert/richsync";
 import { createMusixmatchProvider } from "../src/providers/musixmatch";
 import { createNeteaseProvider } from "../src/providers/netease";
+import { matchedTitle } from "../src/providers/matched-title";
 import type { TrackMetadata } from "../src/types";
 
 const track: TrackMetadata = {
@@ -134,6 +135,7 @@ describe("NetEase direct provider", () => {
       ] } }]
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(matchedTitle(lyrics!)).toBe("范例歌曲");
   });
 
   it("tries another matching release when the first has only line lyrics", async () => {

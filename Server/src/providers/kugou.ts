@@ -5,6 +5,7 @@
 import OpenCC from "opencc-js";
 import { convertKrcToSyllableLyrics, decodeKrc } from "../convert/krc";
 import { withLyricRequestRetries } from "./request";
+import { withMatchedTitle } from "./matched-title";
 import type { SyllableLyricsProvider, TrackMetadata } from "../types";
 
 type Candidate = {
@@ -83,7 +84,7 @@ export function createKugouProvider(fetchImpl: typeof fetch = fetch): SyllableLy
           }
           const lyrics = convertKrcToSyllableLyrics(await decodeKrc(payload.content));
           if (lyrics !== undefined) {
-            return lyrics;
+            return withMatchedTitle(lyrics, candidate.song);
           }
         }
         return undefined;

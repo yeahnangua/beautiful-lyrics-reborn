@@ -3,6 +3,7 @@ import { decryptQrc } from "qrc-decoder";
 import { convertQrcXmlToSyllableLyrics } from "../convert/karaoke";
 import type { QqMusicProvider, SyllableSyncedLyrics, TrackMetadata } from "../types";
 import { withLyricRequestRetries } from "./request";
+import { withMatchedTitle } from "./matched-title";
 
 type FetchLike = typeof fetch;
 
@@ -287,7 +288,7 @@ export function createQqMusicProvider(fetchImpl: FetchLike = fetch): QqMusicProv
       }
       logMatchedSong(matchedSong);
 
-      return getQrcLyrics(fetchImpl, matchedSong.id);
+      return withMatchedTitle(await getQrcLyrics(fetchImpl, matchedSong.id), songTitle(matchedSong));
     }
   };
 }

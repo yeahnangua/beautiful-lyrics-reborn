@@ -3,6 +3,7 @@ import OpenCC from "opencc-js";
 import { convertLrcToLineLyrics } from "../convert/lrc";
 import { convertPlainTextToStatic } from "../convert/plain";
 import { withLyricRequestRetries } from "./request";
+import { withMatchedTitle } from "./matched-title";
 import type {
   BeautifulLyrics,
   LineSyncedLyrics,
@@ -509,12 +510,14 @@ async function getAppleMusicLyrics(fetchImpl: FetchLike, track: TrackMetadata): 
   // The client resolves the Apple id from its own IP when it can — iTunes search rate-limits
   // Cloudflare's shared egress IPs, so the server-side search below is a best-effort fallback.
   let trackId = track.appleMusicId;
+  let matchedTitle = track.appleMusicTitle ?? track.name;
   if (trackId === undefined) {
     const matchedSong = await searchAppleMusic(fetchImpl, track);
     if (matchedSong?.trackId === undefined) {
       return undefined;
     }
     trackId = String(matchedSong.trackId);
+    matchedTitle = matchedSong.trackName ?? track.name;
     console.log(`[lyrically:apple] matched ${trackId} "${matchedSong.trackName ?? "unknown title"}"`);
   } else {
     console.log(`[lyrically:apple] using client-supplied id ${trackId}`);
@@ -544,7 +547,7 @@ async function getAppleMusicLyrics(fetchImpl: FetchLike, track: TrackMetadata): 
       }, ${asArray(payload?.lyrics).length} timed line(s))`
     );
   }
-  return lyrics;
+  return withMatchedTitle(lyrics, matchedTitle);
 }
 
 async function searchKugou(
@@ -615,7 +618,7 @@ async function getKugouLyrics(
       }, ${asArray(payload?.lyrics).length} timed line(s))`
     );
   }
-  return lyrics;
+  return withMatchedTitle(lyrics, matchedSong.title);
 }
 
 async function getNeteaseLyrics(
@@ -674,7 +677,7 @@ async function getNeteaseLyrics(
       }, ${asArray(lyricsPayload?.lyrics).length} timed line(s))`
     );
   }
-  return lyrics;
+  return withMatchedTitle(lyrics, matchedSong.name);
 }
 
 async function getYouTubeLyrics(fetchImpl: FetchLike, track: TrackMetadata): Promise<BeautifulLyrics | undefined> {
@@ -785,7 +788,7 @@ async function getDeezerLyrics(fetchImpl: FetchLike, track: TrackMetadata): Prom
   if (lyrics === undefined) {
     console.log(`[lyrically:deezer] lyrics ${matchedSong.id}: no usable lyrics`);
   }
-  return lyrics;
+  return withMatchedTitle(lyrics, matchedSong.title);
 }
 
 async function searchGenius(fetchImpl: FetchLike, track: TrackMetadata): Promise<string | undefined> {

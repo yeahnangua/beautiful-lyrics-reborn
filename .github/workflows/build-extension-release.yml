@@ -68,6 +68,9 @@ jobs:
         with:
           node-version: 22
 
+      - name: Remove old release bundles
+        run: node Extension/Tasks/PruneRelease.mjs
+
       - name: Test loader
         run: node --test Extension/Tests/*.test.mjs
 

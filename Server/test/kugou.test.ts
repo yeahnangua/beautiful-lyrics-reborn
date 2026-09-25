@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { convertKrcToSyllableLyrics, decodeKrc } from "../src/convert/krc";
 import { createKugouProvider } from "../src/providers/kugou";
+import { matchedTitle } from "../src/providers/matched-title";
 import type { TrackMetadata } from "../src/types";
 
 // Synthetic lyrics encoded independently with Python's zlib implementation.
@@ -108,6 +109,7 @@ describe("KuGou direct provider", () => {
     });
     const lyrics = await createKugouProvider(fetchMock as typeof fetch).getSyllableLyrics(track);
     expect(lyrics).toEqual(convertKrcToSyllableLyrics(krc));
+    expect(matchedTitle(lyrics!)).toBe("范例歌曲");
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 

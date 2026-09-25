@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { createLyricallyProvider } from "../src/providers/lyrically";
+import { matchedTitle } from "../src/providers/matched-title";
 import { createQqMusicProvider, decryptQrcHex } from "../src/providers/qqmusic";
 import { withLyricRequestRetries } from "../src/providers/request";
 
@@ -104,6 +105,7 @@ describe("QQ Music provider", () => {
 
     expect(lyrics?.Type).toBe("Syllable");
     expect(lyrics?.StartTime).toBeCloseTo(0);
+    expect(matchedTitle(lyrics!)).toBe("布拉格广场");
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -381,10 +383,12 @@ describe("lyrically provider", () => {
       name: "倔強",
       artists: ["五月天"],
       durationSeconds: 261,
-      appleMusicId: "183919743"
+      appleMusicId: "183919743",
+      appleMusicTitle: "倔強 (Live)"
     });
 
     expect(lyrics).toMatchObject({ Type: "Syllable" });
+    expect(matchedTitle(lyrics!)).toBe("倔強 (Live)");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     logSpy.mockRestore();
   });

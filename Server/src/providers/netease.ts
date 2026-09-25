@@ -4,6 +4,7 @@
 import OpenCC from "opencc-js";
 import { convertYrcToSyllableLyrics } from "../convert/karaoke";
 import { withLyricRequestRetries } from "./request";
+import { withMatchedTitle } from "./matched-title";
 import type { SyllableLyricsProvider, TrackMetadata } from "../types";
 
 type Song = {
@@ -102,7 +103,7 @@ export function createNeteaseProvider(fetchImpl: typeof fetch = fetch): Syllable
           }
           const lyrics = convertYrcToSyllableLyrics(payload.yrc?.lyric);
           if (lyrics !== undefined) {
-            return lyrics;
+            return withMatchedTitle(lyrics, song.name);
           }
         }
         return undefined;

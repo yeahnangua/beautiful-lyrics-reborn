@@ -12,6 +12,12 @@ import {
 } from "@Spices/Spicetify/Services/Session.ts"
 import { Song, SongChanged } from "@Spices/Spicetify/Services/Player/mod.ts"
 
+// Modules
+import {
+	LyricsOffsetStep, LyricsOffsetChanged,
+	AdjustLyricsOffset, SetLyricsOffset, GetLyricsOffsetString
+} from "../../Modules/LyricsOffset.ts"
+
 // Our Modules
 import { CreateLyricsRenderer, SetupRomanizationButton } from "./Shared.ts"
 import { CreateElement, ApplyDynamicBackground } from "../Shared.ts"
@@ -35,11 +41,27 @@ const Header = `
 				<path d="M14.55 1c.8 0 1.45.65 1.45 1.45V7h-1.5V2.5h-13v11h5.507V15H1.45C.65 15 0 14.35 0 13.55V2.45C0 1.65.65 1 1.45 1h13.1z"></path><path d="M16 9.757a.75.75 0 0 0-.75-.75H9.068L6.56 6.5h1.385a.75.75 0 1 0 0-1.5H4v3.946a.75.75 0 0 0 1.5 0V7.561l3.076 3.075v3.614c0 .414.336.75.75.75h5.925a.75.75 0 0 0 .75-.75V9.757z"></path>
 			</svg>
 		</button>
-		<button id="Close" class="ViewControl">
-			<svg role="img" height="16" width="16" aria-hidden="true" viewBox="0 0 16 16" data-encore-id="icon" class="Svg-sc-ytk21e-0 Svg-img-16-icon">
-				<path d="M1.47 1.47a.75.75 0 0 1 1.06 0L8 6.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L9.06 8l5.47 5.47a.75.75 0 1 1-1.06 1.06L8 9.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L6.94 8 1.47 2.53a.75.75 0 0 1 0-1.06z"></path>
-			</svg>
-		</button>
+		<div class="LyricsOffsetControl">
+			<button id="LyricsOffset" class="ViewControl">
+				<svg role="img" height="16" width="16" aria-hidden="true" viewBox="0 0 16 16" data-encore-id="icon" class="Svg-sc-ytk21e-0 Svg-img-16-icon">
+					<path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8z"></path>
+					<path d="M8 3.25a.75.75 0 0 1 .75.75v3.69l2.28 2.28a.75.75 0 1 1-1.06 1.06L7.47 8.53A.75.75 0 0 1 7.25 8V4A.75.75 0 0 1 8 3.25z"></path>
+				</svg>
+			</button>
+			<div class="LyricsOffsetPopup">
+				<button class="Step Decrease">
+					<svg role="img" height="16" width="16" aria-hidden="true" viewBox="0 0 16 16">
+						<path d="M1.5 8a.75.75 0 0 1 .75-.75h11.5a.75.75 0 0 1 0 1.5H2.25A.75.75 0 0 1 1.5 8z"></path>
+					</svg>
+				</button>
+				<button class="Value"></button>
+				<button class="Step Increase">
+					<svg role="img" height="16" width="16" aria-hidden="true" viewBox="0 0 16 16">
+						<path d="M8 1.5a.75.75 0 0 1 .75.75v5h5a.75.75 0 0 1 0 1.5h-5v5a.75.75 0 0 1-1.5 0v-5h-5a.75.75 0 0 1 0-1.5h5v-5A.75.75 0 0 1 8 1.5z"></path>
+					</svg>
+				</button>
+			</div>
+		</div>
 	</div>
 `.trim()
 const NoLyrics = `<span class="NoLyrics">This song doesn't have any Lyrics!</span>`
@@ -83,23 +105,55 @@ export default class PageView implements Giveable {
 			const githubButton = header.querySelector<HTMLButtonElement>("#Github")!
 			const changeButton = header.querySelector<HTMLButtonElement>("#Cinema")!
 			const romanizeButton = header.querySelector<HTMLButtonElement>("#Romanize")!
-			const closeButton = header.querySelector<HTMLButtonElement>("#Close")!
+			const offsetControl = header.querySelector<HTMLDivElement>(".LyricsOffsetControl")!
 
-			// Handle our close button
+			// Handle our lyrics-offset button/popup
 			{
-				const closeTooltip = Spotify.Tippy(
-					closeButton,
-					{
-						...Spotify.TippyProps,
-						content: `Close Page`
-					}
-				)
-				this.Maid.Give(() => closeTooltip.destroy())
+				const offsetButton = offsetControl.querySelector<HTMLButtonElement>("#LyricsOffset")!
+				const decreaseButton = offsetControl.querySelector<HTMLButtonElement>(".Decrease")!
+				const increaseButton = offsetControl.querySelector<HTMLButtonElement>(".Increase")!
+				const valueButton = offsetControl.querySelector<HTMLButtonElement>(".Value")!
 
-				closeButton.addEventListener(
+				// Create our tooltips
+				const tooltips = [
+					Spotify.Tippy(offsetButton, { ...Spotify.TippyProps, content: "Adjust Lyrics Timing" }),
+					Spotify.Tippy(decreaseButton, { ...Spotify.TippyProps, content: `Delay Lyrics ${LyricsOffsetStep}s` }),
+					Spotify.Tippy(increaseButton, { ...Spotify.TippyProps, content: `Advance Lyrics ${LyricsOffsetStep}s` }),
+					Spotify.Tippy(valueButton, { ...Spotify.TippyProps, content: "Reset" })
+				]
+				this.Maid.Give(() => tooltips.forEach(tooltip => tooltip.destroy()))
+
+				// Handle displaying our current offset
+				const UpdateValue = () => valueButton.textContent = GetLyricsOffsetString()
+				UpdateValue()
+				this.Maid.Give(LyricsOffsetChanged.Connect(UpdateValue))
+
+				// Handle opening/closing our popup
+				const SetPopupOpen = (isOpen: boolean) => offsetControl.classList.toggle("Open", isOpen)
+				offsetButton.addEventListener(
 					"click",
-					() => this.Close()
+					() => SetPopupOpen(offsetControl.classList.contains("Open") === false)
 				)
+
+				const OnPointerDown = (event: PointerEvent) => {
+					if (offsetControl.contains(event.target as Node) === false) {
+						SetPopupOpen(false)
+					}
+				}
+				const OnKeyDown = (event: KeyboardEvent) => {
+					if (event.key === "Escape") {
+						SetPopupOpen(false)
+					}
+				}
+				document.addEventListener("pointerdown", OnPointerDown)
+				document.addEventListener("keydown", OnKeyDown)
+				this.Maid.Give(() => document.removeEventListener("pointerdown", OnPointerDown))
+				this.Maid.Give(() => document.removeEventListener("keydown", OnKeyDown))
+
+				// Handle adjusting our offset
+				decreaseButton.addEventListener("click", () => AdjustLyricsOffset(-LyricsOffsetStep))
+				increaseButton.addEventListener("click", () => AdjustLyricsOffset(LyricsOffsetStep))
+				valueButton.addEventListener("click", () => SetLyricsOffset(0))
 			}
 
 			// Handle our github button

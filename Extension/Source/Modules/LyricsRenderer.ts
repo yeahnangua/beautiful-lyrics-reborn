@@ -8,6 +8,9 @@ import { OnPreRender } from "@Universal/Modules/Scheduler.ts"
 // Spices
 import { Timestamp, TimeStepped, SeekTo } from "@Spices/Spicetify/Services/Player/mod.ts"
 
+// Our Modules
+import { GetLyricsOffset, LyricsOffsetChanged } from "./LyricsOffset.ts"
+
 // Our Types
 import { BaseVocals, SyncedVocals } from "./LyricsRenderer/Types.d.ts"
 
@@ -195,7 +198,7 @@ export default class LyricsRenderer implements Giveable {
 						this.Update(
 							scroller, vocalGroups,
 							transformedLyrics.EndTime,
-							Timestamp, deltaTime, skipped, (justSkippedByVocal || undefined)
+							(Timestamp + GetLyricsOffset()), deltaTime, skipped, (justSkippedByVocal || undefined)
 						)
 
 						if (skipped && justSkippedByVocal) {
@@ -211,7 +214,18 @@ export default class LyricsRenderer implements Giveable {
 					() => this.Update(
 						scroller, vocalGroups,
 						transformedLyrics.EndTime,
-						Timestamp, (1 / 60), true
+						(Timestamp + GetLyricsOffset()), (1 / 60), true
+					)
+				)
+			)
+
+			// Jump to our new position whenever the offset changes
+			this.Maid.Give(
+				LyricsOffsetChanged.Connect(
+					offset => this.Update(
+						scroller, vocalGroups,
+						transformedLyrics.EndTime,
+						(Timestamp + offset), (1 / 60), true
 					)
 				)
 			)
@@ -224,7 +238,7 @@ export default class LyricsRenderer implements Giveable {
 					vocal.RequestedTimeSkip.Connect(
 						() => {
 							justSkippedByVocal = true
-							SeekTo(startTime)
+							SeekTo(Math.max(0, (startTime - GetLyricsOffset())))
 						}
 					)
 				}

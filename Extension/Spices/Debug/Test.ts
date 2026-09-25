@@ -7,9 +7,6 @@ import { join, extname, fromFileUrl } from "jsr:@std/path@0.223.0"
 import { tty, colors } from "jsr:@codemonument/cliffy@1.0.0-rc.3/ansi"
 import { keypress, type KeyPressEvent } from "jsr:@codemonument/cliffy@1.0.0-rc.3/keypress"
 
-// Oak Imports
-import { Application, Status } from "jsr:@oak/oak@16.0.0"
-
 // Spicetify Imports
 import { ToggleExtension, Apply, RemoveExtension } from "../Spicetify/Terminal.ts"
 
@@ -119,76 +116,32 @@ export default async function() {
 	// Do a first bundle of our project
 	await UpdateVersion(true)
 
-	// Now create our server
-	const app = new Application()
-	{
-		app.use( // CORS
-			(ctx, next) => {
-				ctx.response.headers.set('Access-Control-Allow-Origin', '*')
-				return next()
+	// Deno's native server handles WebSocket upgrades in the test runtime.
+	const HandleRequest = async (request: Request): Promise<Response> => {
+		const pathname = new URL(request.url).pathname
+		if (pathname === "/ws") {
+			if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+				return new Response("Needs to be a WebSocket connection.", { status: 400 })
 			}
-		)
-		app.use(
-			context => {
-				// Handle WebSocket requests
-				if (context.request.url.pathname === "/ws") {
-					if (context.isUpgradable) {
-						const webSocket = context.upgrade()
-						
-						const versionUpdatedConnection = versionUpdated.Connect(
-							() => {
-								webSocket.send(testVersion.toString())
-							}
-						)
 
-						webSocket.onmessage = _ => webSocket.send(testVersion.toString())
-						webSocket.onclose = () => versionUpdatedConnection.Disconnect()
-					} else {
-						context.response.status = Status.BadRequest
-						context.response.body = "Needs to be a WebSocket connection."
-					}
+			const { response, socket } = Deno.upgradeWebSocket(request)
+			const connection = versionUpdated.Connect(() => socket.send(testVersion.toString()))
+			socket.onmessage = () => socket.send(testVersion.toString())
+			socket.onclose = () => connection.Disconnect()
+			socket.onerror = () => connection.Disconnect()
+			return response
+		}
 
-					return
-				}
+		const fullPath = join("./Builds/Test", pathname.slice(1))
+		if (!(await exists(fullPath, { isFile: true }))) {
+			return new Response("Not Found", { status: 404, headers: { "Access-Control-Allow-Origin": "*" } })
+		}
 
-				// Handle file requests
-				const fullPath = join("./Builds/Test", context.request.url.pathname)
-				return (
-					exists(
-						fullPath,
-						{
-							isFile: true
-						}
-					)
-					.then(
-						exists => {
-							if (exists) {
-								return (
-									Deno.readTextFile(fullPath)
-									.then(
-										contents => {
-											context.response.status = Status.OK
-											context.response.headers.set(
-												"Content-Type",
-												(
-													(extname(fullPath) === ".css") ? "text/css"
-													: extname(fullPath) === ".mjs" ? "text/javascript"
-													: "text/plain"
-												)
-											)
-											context.response.body = contents
-										}
-									)
-								)
-							} else {
-								context.response.status = Status.NotFound
-								context.response.body = "Not Found"
-							}
-						}
-					)
-				)
-			}
-		)
+		const contentType = (extname(fullPath) === ".css") ? "text/css"
+			: (extname(fullPath) === ".mjs") ? "text/javascript" : "text/plain"
+		return new Response(await Deno.readTextFile(fullPath), {
+			headers: { "Access-Control-Allow-Origin": "*", "Content-Type": contentType }
+		})
 	}
 
 	// Handle creating our auto-update entry-point
@@ -285,5 +238,5 @@ export default async function() {
 	}
 
 	// Listen at the end
-	app.listen({ port: options.port })
+	Deno.serve({ hostname: "127.0.0.1", port: options.port }, HandleRequest)
 }

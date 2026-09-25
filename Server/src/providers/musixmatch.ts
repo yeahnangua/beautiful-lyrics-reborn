@@ -4,11 +4,12 @@
 // See NOTICE.md and LICENSES/Spicetify-LGPL-2.1.txt.
 import { convertRichsyncToSyllableLyrics } from "../convert/richsync";
 import { withLyricRequestRetries } from "./request";
+import { withMatchedTitle } from "./matched-title";
 import type { SyllableLyricsProvider, TrackMetadata } from "../types";
 
 type Message<T> = { header?: { status_code?: number }; body?: T };
 type MacroCalls = {
-  "matcher.track.get"?: { message?: Message<{ track?: { has_richsync?: number; instrumental?: number; restricted?: number } }> };
+  "matcher.track.get"?: { message?: Message<{ track?: { track_name?: string; has_richsync?: number; instrumental?: number; restricted?: number } }> };
   "track.lyrics.get"?: { message?: Message<{ lyrics?: { restricted?: number } }> };
   "track.richsync.get"?: { message?: Message<{ richsync?: { richsync_body?: string; restricted?: number } }> };
 };
@@ -121,7 +122,7 @@ export function createMusixmatchProvider(fetchImpl: typeof fetch = fetch): Sylla
         richsync?.header?.status_code !== 200 || richsync.body?.richsync?.restricted) {
         return undefined;
       }
-      return convertRichsyncToSyllableLyrics(richsync.body?.richsync?.richsync_body);
+      return withMatchedTitle(convertRichsyncToSyllableLyrics(richsync.body?.richsync?.richsync_body), metadata.track_name);
     }
   };
 }

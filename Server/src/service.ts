@@ -1,7 +1,13 @@
 import { decodeEntitiesDeep } from "./convert/entities";
+import { matchedTitle } from "./providers/matched-title";
 import type { BeautifulLyrics, ProviderClients, SpotifyClientContext, TrackMetadata } from "./types";
 
 const syllableSearchTimeoutMs = 20_000;
+const liveAlternativeWaitMs = 2_000;
+
+function isLiveTitle(title: string): boolean {
+  return /\b(?:live|concert)\b|演唱[会會]|现[场場]|實況|实况/i.test(title);
+}
 
 export type LyricsService = {
   getLyrics(
@@ -143,7 +149,7 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
         });
         return deezerLyrics;
       });
-      const syllableLyricsPromise = Promise.any([
+      const syllableCandidates = [
         /*
         suppliedAmllDbLyricsPromise.then((lyrics) =>
           lyrics === undefined ? Promise.reject() : (["amlldb", lyrics] as const)
@@ -181,7 +187,8 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
         deezerLyricsPromise.then((lyrics) =>
           lyrics?.Type === "Syllable" ? (["lyrically deezer", lyrics] as const) : Promise.reject()
         )
-      ]).catch(() => undefined);
+      ];
+      const syllableLyricsPromise = Promise.any(syllableCandidates).catch(() => undefined);
       let syllableTimedOut = false;
       let syllableTimeout: ReturnType<typeof setTimeout> | undefined;
       const syllableLyrics = await Promise.race([
@@ -197,7 +204,31 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
         clearTimeout(syllableTimeout);
       }
       if (syllableLyrics !== undefined) {
-        const [source, lyrics] = syllableLyrics;
+        let [source, lyrics] = syllableLyrics;
+        const firstTitle = matchedTitle(lyrics) ?? trackMetadata?.name ?? "";
+        if (isLiveTitle(firstTitle)) {
+          console.log(`[lyrics] ${trackId}: first syllable result is live ("${firstTitle}"); waiting up to 2 seconds`);
+          let alternativeTimeout: ReturnType<typeof setTimeout> | undefined;
+          const alternative = await Promise.race([
+            Promise.any(syllableCandidates.map(async (candidate) => {
+              const result = await candidate;
+              const title = matchedTitle(result[1]) ?? trackMetadata?.name ?? "";
+              if (isLiveTitle(title)) {
+                throw new Error("live version");
+              }
+              return result;
+            })).catch(() => undefined),
+            new Promise<undefined>((resolve) => {
+              alternativeTimeout = setTimeout(() => resolve(undefined), liveAlternativeWaitMs);
+            })
+          ]);
+          if (alternativeTimeout !== undefined) {
+            clearTimeout(alternativeTimeout);
+          }
+          if (alternative !== undefined) {
+            [source, lyrics] = alternative;
+          }
+        }
         console.log(`[lyrics] ${trackId}: using ${source} ${lyrics.Type}`);
         return lyrics;
       }

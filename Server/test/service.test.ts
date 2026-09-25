@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import worker, { createWorker } from "../src/index";
 import { createLyricsService } from "../src/service";
+import { withMatchedTitle } from "../src/providers/matched-title";
 import type { ProviderClients } from "../src/types";
 
 function createProviders(): ProviderClients {
@@ -42,7 +43,71 @@ function createProviders(): ProviderClients {
   };
 }
 
+function wordLyrics(text: string) {
+  return {
+    Type: "Syllable" as const,
+    StartTime: 1,
+    EndTime: 2,
+    Content: [{
+      Type: "Vocal" as const,
+      OppositeAligned: false,
+      Lead: { StartTime: 1, EndTime: 2, Syllables: [
+        { Text: text, StartTime: 1, EndTime: 2, IsPartOfWord: false }
+      ] }
+    }]
+  };
+}
+
 describe("lyrics service", () => {
+  it.each(["Song (Live)", "Song 演唱會", "Song 现场版"])(
+    "waits for a non-live syllable result when the first match is %s",
+    async (liveTitle) => {
+      vi.useFakeTimers();
+      try {
+        const providers = createProviders();
+        let resolveAlternative!: (lyrics: ReturnType<typeof wordLyrics>) => void;
+        const live = withMatchedTitle(wordLyrics("live"), liveTitle);
+        const studio = withMatchedTitle(wordLyrics("studio"), "Song");
+        vi.mocked(providers.qqmusic.getSyllableLyrics).mockResolvedValue(live);
+        vi.mocked(providers.kugou.getSyllableLyrics).mockReturnValue(new Promise((resolve) => {
+          resolveAlternative = resolve;
+        }));
+        const request = createLyricsService(providers).getLyrics("track", "token", {
+          id: "track", name: "Song", artists: ["Artist"]
+        });
+        let settled = false;
+        void request.then(() => { settled = true; });
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(settled).toBe(false);
+        resolveAlternative(studio);
+        await expect(request).resolves.toEqual(studio);
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+  );
+
+  it("returns the live syllable result after two seconds when other providers are still pending", async () => {
+    vi.useFakeTimers();
+    try {
+      const providers = createProviders();
+      const live = withMatchedTitle(wordLyrics("live"), "Song (Live)");
+      vi.mocked(providers.qqmusic.getSyllableLyrics).mockResolvedValue(live);
+      vi.mocked(providers.kugou.getSyllableLyrics).mockReturnValue(new Promise(() => {}));
+      const request = createLyricsService(providers).getLyrics("track", "token", {
+        id: "track", name: "Song", artists: ["Artist"]
+      });
+      let settled = false;
+      void request.then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(request).resolves.toEqual(live);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it.each(["kugou", "netease", "musixmatch"] as const)("uses %s direct word lyrics before the line fallback", async (source) => {
     const providers = createProviders();
     const lyrics = {
@@ -973,6 +1038,21 @@ describe("worker route", () => {
       },
       undefined
     );
+  });
+
+  it("passes the client matched Apple Music title with its id", async () => {
+    const service = { getLyrics: vi.fn().mockResolvedValue(undefined) };
+    const injectedWorker = createWorker(service);
+    await injectedWorker.fetch?.(
+      new Request("http://localhost:8787/lyrics/track?track_name=Song&artist_name=Artist&apple_id=123&apple_title=Song%20(Live)", {
+        headers: { Authorization: "Bearer token" }
+      }),
+      env,
+      context
+    );
+    expect(service.getLyrics).toHaveBeenCalledWith("track", "token", {
+      id: "track", name: "Song", artists: ["Artist"], appleMusicId: "123", appleMusicTitle: "Song (Live)"
+    }, undefined);
   });
 
   it("passes Spotify client context headers to the lyrics service", async () => {

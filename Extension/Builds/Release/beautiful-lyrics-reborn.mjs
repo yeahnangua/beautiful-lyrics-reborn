@@ -79,4 +79,4 @@ export async function startReleaseLoader(fallback, runtime = globalThis) {
   }
 }
 
-await startReleaseLoader({"schema":1,"version":"5.2.2","sha256":"bacd1522807d3a80e4020528ef12bf6e6fe9fc4b692076b200e0aba8cecacbab","file":"beautiful-lyrics-reborn.bacd1522807d3a80.mjs"});
+await startReleaseLoader({"schema":1,"version":"5.2.2","sha256":"0d67a6d751dc4dc98aec445eadc628b966060168beb7d1e508c24a945132f042","file":"beautiful-lyrics-reborn.0d67a6d751dc4dc9.mjs"});

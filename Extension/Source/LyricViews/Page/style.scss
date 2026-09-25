@@ -1330,6 +1330,97 @@ body:has(.BeautifulLyricsPage.Fullscreen) {
 			#Github svg {
 				fill: currentColor;
 			}
+
+			// Keep our controls visible while the offset popup is open
+			&:has(.LyricsOffsetControl.Open) {
+				opacity: 1 !important;
+			}
+
+			.LyricsOffsetControl {
+				height: 100%;
+				position: relative;
+
+				#LyricsOffset svg {
+					height: calc(var(--ViewControlSize) * 0.45);
+					width: auto;
+					aspect-ratio: 1;
+				}
+
+				&.Open #LyricsOffset {
+					color: rgb(255 255 255);
+				}
+
+				.LyricsOffsetPopup {
+					display: flex;
+					padding: 6px;
+
+					align-items: center;
+					gap: 4px;
+
+					position: absolute;
+					bottom: calc(100% + 10px);
+					left: 50%;
+
+					background: rgb(21 22 23 / 85%);
+					border-radius: 100rem;
+					backdrop-filter: blur(10px);
+					box-shadow: 0 4px 16px rgb(0 0 0 / 35%);
+
+					opacity: 0;
+					visibility: hidden;
+					transform: translate(-50%, 6px);
+					transition: opacity .15s, transform .15s, visibility .15s;
+
+					button {
+						display: flex;
+						height: 32px;
+
+						justify-content: center;
+						align-items: center;
+
+						background: transparent;
+						border: none;
+						border-radius: 100rem;
+
+						color: rgb(255 255 255 / 70%);
+
+						transition: background .1s, color .1s;
+
+						&:hover {
+							background: rgb(255 255 255 / 10%);
+							color: rgb(255 255 255);
+						}
+
+						&:active {
+							background: rgb(255 255 255 / 18%);
+						}
+					}
+
+					.Step {
+						width: 32px;
+
+						svg {
+							height: 14px;
+							width: 14px;
+							fill: currentColor;
+						}
+					}
+
+					.Value {
+						min-width: 64px;
+						padding: 0 8px;
+
+						font-size: 14px;
+						font-variant-numeric: tabular-nums;
+					}
+				}
+
+				&.Open .LyricsOffsetPopup {
+					opacity: 1;
+					visibility: visible;
+					transform: translate(-50%, 0);
+				}
+			}
 		}
 
 		&:hover {

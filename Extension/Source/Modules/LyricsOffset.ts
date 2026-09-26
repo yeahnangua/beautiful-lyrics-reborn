@@ -18,7 +18,7 @@ const Store = GetInstantStore<
 )
 
 // Constants
-export const LyricsOffsetStep = 0.5
+export const LyricsOffsetStep = 0.2
 
 // Signals
 const LyricsOffsetChangedSignal = new Signal<(offset: number) => void>()

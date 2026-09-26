@@ -463,6 +463,58 @@ const LoadSongLyrics = () => {
 		return
 	}
 	const lyricsRequestURL = BuildLyricsRequestURL(songAtUpdate)
+	const FetchProviderLyrics = (remainingRetries: number): Promise<ProviderLyrics | false> => (
+		Promise.all([GetSpotifyAccessToken(), ResolveAppleMusicId(lyricsRequestURL)])
+		.then(
+			([accessToken, appleMusicTrack]) => {
+				const requestUrl = new URL(lyricsRequestURL)
+				if (appleMusicTrack !== undefined) {
+					requestUrl.searchParams.set("apple_id", appleMusicTrack.id)
+					requestUrl.searchParams.set("apple_title", appleMusicTrack.title)
+				}
+				return fetch(
+					requestUrl.toString(),
+					{
+						method: "GET",
+						cache: "no-store",
+						headers: {
+							Authorization: `Bearer ${accessToken}`,
+							"X-Spotify-App-Platform": SpotifyPlatform.PlatformData.app_platform,
+							"X-Spotify-App-Version": SpotifyPlatform.version
+						}
+					}
+				)
+			}
+		)
+		.then(
+			(response) => {
+				if (response.ok === false) {
+					throw `Failed to load Lyrics for Track (${
+						songAtUpdate.Id
+					}), Error: ${response.status} ${response.statusText}`
+				}
+
+				return response.text()
+			}
+		)
+		.then(text => (text.length === 0) ? undefined : JSON.parse(text) as ProviderLyrics | false)
+		.then(async providerLyrics => {
+			if (
+				((providerLyrics === undefined) || (providerLyrics === false))
+				&& (remainingRetries > 0) && (Song === songAtUpdate)
+			) {
+				await new Promise<void>(resolve => setTimeout(resolve, 1000))
+				if (Song === songAtUpdate) {
+					return FetchProviderLyrics(remainingRetries - 1)
+				}
+			}
+
+			if ((providerLyrics !== undefined) && (providerLyrics !== false)) {
+				ProviderLyricsStore.SetItem(songAtUpdate.Id, providerLyrics, LyricsCacheExpiration(providerLyrics))
+			}
+			return providerLyrics ?? false
+		})
+	)
 
 	// Now go through the process of loading our lyrics
 	{
@@ -470,57 +522,8 @@ const LoadSongLyrics = () => {
 		ProviderLyricsStore.GetItem(songAtUpdate.Id)
 		.then(
 			providerLyrics => {
-				if (providerLyrics === undefined) { // Otherwise, get our lyrics
-					return (
-						Promise.all([GetSpotifyAccessToken(), ResolveAppleMusicId(lyricsRequestURL)])
-						.then(
-							([accessToken, appleMusicTrack]) => {
-								const requestUrl = new URL(lyricsRequestURL)
-								if (appleMusicTrack !== undefined) {
-									requestUrl.searchParams.set("apple_id", appleMusicTrack.id)
-									requestUrl.searchParams.set("apple_title", appleMusicTrack.title)
-								}
-								return fetch(
-									requestUrl.toString(),
-									{
-										method: "GET",
-										headers: {
-											Authorization: `Bearer ${accessToken}`,
-											"X-Spotify-App-Platform": SpotifyPlatform.PlatformData.app_platform,
-											"X-Spotify-App-Version": SpotifyPlatform.version
-										}
-									}
-								)
-							}
-						)
-						.then(
-							(response) => {
-								if (response.ok === false) {
-									throw `Failed to load Lyrics for Track (${
-											songAtUpdate.Id
-										}), Error: ${response.status} ${response.statusText}`
-									}
-				
-									return response.text()
-								}
-							)
-							.then(
-								text => {
-									if (text.length === 0) {
-										return undefined
-									} else {
-										return JSON.parse(text)
-								}
-							}
-						)
-						.then(
-							(providerLyrics) => {
-								const lyrics = (providerLyrics ?? false)
-								ProviderLyricsStore.SetItem(songAtUpdate.Id, lyrics, LyricsCacheExpiration(lyrics))
-								return lyrics
-							}
-						)
-					)
+				if ((providerLyrics === undefined) || (providerLyrics === false)) {
+					return FetchProviderLyrics(1)
 				} else {
 					return providerLyrics
 				}
@@ -528,6 +531,9 @@ const LoadSongLyrics = () => {
 		)
 		.then(
 			(storedProviderLyrics): Promise<[(ProviderLyrics | false), (TransformedLyrics | false | undefined)]> => {
+				if (storedProviderLyrics === false) {
+					return Promise.resolve<[(ProviderLyrics | false), (TransformedLyrics | false | undefined)]>([false, undefined])
+				}
 				return (
 					TransformedLyricsStore.GetItem(songAtUpdate.Id)
 					.then(storedTransformedLyrics => [storedProviderLyrics, storedTransformedLyrics])
@@ -536,20 +542,20 @@ const LoadSongLyrics = () => {
 		)
 		.then(
 			([storedProviderLyrics, storedTransformedLyrics]): Promise<TransformedLyrics | undefined> => {
+				if (storedProviderLyrics === false) {
+					return Promise.resolve(undefined)
+				}
 				// If we do not have anything stored for our transformed-lyrics then we need to generate it
-				if (storedTransformedLyrics === undefined) {
+				if ((storedTransformedLyrics === undefined) || (storedTransformedLyrics === false)) {
 					return (
-						(
-							(storedProviderLyrics === false) ? Promise.resolve<false>(false)
-							: TransformProviderLyrics(storedProviderLyrics)
-						)
+						TransformProviderLyrics(storedProviderLyrics)
 						.then(
 							transformedLyrics => {
 								// Save our information
 								TransformedLyricsStore.SetItem(songAtUpdate.Id, transformedLyrics, LyricsCacheExpiration(transformedLyrics))
 
 								// Now return our information
-								return (transformedLyrics || undefined)
+								return transformedLyrics
 							}
 						)
 					)
@@ -584,6 +590,12 @@ const LoadSongLyrics = () => {
 				SongLyricsLoadedSignal.Fire()
 			}
 		)
+	}
+}
+
+export const RetrySongLyricsIfMissing = () => {
+	if (HaveSongLyricsLoaded && (SongLyrics === undefined) && (Song?.Type === "Streamed")) {
+		LoadSongLyrics()
 	}
 }
 

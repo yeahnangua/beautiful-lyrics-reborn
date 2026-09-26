@@ -5,7 +5,7 @@ import { Maid } from "@Universal/Modules/Maid.ts"
 import { Spotify } from "@Spices/Spicetify/Services/Session.ts"
 import {
 	SongChanged,
-	SongLyrics, SongLyricsLoaded, HaveSongLyricsLoaded
+	SongLyrics, SongLyricsLoaded, HaveSongLyricsLoaded, RetrySongLyricsIfMissing
 } from "@Spices/Spicetify/Services/Player/mod.ts"
 
 // Modules
@@ -24,6 +24,7 @@ export const CreateLyricsRenderer = (
 	maid: Maid,
 	noLyricsTemplate?: string,
 ) => {
+	RetrySongLyricsIfMissing()
 	const UpdateLyricsRenderer = () => {
 		// Wipe our previous renderer
 		maid.Clean("LyricsRenderer")

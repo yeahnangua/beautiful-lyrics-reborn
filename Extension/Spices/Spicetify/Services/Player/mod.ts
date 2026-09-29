@@ -1,3 +1,4 @@
+import { Abortable, CreateAbortScope, Delay } from "@Universal/Modules/Async.ts"
 // Spotify Types
 import type { TrackInformationResponse, TrackInformation, TrackReleaseDate } from "../../Types/API/InternalTrackInformation.ts"
 import type TrackMetadata from "../../Types/App/TrackMetadata.ts"
@@ -19,12 +20,12 @@ import { GetExpireStore, type ExpirationSettings } from '../Cache.ts'
 // Our Modules
 import {
 	TransformProviderLyrics,
-	type ProviderLyrics, type TransformedLyrics, type RomanizedLanguage
+	type ProviderLyrics, type TransformedLyrics
 } from "./LyricUtilities.ts"
 import { SimplifySearchText } from "./SearchText.ts"
 
 // Re-export some useful types
-export type { RomanizedLanguage, TransformedLyrics }
+export type { TransformedLyrics }
 
 // Create our maid for the Player
 const PlayerMaid = GlobalMaid.Give(new Maid())
@@ -335,7 +336,7 @@ const LoadSongDetails = () => {
 
 // Handle our Lyrics
 const ProviderLyricsStore = GetExpireStore<ProviderLyrics | false>(
-	"Player_ProviderLyrics", 7,
+	"Player_ProviderLyrics", 8,
 	{
 		Duration: 2,
 		Unit: "Days"
@@ -343,7 +344,7 @@ const ProviderLyricsStore = GetExpireStore<ProviderLyrics | false>(
 	true
 )
 const TransformedLyricsStore = GetExpireStore<TransformedLyrics | false>(
-	"Player_TransformedLyrics", 7,
+	"Player_TransformedLyrics", 8,
 	{
 		Duration: 2,
 		Unit: "Days"
@@ -408,7 +409,7 @@ const BuildLyricsRequestURL = (song: StreamedSongMetadata): string => {
 }
 // iTunes rate-limits Cloudflare's shared egress IPs, so the Apple Music id is resolved
 // client-side from the user's own IP and handed to the server via apple_id.
-const ResolveAppleMusicId = (lyricsRequestURL: string): Promise<{ id: string; title: string } | undefined> => {
+const ResolveAppleMusicId = (lyricsRequestURL: string, parent: AbortSignal): Promise<{ id: string; title: string } | undefined> => {
 	const lyricsUrl = new URL(lyricsRequestURL)
 	const trackName = lyricsUrl.searchParams.get("track_name")
 	const artistName = lyricsUrl.searchParams.get("artist_name")
@@ -423,8 +424,9 @@ const ResolveAppleMusicId = (lyricsRequestURL: string): Promise<{ id: string; ti
 	searchUrl.searchParams.set("entity", "song")
 	searchUrl.searchParams.set("limit", "10")
 
-	return (
-		fetch(searchUrl.toString(), { signal: AbortSignal.timeout(4000) })
+	const scope = CreateAbortScope(4000, parent)
+	return Abortable(scope.Signal, () => (
+		fetch(searchUrl.toString(), { signal: scope.Signal })
 		.then(response => ((response.ok === false) ? undefined : response.json()))
 		.then(
 			(payload?: { results?: { trackId?: number; trackName?: string; trackTimeMillis?: number }[] }) => {
@@ -448,10 +450,13 @@ const ResolveAppleMusicId = (lyricsRequestURL: string): Promise<{ id: string; ti
 					? undefined : { id: String(matched.trackId), title: matched.trackName })
 			}
 		)
-		.catch(() => undefined)
-	)
+	)).catch(() => undefined).finally(() => scope.Destroy())
 }
+let lyricsController: AbortController | undefined
+PlayerMaid.Give(() => lyricsController?.abort())
 const LoadSongLyrics = () => {
+	lyricsController?.abort()
+	const controller = lyricsController = new AbortController()
 	// Remove our prior lyric state
 	HaveSongLyricsLoaded = false, SongLyrics = undefined
 
@@ -463,65 +468,51 @@ const LoadSongLyrics = () => {
 		return
 	}
 	const lyricsRequestURL = BuildLyricsRequestURL(songAtUpdate)
-	const FetchProviderLyrics = (remainingRetries: number): Promise<ProviderLyrics | false> => (
-		Promise.all([GetSpotifyAccessToken(), ResolveAppleMusicId(lyricsRequestURL)])
-		.then(
-			([accessToken, appleMusicTrack]) => {
-				const requestUrl = new URL(lyricsRequestURL)
-				if (appleMusicTrack !== undefined) {
-					requestUrl.searchParams.set("apple_id", appleMusicTrack.id)
-					requestUrl.searchParams.set("apple_title", appleMusicTrack.title)
-				}
-				return fetch(
-					requestUrl.toString(),
-					{
-						method: "GET",
-						cache: "no-store",
-						headers: {
-							Authorization: `Bearer ${accessToken}`,
-							"X-Spotify-App-Platform": SpotifyPlatform.PlatformData.app_platform,
-							"X-Spotify-App-Version": SpotifyPlatform.version
-						}
+	const FetchProviderLyrics = async (remainingRetries: number): Promise<ProviderLyrics | false> => {
+		const [accessToken, appleMusicTrack] = await Abortable(controller.signal, () =>
+			Promise.all([GetSpotifyAccessToken(), ResolveAppleMusicId(lyricsRequestURL, controller.signal)]))
+		const requestUrl = new URL(lyricsRequestURL)
+		if (appleMusicTrack) {
+			requestUrl.searchParams.set("apple_id", appleMusicTrack.id)
+			requestUrl.searchParams.set("apple_title", appleMusicTrack.title)
+		}
+		const scope = CreateAbortScope(35_000, controller.signal)
+		let providerLyrics: ProviderLyrics | false | undefined
+		try {
+			providerLyrics = await Abortable(scope.Signal, async () => {
+				const response = await fetch(requestUrl.toString(), {
+					method: "GET", cache: "no-store", signal: scope.Signal,
+					headers: {
+						Authorization: `Bearer ${accessToken}`,
+						"X-Spotify-App-Platform": SpotifyPlatform.PlatformData.app_platform,
+						"X-Spotify-App-Version": SpotifyPlatform.version
 					}
-				)
-			}
-		)
-		.then(
-			(response) => {
-				if (response.ok === false) {
-					throw `Failed to load Lyrics for Track (${
-						songAtUpdate.Id
-					}), Error: ${response.status} ${response.statusText}`
-				}
-
-				return response.text()
-			}
-		)
-		.then(text => (text.length === 0) ? undefined : JSON.parse(text) as ProviderLyrics | false)
-		.then(async providerLyrics => {
-			if (
-				((providerLyrics === undefined) || (providerLyrics === false))
-				&& (remainingRetries > 0) && (Song === songAtUpdate)
-			) {
-				await new Promise<void>(resolve => setTimeout(resolve, 1000))
-				if (Song === songAtUpdate) {
-					return FetchProviderLyrics(remainingRetries - 1)
-				}
-			}
-
-			if ((providerLyrics !== undefined) && (providerLyrics !== false)) {
-				ProviderLyricsStore.SetItem(songAtUpdate.Id, providerLyrics, LyricsCacheExpiration(providerLyrics))
-			}
-			return providerLyrics ?? false
-		})
-	)
+				})
+				if (!response.ok) throw new Error(`Lyrics request failed: ${response.status} ${response.statusText}`)
+				const text = await response.text()
+				return text.length === 0 ? undefined : JSON.parse(text)
+			})
+		} finally { scope.Destroy() }
+		controller.signal.throwIfAborted()
+		if (!providerLyrics && remainingRetries > 0 && Song === songAtUpdate) {
+			await Delay(1000, controller.signal)
+			return FetchProviderLyrics(remainingRetries - 1)
+		}
+		if (providerLyrics) {
+			await ProviderLyricsStore.SetItem(songAtUpdate.Id, providerLyrics, LyricsCacheExpiration(providerLyrics))
+				.catch(error => console.warn("Could not cache lyrics", error))
+		}
+		return providerLyrics ?? false
+	}
 
 	// Now go through the process of loading our lyrics
 	{
 		// First determine if we have our lyrics stored already
 		ProviderLyricsStore.GetItem(songAtUpdate.Id)
+		.catch(() => undefined)
 		.then(
 			providerLyrics => {
+				controller.signal.throwIfAborted()
 				if ((providerLyrics === undefined) || (providerLyrics === false)) {
 					return FetchProviderLyrics(1)
 				} else {
@@ -536,6 +527,7 @@ const LoadSongLyrics = () => {
 				}
 				return (
 					TransformedLyricsStore.GetItem(songAtUpdate.Id)
+						.catch(() => undefined)
 					.then(storedTransformedLyrics => [storedProviderLyrics, storedTransformedLyrics])
 				)
 			}
@@ -553,6 +545,7 @@ const LoadSongLyrics = () => {
 							transformedLyrics => {
 								// Save our information
 								TransformedLyricsStore.SetItem(songAtUpdate.Id, transformedLyrics, LyricsCacheExpiration(transformedLyrics))
+								.catch(error => console.warn("Could not cache transformed lyrics", error))
 
 								// Now return our information
 								return transformedLyrics
@@ -567,7 +560,7 @@ const LoadSongLyrics = () => {
 		.then(
 			transformedLyrics => {
 				// Make sure we still have the same song active
-				if (Song !== songAtUpdate) {
+				if (Song !== songAtUpdate || controller.signal.aborted) {
 					return
 				}
 
@@ -579,7 +572,7 @@ const LoadSongLyrics = () => {
 		.catch(
 			error => {
 				// Make sure we still have the same song active
-				if (Song !== songAtUpdate) {
+				if (Song !== songAtUpdate || controller.signal.aborted) {
 					return
 				}
 
@@ -666,27 +659,33 @@ OnSpotifyReady.then(
 		// Handle song updates
 		{
 			const OnSongChange = () => {
-				// Wait until we have our SpotifyPlayer data
-				if (SpotifyPlayer.data?.context === undefined) {
+				PlayerMaid.Clean("SongChangeUpdate")
+				if (SpotifyPlayer.data === undefined) {
 					return PlayerMaid.Give(Defer(OnSongChange), "SongChangeUpdate")
-				} else if (SpotifyPlayer.data === null) {
-					if (Song !== undefined) {
-						Song = undefined
-						SongChangedSignal.Fire()
-					}
-
-					if (SongContext !== undefined) {
-						SongContext = undefined
-						SongContextChangedSignal.Fire()
-					}
-
+				}
+				if (SpotifyPlayer.data === null || SpotifyPlayer.data.item == null) {
+					Song = undefined
+					Timestamp = 0
+					IsPlaying = false
+					SongContext = undefined
+					HasIsLikedLoaded = true
+					IsLiked = false
+					LoadSongDetails()
+					LoadSongLyrics()
+					SongChangedSignal.Fire()
+					SongContextChangedSignal.Fire()
+					IsPlayingChangedSignal.Fire()
+					IsLikedChangedSignal.Fire()
 					return
+				}
+				if (SpotifyPlayer.data.context === undefined) {
+					return PlayerMaid.Give(Defer(OnSongChange), "SongChangeUpdate")
 				}
 
 				// Make sure that this is a Song and not any other type of track
 				const track = SpotifyPlayer.data.item
 				const isASong = (track.type === "track")
-				const isDJ = ((track.type === "unknown") && (track.provider.startsWith("narration")))
+				const isDJ = ((track.type === "unknown") && (track.provider?.startsWith("narration") === true))
 				if ((track === undefined) || ((isASong === false) && (isDJ === false))) {
 					Song = undefined
 				} else {

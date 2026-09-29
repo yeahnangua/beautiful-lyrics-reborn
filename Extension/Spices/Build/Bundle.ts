@@ -1,3 +1,5 @@
+/// <reference lib="deno.ns" />
+import { compileWithStyles, injectStyles } from "./Styles.mjs"
 // System Imports
 import { dirname, join, resolve, relative } from "jsr:@std/path@0.223.0"
 import { ensureDir } from "jsr:@std/fs@0.223.0"
@@ -13,7 +15,6 @@ import PostCSS from "npm:postcss@8.4.38"
 import AutoPrefixer from "npm:autoprefixer@10.4.19"
 import CSSNano from "npm:cssnano@6.1.2"
 import CSSAdvancedNanoPreset from "npm:cssnano-preset-advanced@6.1.2"
-console.log("HELLO!")
 // Helper functions
 const WriteTextFile = (path: string, contents: string): Promise<void> => {
 	return (
@@ -58,23 +59,14 @@ export default async (bundleConfiguration: BundleConfiguration = {}): Promise<un
 		: join("./Builds", ((bundleType === "Release") ? "Release" : "Test"))
 	)
 
-	// Wipe our build-directory (if it exists)
-	if (buildDirectory !== undefined) {
-		// First, ensure it exists
-		await ensureDir(buildDirectory)
-
-		// Now delete everything in it
-		for await (const entry of Deno.readDir(buildDirectory)) {
-			await Deno.remove(join(buildDirectory, entry.name), { recursive: true })
-		}
-	}
+	if (buildDirectory !== undefined) await ensureDir(buildDirectory)
 
 	// Store all our promises for the build process
-	const buildPromises: Promise<unknown>[] = []
+	const styles = new Map<string, Promise<string>>()
 
 	// Setup all our plugins
 	const plugins: esbuild.Plugin[] = []
-	const rawCSS: string[] = []
+
 	{
 		plugins.push(...denoPlugins({ configPath: resolve(Deno.cwd(), "./deno.json") }))
 
@@ -100,29 +92,18 @@ export default async (bundleConfiguration: BundleConfiguration = {}): Promise<un
 							}
 						}
 					)
-		
+
 					build.onLoad(
 						{
 							filter: /.*/,
 							namespace: SCSSInlineStyleNamespace
 						},
 						args => {
-							buildPromises.push(
-								SASSCompile(args.path)
-								.then(
-									result => (
-										postCSSProcessor.process(
-											result.css,
-											{ from: args.path }
-										)
-									)
-								)
-								.then(result => rawCSS.push(FormatCSSFile(relative(absoluteSourcePath, args.path), result.css)))
-							)
-
-							return {
-								contents: ""
-							}
+							const css = SASSCompile(args.path)
+								.then(result => postCSSProcessor.process(result.css, { from: args.path }))
+								.then(result => FormatCSSFile(relative(absoluteSourcePath, args.path), result.css))
+							styles.set(`${SCSSInlineStyleNamespace}:${args.path}`, css)
+							return css.then(() => ({ contents: "" }))
 						}
 					)
 				}
@@ -140,29 +121,18 @@ export default async (bundleConfiguration: BundleConfiguration = {}): Promise<un
 							}
 						}
 					)
-		
+
 					build.onLoad(
 						{
 							filter: /.*/,
 							namespace: CSSInlineStyleNamespace
 						},
 						args => {
-							buildPromises.push(
-								Deno.readTextFile(args.path)
-								.then(
-									contents => (
-										postCSSProcessor.process(
-											contents,
-											{ from: args.path }
-										)
-									)
-								)
-								.then(result => rawCSS.push(FormatCSSFile(relative(absoluteSourcePath, args.path), result.css)))
-							)
-						
-							return {
-								contents: ""
-							}
+							const css = Deno.readTextFile(args.path)
+								.then(contents => postCSSProcessor.process(contents, { from: args.path }))
+								.then(result => FormatCSSFile(relative(absoluteSourcePath, args.path), result.css))
+							styles.set(`${CSSInlineStyleNamespace}:${args.path}`, css)
+							return css.then(() => ({ contents: "" }))
 						}
 					)
 				}
@@ -170,61 +140,25 @@ export default async (bundleConfiguration: BundleConfiguration = {}): Promise<un
 		)
 	}
 
-	// Now bundle everything
-	buildPromises.push(
-		esbuild.build(
-			{
-				entryPoints: ["./Source/main.ts"],
-				outfile: (
-					(buildDirectory === undefined) ? undefined
-					: join(buildDirectory, `bundle@${versionIdentifier}.mjs`)
-				),
-
-				plugins,
-	
-				platform: "browser",
-				format: "esm",
-				bundle: true,
-				sourcemap: ((buildDirectory === undefined) ? false : "linked"),
-				minify: applyOptimizations,
-				legalComments: "none",
-				write: (buildDirectory !== undefined)
-			}
-		)
-	)
-
-	// Now wait for everything to finish
+	// Build plugins finish their CSS work before output is assembled.
+	const { result, css } = await compileWithStyles(() => esbuild.build({
+		entryPoints: ["./Source/main.ts"],
+		outfile: buildDirectory === undefined ? undefined : join(buildDirectory, `bundle@${versionIdentifier}.mjs`),
+		plugins,
+		platform: "browser",
+		format: "esm",
+		bundle: true,
+		metafile: true,
+		sourcemap: buildDirectory === undefined ? false : "linked",
+		minify: applyOptimizations,
+		legalComments: "none",
+		write: false
+	}), styles)
 	if (buildDirectory === undefined) {
-		return (
-			Promise.all(buildPromises)
-			.then(
-				results => {
-					// We know our final result is going to be our build-result
-					const buildResult = (results[results.length - 1] as esbuild.BuildResult)
-					
-					// Grab our code output
-					const code = buildResult.outputFiles![0].text
-
-					// Now compile all our CSS into a single string and create the injection code
-					const css = rawCSS.join("\n")
-					const cssInjectionCode = `
-						{
-							const style = document.createElement("style")
-							style.id = "${BuildName}"
-							style.textContent = \`${css.replace(/`/g, '\\`')}\`
-							document.body.appendChild(style)
-						};
-					`
-
-					// Finally, return our final code
-					return `${cssInjectionCode}\n${code}`
-				}
-			)
-		)
-	} else {
-		return (
-			Promise.all(buildPromises)
-			.then(_ => WriteTextFile(join(buildDirectory, `bundle@${versionIdentifier}.css`), rawCSS.join("\n")))
-		)
+		return `${injectStyles(BuildName, css)}\n${result.outputFiles![0].text}`
 	}
+	for (const output of result.outputFiles ?? []) {
+		await WriteTextFile(output.path, output.text)
+	}
+	await WriteTextFile(join(buildDirectory, `bundle@${versionIdentifier}.css`), css)
 }

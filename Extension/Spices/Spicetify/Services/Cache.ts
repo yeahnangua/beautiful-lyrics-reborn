@@ -59,7 +59,7 @@ export const GetInstantStore = <InstantStoreTemplate extends InstantStoreItems>(
 				Items: JSON.parse(JSON.stringify(template))
 			}
 		} else {
-			const templateChecks: [Record<string, unknown>, Record<string, unknown>, string][] = [[store, template, storeName]]
+			const templateChecks: [Record<string, unknown>, Record<string, unknown>, string][] = [[store.Items, template, storeName]]
 			while (templateChecks.length > 0) {
 				const [check, against, path] = templateChecks.pop()!
 				for (const key in against) {

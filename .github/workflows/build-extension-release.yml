@@ -7,7 +7,6 @@ on:
       - ".github/workflows/build-extension-release.yml"
       - "Extension/**"
       - "Universal/**"
-      - "Pinyin/**"
       - "Server/**"
   push:
     branches:
@@ -16,7 +15,6 @@ on:
       - ".github/workflows/build-extension-release.yml"
       - "Extension/**"
       - "Universal/**"
-      - "Pinyin/**"
       - "Server/**"
 
 permissions:
@@ -71,7 +69,11 @@ jobs:
       - name: Remove old release bundles
         run: node Extension/Tasks/PruneRelease.mjs
 
-      - name: Test loader
+      - name: Typecheck extension
+        working-directory: Extension
+        run: deno check Source/main.ts Spices/Build/Bundle.ts
+
+      - name: Test extension runtime and loader
         run: node --test Extension/Tests/*.test.mjs
 
       - name: Test Worker

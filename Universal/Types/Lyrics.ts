@@ -5,7 +5,6 @@ type TimeMetadata = {
 }
 export type TextMetadata = {
 	Text: string;
-	RomanizedText?: string; // Populated on the Client
 }
 type VocalMetadata = (
 	TimeMetadata

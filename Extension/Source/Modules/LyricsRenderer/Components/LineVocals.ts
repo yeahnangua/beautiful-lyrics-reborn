@@ -59,8 +59,7 @@ export default class LineVocals implements SyncedVocals, Giveable {
 
 	// Constructor
 	public constructor(
-		lineContainer: HTMLElement, lineMetadata: LineVocal,
-		isRomanized: boolean
+		lineContainer: HTMLElement, lineMetadata: LineVocal
 	) {
 		// First create our container
 		const container = this.Maid.Give(document.createElement('div'))
@@ -83,7 +82,7 @@ export default class LineVocals implements SyncedVocals, Giveable {
 		syllableSpan.classList.add('Lyric')
 		syllableSpan.classList.add('Synced')
 		syllableSpan.classList.add('Line')
-		syllableSpan.innerText = (isRomanized && lineMetadata.RomanizedText || lineMetadata.Text)
+		syllableSpan.innerText = lineMetadata.Text
 		container.appendChild(syllableSpan)
 
 		// Now create our live-text element
@@ -169,7 +168,7 @@ export default class LineVocals implements SyncedVocals, Giveable {
 	public Animate(songTimestamp: number, deltaTime: number, isImmediate?: true) {
 		// Determine our relative time elements
 		const relativeTime = (songTimestamp - this.StartTime)
-		const timeScale = Clamp((relativeTime / this.Duration), 0, 1)
+		const timeScale = (this.Duration > 0 && Number.isFinite(this.Duration) ? Clamp(relativeTime / this.Duration, 0, 1) : (relativeTime >= 0 ? 1 : 0))
 
 		// Determine if we should update our visual-states
 		const pastStart = (relativeTime >= 0), beforeEnd = (relativeTime <= this.Duration)

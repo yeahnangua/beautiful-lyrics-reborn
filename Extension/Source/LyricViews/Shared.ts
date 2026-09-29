@@ -93,7 +93,7 @@ const GenerateBlurredCoverArt = async () => {
 
 	const image = new Image()
 	image.src = coverArt
-	await image.decode()
+	try { await image.decode() } catch { return }
 
 	const originalSize = Math.min(image.width, image.height) // Crop to a square
 	const blurExtent = Math.ceil(3 * 40) // Blur spread extent

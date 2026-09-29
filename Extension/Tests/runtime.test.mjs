@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
-import { createAccessTokenProvider } from '../Spices/Spicetify/Services/AccessToken.ts';
+import { createAccessTokenProvider, getPlatformToken } from '../Spices/Spicetify/Services/AccessToken.ts';
 import { Abortable, CreateAbortScope } from '../../Universal/Modules/Async.ts';
 import { Revision } from '../../Universal/Modules/Revision.ts';
 import { compileWithStyles, injectStyles } from '../Spices/Build/Styles.mjs';
@@ -143,4 +143,13 @@ test('cache template migration fills missing view settings and preserves stored 
  const get=evaluate(source,{IsDevelopment:false,localStorage:{getItem:k=>data.get(k)??null,setItem:(k,v)=>data.set(k,v)}},'GetInstantStore');
  const view=get('view',1,{CardLyricsVisible:false,PlaybarDetailsHidden:false});assert.deepEqual(view.Items,{CardLyricsVisible:true,PlaybarDetailsHidden:false});view.SaveChanges();
  assert.deepEqual(get('offset',1,{Songs:{}}).Items,{Songs:{abc:0.4}});
+});
+
+
+test('desktop AuthorizationAPI fallback handles clients without Session credentials', async () => {
+ const platform = {Session: {}, AuthorizationAPI: {getState: async () => ({token: {accessToken: 'desktop', accessTokenExpirationTimestampMs: Date.now()+60000}})}};
+ const get=createAccessTokenProvider(async()=>{throw Error('Resolver not found');},()=>getPlatformToken(platform),fast);
+ assert.equal(await get(),'desktop');
+ assert.equal((await getPlatformToken({Session:{accessToken:'legacy',accessTokenExpirationTimestampMs:Date.now()+60000}})).accessToken,'legacy');
+ assert.equal(await getPlatformToken({Session:{}}),undefined);
 });

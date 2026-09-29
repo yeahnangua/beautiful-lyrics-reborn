@@ -1,4 +1,4 @@
-import { createAccessTokenProvider } from "./AccessToken.ts"
+import { createAccessTokenProvider, getPlatformToken } from "./AccessToken.ts"
 // Imported Types
 import type SpicetifyTypes from "../Types/App/Spicetify.ts"
 
@@ -138,11 +138,7 @@ export const OnSpotifyReady = SpotifyReadyPromise
 // Shared requests recover after failure; each caller can independently stop waiting.
 export const GetSpotifyAccessToken = createAccessTokenProvider(
 	() => SpotifyInternalFetch.get("sp://oauth/v2/token"),
-	() => SpotifyPlatform.Session === undefined ? undefined : ({
-		accessToken: SpotifyPlatform.Session.accessToken,
-		expiresAtTime: SpotifyPlatform.Session.accessTokenExpirationTimestampMs,
-		tokenType: "Bearer"
-	})
+	() => getPlatformToken(SpotifyPlatform)
 )
 
 // Allows for Spotify API requests to be made without CosmosASYNC (which doesn't support all endpoints anymore)

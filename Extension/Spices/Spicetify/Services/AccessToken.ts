@@ -2,7 +2,7 @@ export type TokenResponse = { accessToken: string; expiresAtTime: number; tokenT
 
 export function createAccessTokenProvider(
   request: () => Promise<TokenResponse>,
-  fallback: () => TokenResponse | undefined,
+  fallback: () => TokenResponse | undefined | Promise<TokenResponse | undefined>,
   timing = { timeoutMs: 5_000, retryDelayMs: 250 }
 ) {
   let cached: TokenResponse | undefined;
@@ -20,9 +20,9 @@ export function createAccessTokenProvider(
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
           const token = await Promise.race([
-            Promise.resolve().then(request).catch(error => {
+            Promise.resolve().then(request).catch(async error => {
               if (error instanceof Error && error.message.includes("Resolver not found")) {
-                const token = fallback();
+                const token = await fallback();
                 if (token) return token;
               }
               throw error;
@@ -47,4 +47,17 @@ export function createAccessTokenProvider(
     })().finally(() => { pending = undefined; });
     return pending;
   };
+}
+
+/** Recent desktop clients moved credentials from Session into AuthorizationAPI. */
+export async function getPlatformToken(platform: {
+  Session?: { accessToken?: string; accessTokenExpirationTimestampMs?: number };
+  AuthorizationAPI?: { getState(): unknown | Promise<unknown> };
+}): Promise<TokenResponse | undefined> {
+  const state = await platform.AuthorizationAPI?.getState() as {
+    token?: { accessToken?: string; accessTokenExpirationTimestampMs?: number }
+  } | undefined;
+  const token = state?.token ?? platform.Session;
+  if (!token?.accessToken || typeof token.accessTokenExpirationTimestampMs !== "number") return undefined;
+  return { accessToken: token.accessToken, expiresAtTime: token.accessTokenExpirationTimestampMs, tokenType: "Bearer" };
 }

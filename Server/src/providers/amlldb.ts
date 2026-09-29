@@ -1,3 +1,4 @@
+import { contextFetch } from "./request";
 import OpenCC from "opencc-js";
 import { convertTtmlToSyllableLyrics } from "../convert/ttml";
 import type { AmllDbProvider, SyllableSyncedLyrics, TrackMetadata } from "../types";
@@ -106,7 +107,7 @@ async function getLyricsBySearch(fetchImpl: FetchLike, track: TrackMetadata): Pr
   return undefined;
 }
 
-export function createAmllDbProvider(fetchImpl: FetchLike = fetch): AmllDbProvider {
+function createAmllDbProviderImplementation(fetchImpl: FetchLike = fetch): AmllDbProvider {
   return {
     async getSyllableLyrics(trackId: string, track?: TrackMetadata): Promise<SyllableSyncedLyrics | undefined> {
       const spotifyLyrics = await fetchTtml(fetchImpl, buildSpotifyTtmlUrl(trackId));
@@ -120,3 +121,9 @@ export function createAmllDbProvider(fetchImpl: FetchLike = fetch): AmllDbProvid
 }
 
 export const amllDbProvider = createAmllDbProvider();
+
+export function createAmllDbProvider(fetchImpl: typeof fetch = fetch): AmllDbProvider {
+  return {
+    getSyllableLyrics: (id, track) => createAmllDbProviderImplementation(contextFetch(fetchImpl)).getSyllableLyrics(id, track),
+  };
+}

@@ -61,8 +61,9 @@ export function convertLrcToLineLyrics(
   }
 
   const content: LineVocal[] = parsedLines.map((line, index) => {
-    const nextLine = parsedLines[index + 1];
-    const fallbackEndTime = durationSeconds ?? line.time + 5;
+    const nextLine = parsedLines.slice(index + 1).find((candidate) => candidate.time > line.time);
+    const fallbackEndTime = durationSeconds !== undefined && Number.isFinite(durationSeconds) && durationSeconds > line.time
+      ? durationSeconds : line.time + 5;
     const endTime = Math.max(line.time, nextLine?.time ?? fallbackEndTime);
 
     return {

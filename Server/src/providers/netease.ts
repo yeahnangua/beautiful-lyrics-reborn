@@ -1,3 +1,4 @@
+import { contextFetch } from "./request";
 // Inspired by Spicetify lyrics-plus/ProviderNetease.js (LGPL-2.1).
 // Adapted on 2026-09-19 for native fetch, direct NetEase endpoints, and YRC timing.
 // See NOTICE.md and LICENSES/Spicetify-LGPL-2.1.txt for attribution and license.
@@ -55,14 +56,14 @@ function matches(song: Song, track: TrackMetadata): boolean {
   );
 }
 
-export function createNeteaseProvider(fetchImpl: typeof fetch = fetch): SyllableLyricsProvider {
+function createNeteaseProviderImplementation(fetchImpl: typeof fetch = fetch): SyllableLyricsProvider {
   async function getJson<T>(url: URL, signal: AbortSignal): Promise<T | undefined> {
     const response = await fetchImpl(url.toString(), { headers, signal });
     return response.ok ? (await response.json()) as T : undefined;
   }
 
   return {
-    async getSyllableLyrics(track) {
+    async getSyllableLyrics(track, context) {
       if (!track.name.trim() || !track.artists[0]?.trim()) {
         return undefined;
       }
@@ -107,9 +108,15 @@ export function createNeteaseProvider(fetchImpl: typeof fetch = fetch): Syllable
           }
         }
         return undefined;
-      }, "netease direct");
+      }, "netease direct", context);
     }
   };
 }
 
 export const neteaseProvider = createNeteaseProvider();
+
+export function createNeteaseProvider(fetchImpl: typeof fetch = fetch): SyllableLyricsProvider {
+  return {
+    getSyllableLyrics: (track, context) => createNeteaseProviderImplementation(contextFetch(fetchImpl, context)).getSyllableLyrics(track, context),
+  };
+}

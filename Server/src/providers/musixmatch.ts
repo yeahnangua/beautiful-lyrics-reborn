@@ -3,9 +3,9 @@
 // authentication refresh, and Beautiful Lyrics richsync conversion.
 // See NOTICE.md and LICENSES/Spicetify-LGPL-2.1.txt.
 import { convertRichsyncToSyllableLyrics } from "../convert/richsync";
-import { withLyricRequestRetries } from "./request";
+import { withLyricRequestRetries, contextFetch, abortable } from "./request";
 import { withMatchedTitle } from "./matched-title";
-import type { SyllableLyricsProvider, TrackMetadata } from "../types";
+import type { SyllableLyricsProvider, TrackMetadata, RequestContext } from "../types";
 
 type Message<T> = { header?: { status_code?: number }; body?: T };
 type MacroCalls = {
@@ -28,17 +28,17 @@ export function createMusixmatchProvider(fetchImpl: typeof fetch = fetch): Sylla
   let tokenRequest: Promise<string | undefined> | undefined;
   let tokenRetryAt = 0;
 
-  async function request<T>(endpoint: string, parameters: Record<string, string>): Promise<Message<T> | undefined> {
+  async function request<T>(endpoint: string, parameters: Record<string, string>, context?: RequestContext): Promise<Message<T> | undefined> {
     const url = new URL(endpoint, baseUrl);
     url.search = new URLSearchParams({ app_id: "mac-ios-v2.0", ...parameters }).toString();
     return withLyricRequestRetries(async (signal) => {
-      const response = await fetchImpl(url.toString(), { headers, signal });
+      const response = await contextFetch(fetchImpl, context)(url.toString(), { headers, signal });
       if (!response.ok) {
         return { header: { status_code: response.status } };
       }
       const payload = await response.json() as { message?: Message<T> };
       return payload.message;
-    }, `musixmatch ${endpoint}`);
+    }, `musixmatch ${endpoint}`, context);
   }
 
   async function getToken(): Promise<string | undefined> {
@@ -87,24 +87,25 @@ export function createMusixmatchProvider(fetchImpl: typeof fetch = fetch): Sylla
   }
 
   return {
-    async getSyllableLyrics(track) {
+    async getSyllableLyrics(track, context) {
+      const tokenForCaller = () => context?.signal ? abortable(getToken, context.signal) : getToken();
       if (!track.name.trim() || !track.artists[0]?.trim()) {
         return undefined;
       }
-      let token = await getToken();
+      let token = await tokenForCaller();
       if (token === undefined) {
         return undefined;
       }
-      let response = await request<{ macro_calls?: MacroCalls }>("macro.subtitles.get", parameters(track, token));
+      let response = await request<{ macro_calls?: MacroCalls }>("macro.subtitles.get", parameters(track, token), context);
       if (response?.header?.status_code === 401) {
         if (cachedToken?.value === token) {
           cachedToken = undefined;
         }
-        token = await getToken();
+        token = await tokenForCaller();
         if (token === undefined) {
           return undefined;
         }
-        response = await request<{ macro_calls?: MacroCalls }>("macro.subtitles.get", parameters(track, token));
+        response = await request<{ macro_calls?: MacroCalls }>("macro.subtitles.get", parameters(track, token), context);
       }
       if (response?.header?.status_code !== 200) {
         if (response?.header?.status_code === 401 && cachedToken?.value === token) {

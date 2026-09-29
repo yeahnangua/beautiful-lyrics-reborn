@@ -239,7 +239,8 @@ export function createWorker(service: LyricsService): ExportedHandler<WorkerEnv>
         trackId,
         accessToken,
         extractTrackMetadata(url, trackId),
-        extractSpotifyClientContext(request)
+        extractSpotifyClientContext(request),
+        { signal: request.signal }
       );
 
       recordOutcome(env, lyrics);

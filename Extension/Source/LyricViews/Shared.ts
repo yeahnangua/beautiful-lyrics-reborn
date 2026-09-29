@@ -1,6 +1,3 @@
-// Imported Types
-import type { RomanizedLanguage } from "@Spices/Spicetify/Services/Player/mod.ts"
-
 // NPM Packages
 import seedrandom from "npm:seedrandom"
 
@@ -30,48 +27,31 @@ export const Store = GetInstantStore<
 	{
 		CardLyricsVisible: boolean;
 		PlaybarDetailsHidden: boolean;
-		RomanizedLanguages: {[key in RomanizedLanguage]: boolean};
 	}
 >(
 	"BeautifulLyrics/LyricViews", 1,
 	{
 		CardLyricsVisible: false,
 		PlaybarDetailsHidden: false,
-		RomanizedLanguages: {
-			Chinese: false,
-			Japanese: false,
-			Korean: false,
-		}
 	}
 )
 
-// Shared Signals
-const LanguageRomanizationChangedSignal = new Signal<(language: string, isRomanized: boolean) => void>()
-export const LanguageRomanizationChanged = LanguageRomanizationChangedSignal.GetEvent()
+// Retire removed preferences while preserving the remaining view settings.
+const ViewSettingNames = new Set(["CardLyricsVisible", "PlaybarDetailsHidden"])
+let settingsChanged = false
+for (const key of Object.keys(Store.Items)) {
+	if (!ViewSettingNames.has(key)) {
+		delete (Store.Items as Record<string, unknown>)[key]
+		settingsChanged = true
+	}
+}
+if (settingsChanged) Store.SaveChanges()
 
 // Shared Methods
 export const CreateElement = <E = HTMLElement>(text: string) => {
 	const element = document.createElement("div")
 	element.innerHTML = text
 	return element.firstElementChild as E
-}
-
-export const ToggleLanguageRomanization = (language: RomanizedLanguage, isRomanized: boolean) => {
-	// Determine whether or not we've even changed in state
-	if (Store.Items.RomanizedLanguages[language] !== isRomanized) {
-		// Update ourselves
-		Store.Items.RomanizedLanguages[language] = isRomanized
-
-		// Save our changes
-		Store.SaveChanges()
-
-		// Now fire that we've changed
-		LanguageRomanizationChangedSignal.Fire(language, isRomanized)
-	}
-}
-
-export const IsLanguageRomanized = (language: RomanizedLanguage): boolean => {
-	return (Store.Items.RomanizedLanguages[language] === true)
 }
 
 // Handle applying our dynamic-background
@@ -190,12 +170,19 @@ export const ApplyDynamicBackground = (element: HTMLElement, maid: Maid) => {
 	const sceneMesh = new THREE.Mesh(MeshGeometry, meshMaterial)
 	renderScene.add(sceneMesh)
 
+	let active = true
+	let currentTexture: THREE.CanvasTexture | undefined
 	const renderer = new THREE.WebGLRenderer({ alpha: true })
 	const rendererElement = renderer.domElement
 	renderer.setPixelRatio(globalThis.devicePixelRatio)
 	rendererElement.classList.add(`${BackgroundClassName}-Container`)
 	maid.Give(
 		() => {
+			active = false
+			currentTexture?.dispose()
+			currentTexture = undefined
+			meshMaterial.dispose()
+			renderScene.remove(sceneMesh)
 			renderer.dispose()
 			renderer.forceContextLoss()
 		}
@@ -203,10 +190,14 @@ export const ApplyDynamicBackground = (element: HTMLElement, maid: Maid) => {
 	maid.Give(rendererElement)
 
 	const UpdateBackgroundImages = () => {
+		if (!active || !Blurred_CovertArt) return
 		const texture = new THREE.CanvasTexture(Blurred_CovertArt)
 		texture.minFilter = THREE.NearestFilter
 		texture.magFilter = THREE.NearestFilter
+		const previousTexture = currentTexture
+		currentTexture = texture
 		materialUniforms.BlurredCoverArt.value = texture
+		previousTexture?.dispose()
 		renderer.render(renderScene, RenderCamera)
 	}
 	UpdateBackgroundImages()
@@ -248,9 +239,10 @@ export const ApplyDynamicBackground = (element: HTMLElement, maid: Maid) => {
 	}
 
 	const RenderUpdate = () => {
+		if (!active) return
 		materialUniforms.Time.value = (performance.now() / 3500)
 		renderer.render(renderScene, RenderCamera)
-		maid.Give(OnPreRender(RenderUpdate))
+		maid.Give(OnPreRender(RenderUpdate), "BackgroundFrame")
 	}
 	RenderUpdate()
 

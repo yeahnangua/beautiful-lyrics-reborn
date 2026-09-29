@@ -15,3 +15,11 @@ test("published pointer, payload digest, fallback and stable Marketplace identit
   const manifest = JSON.parse(await readFile(new URL("../../manifest.json", import.meta.url), "utf8"));
   assert.equal(manifest.main, "Extension/Builds/Release/beautiful-lyrics-reborn.mjs");
 });
+
+// Historical payloads remain available for rollback; inspect only the current release.
+test("current payload has no transliteration controls, engines or dictionary requests", async () => {
+  const directory = new URL("../Builds/Release/", import.meta.url);
+  const descriptor = JSON.parse(await readFile(new URL("latest.json", directory), "utf8"));
+  const payload = await readFile(new URL(descriptor.file, directory), "utf8");
+  assert.doesNotMatch(payload, /RomanizedText|Romanization|ToggleRoman|kuromoji|kuroshiro|aromanize|pinyin|dict-zi|phrases-dict/i);
+});

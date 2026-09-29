@@ -1,3 +1,4 @@
+import { Revision } from "@Universal/Modules/Revision.ts"
 // Styles
 import "./style.scss"
 
@@ -46,7 +47,7 @@ import Slider from "../../Components/Slider.ts"
 import Button from "../../Components/Button.ts"
 
 // Our Modules
-import { CreateLyricsRenderer, SetupRomanizationButton } from "./Shared.ts"
+import { CreateLyricsRenderer } from "./Shared.ts"
 import { CreateElement, GetCoverArtForSong, ApplyDynamicBackground } from "../Shared.ts"
 import LyricViewIcons from "../Icons.ts"
 import Icons from "./Icons.ts"
@@ -110,7 +111,6 @@ const Container = `
 					</div>
 					<div class="ViewControls">
 						<button id="AddToPlaylist" class="ViewControl">${Icons.AddToPlaylist}</button>
-						<button id="Romanize" class="ViewControl"></button>
 						<button id="SmallerView" class="ViewControl"></button>
 						<button id="Fullscreen" class="ViewControl">${LyricViewIcons.FullscreenOpen}</button>
 						<button id="Close" class="ViewControl">${Icons.CloseView}</button>
@@ -293,6 +293,12 @@ export default class PageView implements Giveable {
 					Uri: "",
 					Name: "Library"
 				}
+				// Observe prefetched detail failures even if a closed view never consumes them.
+				const LoadPlaylistDetails = (uri: string) => {
+					const details = GetPlaylistDetails(uri)
+					void details.catch(() => {})
+					return details
+				}
 				const LoadFolderItems = (folder: LibraryFolder, textFilter?: string, forceNewData?: true) => {
 					// Ignore if we've already loaded our items before
 					if ((textFilter === undefined) && (folder.Items !== undefined) && (forceNewData === undefined)) {
@@ -319,7 +325,7 @@ export default class PageView implements Giveable {
 											{
 												Type: "Playlist",
 												Uri: item.Uri,
-												LoadedDetails: GetPlaylistDetails(item.Uri)
+												LoadedDetails: LoadPlaylistDetails(item.Uri)
 											}
 										)
 									}
@@ -331,13 +337,27 @@ export default class PageView implements Giveable {
 
 					if (textFilter === undefined) {
 						folder.Items = itemsPromise
+						void itemsPromise.catch(() => { if (folder.Items === itemsPromise) delete folder.Items })
 					}
 
 					return itemsPromise
 				}
 				const renderMaid = this.Maid.Give(new Maid())
+				const renderRevision = this.Maid.Give(new Revision())
+				this.Maid.Give(() => { isAddToPlaylistCoverOpen = false; createItemInputState = undefined })
 				let currentRenderedTextFilter: (string | undefined)
 				const RenderFolderItems = (folder: LibraryFolder, textFilter?: string, forceNewData?: true) => {
+					const isCurrent = renderRevision.Begin()
+					const ShowRetry = (error: unknown) => {
+						if (!isCurrent()) return
+						console.warn("Playlist view request failed", error)
+						renderRevision.Invalidate()
+						renderMaid.CleanUp()
+						const retry = renderMaid.Give(document.createElement("button"))
+						retry.textContent = "Could not load playlists. Click to retry."
+						retry.addEventListener("click", () => RenderFolderItems(folder, textFilter, true))
+						grid.appendChild(retry)
+					}
 					// First clear our grid
 					renderMaid.CleanUp()
 
@@ -346,6 +366,7 @@ export default class PageView implements Giveable {
 					LoadFolderItems(folder, textFilter, forceNewData)
 					.then(
 						items => {
+							if (!isCurrent()) return
 							for (const item of items) {
 								if ((textFilter === undefined) && (item.Type === "Folder")) {
 									// Grab our root-element and create our button
@@ -365,7 +386,7 @@ export default class PageView implements Giveable {
 									// Handle requesting a path change
 									folderButton.Clicked.Connect(
 										() => {
-											if (isAddToPlaylistCoverOpen) {
+											if (isAddToPlaylistCoverOpen && isCurrent()) {
 												pathChangeRequested.Fire(item)
 											}
 										}
@@ -414,6 +435,7 @@ export default class PageView implements Giveable {
 									const UpdateToDetails = () => {
 										item.LoadedDetails.then(
 											(details) => {
+												if (!isCurrent()) return
 												const cover = details.images[0]?.url
 												if (cover === undefined) {
 													const placeholder = renderMaid.Give(
@@ -437,23 +459,25 @@ export default class PageView implements Giveable {
 												playlistTitleContainer.classList.toggle("Loading", false)
 												playlistCollaboratorsContainer.classList.toggle("Loading", false)
 											}
-										)
+										).catch(ShowRetry)
 									}
 
 									// Load our added status
 									let lastAddedStatus: (boolean | undefined)
 									const UpdateAddedStatus = (
 										initial?: true,
-										compareToStatus?: boolean
+										compareToStatus?: boolean,
+										trackUri = Song?.Uri
 									): Promise<[(PlaylistItemMetadata | undefined), boolean]> => (
 										GetPlaylistContents(item.Uri)
 										.then(
 											playlistContents => playlistContents.Items.find(
-												(playlistItem) => (playlistItem.uri === Song!.Uri)
+												(playlistItem) => (playlistItem.uri === trackUri)
 											)
 										)
 										.then(
 											(playlistItem) => {
+												if (!isCurrent()) return [undefined, true]
 												// Mark that we are no longer loading
 												playlistCoverContainer.classList.toggle("Loading", false)
 
@@ -494,7 +518,7 @@ export default class PageView implements Giveable {
 												if (initial) {
 													UpdateToDetails()
 												} else {
-													item.LoadedDetails = GetPlaylistDetails(item.Uri)
+													item.LoadedDetails = LoadPlaylistDetails(item.Uri)
 													UpdateToDetails()
 												}
 
@@ -508,7 +532,7 @@ export default class PageView implements Giveable {
 											}
 										)
 									)
-									UpdateAddedStatus(true)
+									UpdateAddedStatus(true).catch(ShowRetry)
 
 									// Handle requesting a toggle
 									playlistButton.Clicked.Connect(
@@ -518,11 +542,13 @@ export default class PageView implements Giveable {
 											}
 
 											// Check our status again, and make sure we are different than the wanted status
+											const trackUri = Song?.Uri
+											if (!trackUri || !isCurrent() || lastAddedStatus === undefined) return
 											const addToPlaylist = (lastAddedStatus === false)
-											UpdateAddedStatus(undefined, addToPlaylist)
+											UpdateAddedStatus(undefined, addToPlaylist, trackUri)
 											.then(
 												([playlistItem, noStatusDifference]) => {
-													if (noStatusDifference) {
+													if (noStatusDifference || !isCurrent() || Song?.Uri !== trackUri) {
 														return
 													}
 
@@ -530,13 +556,13 @@ export default class PageView implements Giveable {
 
 													return (
 														(
-															addToPlaylist ? AddToPlaylist(item.Uri, [ Song!.Uri ])
+															addToPlaylist ? AddToPlaylist(item.Uri, [ trackUri ])
 															: RemoveFromPlaylist(item.Uri, [ playlistItem! ])
 														)
-														.then(() => renderMaid.Give(Defer(UpdateAddedStatus), item))
+														.then(() => { if (isCurrent()) renderMaid.Give(Defer(() => { void UpdateAddedStatus().catch(ShowRetry) }), item) })
 													)
 												}
-											)
+											).catch(ShowRetry)
 										}
 									)
 
@@ -545,7 +571,7 @@ export default class PageView implements Giveable {
 								}
 							}
 						}
-					)
+					).catch(ShowRetry)
 				}
 
 				// Store branch state here
@@ -623,7 +649,7 @@ export default class PageView implements Giveable {
 				}
 				{
 					// Handle update our input state when we change branches
-					pathChangeRequested.Connect(() => Defer(UpdateToInputState))
+					pathChangeRequested.Connect(() => this.Maid.Give(Defer(UpdateToInputState), "InputStateUpdate"))
 
 					// Listen for input (matters when searching)
 					const UpdateSearchFilter = () => {
@@ -632,6 +658,7 @@ export default class PageView implements Giveable {
 						}
 
 						if (createItemInputState === undefined) {
+							renderRevision.Invalidate()
 							const searchFilter = input.value.trim()
 							renderMaid.Give(
 								Timeout(0.1, () => RenderFolderItems(
@@ -669,13 +696,14 @@ export default class PageView implements Giveable {
 
 						if (event.key === "Enter") {
 							const ourCreateItemState = createItemInputState
-							if (ourCreateItemState === undefined) {
+							if (ourCreateItemState === undefined || ourCreateItemState.Creating) {
 								return
 							}
 
 							const submittedInput = input.value.trim()
 							if (submittedInput.length === 0) {
 								input.blur()
+								return
 							}
 
 							ourCreateItemState.Creating = true
@@ -689,7 +717,7 @@ export default class PageView implements Giveable {
 								)
 								.then(
 									() => {
-										if (ourCreateItemState !== createItemInputState) {
+										if (ourCreateItemState !== createItemInputState || !isAddToPlaylistCoverOpen) {
 											return
 										}
 
@@ -697,7 +725,14 @@ export default class PageView implements Giveable {
 										RenderFolderItems(ourCreateItemState.InFolder, undefined, true)
 										UpdateToInputState()
 									}
-								)
+								).catch(error => {
+									if (ourCreateItemState !== createItemInputState || !isAddToPlaylistCoverOpen) return
+									console.warn("Could not create playlist item", error)
+									delete ourCreateItemState.Creating
+									UpdateToInputState()
+									input.value = submittedInput
+									input.placeholder = "Creation failed. Press Enter to retry."
+								})
 							}
 						} else if (event.key === "Escape") {
 							input.blur()
@@ -893,13 +928,19 @@ export default class PageView implements Giveable {
 						}
 	
 						isAddToPlaylistCoverOpen = open
+						if (!open) {
+							renderRevision.Invalidate()
+							renderMaid.Clean("UpdateSearchFilter")
+							this.Maid.Clean("InputStateUpdate")
+							createItemInputState = undefined
+						}
 
 						if (open) {
 							// Easy way for us to determine if we should even bother with this (rapid opening/closing)
 							if (pathBranches.length === 0) {
 								AddPathBranch(library, LibraryPathBranchTemplate)
 								pathChangeRequested.Fire(library)
-							} else if (pathBranches.length > 1) {
+							} else {
 								for (let pathIndex = (pathBranches.length - 1); pathIndex > 0; pathIndex -= 1) {
 									const pathBranch = pathBranches.pop()!
 									pathMaid.Clean(pathBranch.Folder)
@@ -930,12 +971,12 @@ export default class PageView implements Giveable {
 					}
 
 					// Close ourselves when the song changes (obvious reasons)
-					SongChanged.Connect(
+					this.Maid.Give(SongChanged.Connect(
 						() => {
 							SetAddToPlaylistCoverOpenState(false)
 							delete library.Items
 						}
-					)
+					))
 				}
 			}
 
@@ -943,7 +984,6 @@ export default class PageView implements Giveable {
 			{
 				// Grab our controls
 				const addToPlaylistButton = viewControls.querySelector<HTMLButtonElement>("#AddToPlaylist")!
-				const romanizeButton = viewControls.querySelector<HTMLButtonElement>("#Romanize")!
 				const fullscreenButton = viewControls.querySelector<HTMLButtonElement>("#Fullscreen")!
 				const smallViewButton = viewControls.querySelector<HTMLButtonElement>("#SmallerView")!
 				const closeButton = viewControls.querySelector<HTMLButtonElement>("#Close")!
@@ -989,7 +1029,7 @@ export default class PageView implements Giveable {
 							content: "Enter Fullscreen"
 						}
 					)
-					this.Maid.Give(() => smallViewTooltip.destroy() && fullscreenTooltip.destroy())
+					this.Maid.Give(() => { smallViewTooltip.destroy(); fullscreenTooltip.destroy() })
 
 					// Setup our utility functions
 					const UpdateToFullscreenState = () => {
@@ -1141,8 +1181,6 @@ export default class PageView implements Giveable {
 					Update()
 				}*/
 
-				// Setup our romanization button
-				SetupRomanizationButton(romanizeButton, UpdateLyricsRenderer, this.Maid)
 			}
 
 			// Handle our like state
@@ -1652,8 +1690,8 @@ export default class PageView implements Giveable {
 					}
 				}
 				Update()
-				SongChanged.Connect(Update)
-				SongDetailsLoaded.Connect(Update)
+				this.Maid.Give(SongChanged.Connect(Update))
+				this.Maid.Give(SongDetailsLoaded.Connect(Update))
 			}
 
 			// Handle toggling our controls visibility
@@ -1853,8 +1891,10 @@ export default class PageView implements Giveable {
 					globalThis.addEventListener("mousemove", checkMovement)
 					globalThis.addEventListener("blur", ForceHideControls)
 					this.Maid.GiveItems(
-						() => mediaSpace.removeEventListener("mouseover", MarkCoverArtHover),
-						() => mediaSpace.removeEventListener("mouseout", UnmarkCoverArtHover),
+						() => mediaSpace.removeEventListener("mouseenter", MarkCoverArtHover),
+						() => mediaSpace.removeEventListener("mouseleave", UnmarkCoverArtHover),
+						() => timelineHitbox.removeEventListener("mouseenter", MarkSliderHover),
+						() => timelineHitbox.removeEventListener("mouseleave", UnmarkSliderHover),
 						() => globalThis.removeEventListener("mouseover", allowMovement),
 						() => globalThis.removeEventListener("mouseout", disallowMovement),
 						() => globalThis.removeEventListener("mousemove", checkMovement),

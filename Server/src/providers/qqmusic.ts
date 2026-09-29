@@ -1,3 +1,4 @@
+import { contextFetch } from "./request";
 import OpenCC from "opencc-js";
 import { decryptQrc } from "qrc-decoder";
 import { convertQrcXmlToSyllableLyrics } from "../convert/karaoke";
@@ -144,14 +145,6 @@ function durationMatches(song: QqMusicSearchSong, track: TrackMetadata): boolean
   return Math.abs(song.interval - track.durationSeconds) <= 5;
 }
 
-function closeDurationMatches(song: QqMusicSearchSong, track: TrackMetadata, toleranceSeconds: number): boolean {
-  return (
-    track.durationSeconds !== undefined &&
-    song.interval !== undefined &&
-    Math.abs(song.interval - track.durationSeconds) <= toleranceSeconds
-  );
-}
-
 function matchesTrack(song: QqMusicSearchSong, track: TrackMetadata): boolean {
   if (song.id === undefined || songTitle(song).length === 0) {
     return false;
@@ -268,7 +261,7 @@ async function getQrcLyrics(fetchImpl: FetchLike, songId: number): Promise<Sylla
   return convertQrcXmlToSyllableLyrics(decryptQrcHex(lyricData.lyric));
 }
 
-export function createQqMusicProvider(fetchImpl: FetchLike = fetch): QqMusicProvider {
+function createQqMusicProviderImplementation(fetchImpl: FetchLike = fetch): QqMusicProvider {
   return {
     async getSyllableLyrics(track: TrackMetadata): Promise<SyllableSyncedLyrics | undefined> {
       if (track.name.length === 0 || firstArtist(track).length === 0) {
@@ -278,19 +271,21 @@ export function createQqMusicProvider(fetchImpl: FetchLike = fetch): QqMusicProv
       // ponytail: one title-only search (simplified) to stay under QQ rate limits;
       // artist and duration matching below picks the right song from the wider results.
       const songs = await searchSongs(fetchImpl, traditionalToSimplified(track.name));
-      const firstSong = songs[0];
-      const matchedSong =
-        firstSong?.id !== undefined && closeDurationMatches(firstSong, track, 1)
-          ? firstSong
-          : songs.find((song) => matchesTrack(song, track));
-      if (matchedSong?.id === undefined) {
-        return undefined;
+      const candidates = songs.filter((song) => matchesTrack(song, track)).slice(0, 3);
+      for (const song of candidates) {
+        logMatchedSong(song);
+        const lyrics = await getQrcLyrics(fetchImpl, song.id!);
+        if (lyrics !== undefined) return withMatchedTitle(lyrics, songTitle(song));
       }
-      logMatchedSong(matchedSong);
-
-      return withMatchedTitle(await getQrcLyrics(fetchImpl, matchedSong.id), songTitle(matchedSong));
+      return undefined;
     }
   };
 }
 
 export const qqMusicProvider = createQqMusicProvider();
+
+export function createQqMusicProvider(fetchImpl: typeof fetch = fetch): QqMusicProvider {
+  return {
+    getSyllableLyrics: (track, context) => createQqMusicProviderImplementation(contextFetch(fetchImpl, context)).getSyllableLyrics(track, context),
+  };
+}

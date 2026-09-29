@@ -597,7 +597,7 @@ describe("Lyrically provider", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input));
       if (url.pathname === "/kugou/search") {
-        expect(init?.signal === undefined).toBe(syllableRequest === false);
+        expect(init?.signal).toBeInstanceOf(AbortSignal);
         expect(url.searchParams.get("q")).toBe(syllableRequest ? "暖暖" : "暖暖 梁靜茹");
         return new Response(
           JSON.stringify([
@@ -613,7 +613,7 @@ describe("Lyrically provider", () => {
       if (url.pathname === "/kugou/lyrics") {
         expect(url.searchParams.get("id")).toBe("d7e7a2c2b33386e834238ac7cbc3524e");
         expect(url.searchParams.get("v")).toBe("2");
-        expect(init?.signal === undefined).toBe(syllableRequest === false);
+        expect(init?.signal).toBeInstanceOf(AbortSignal);
         return new Response(
           JSON.stringify({
             provider: "kugou",
@@ -685,7 +685,7 @@ describe("Lyrically provider", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input));
       if (url.pathname === "/netease/search") {
-        expect(init?.signal === undefined).toBe(syllableRequest === false);
+        expect(init?.signal).toBeInstanceOf(AbortSignal);
         expect(url.searchParams.get("q")).toBe(syllableRequest ? "暖暖" : "暖暖 梁靜茹");
         return new Response(
           JSON.stringify({
@@ -705,7 +705,7 @@ describe("Lyrically provider", () => {
       if (url.pathname === "/netease/lyrics") {
         expect(url.searchParams.get("id")).toBe("254141");
         expect(url.searchParams.get("v")).toBe("2");
-        expect(init?.signal === undefined).toBe(syllableRequest === false);
+        expect(init?.signal).toBeInstanceOf(AbortSignal);
         if (url.searchParams.get("word") === "true") {
           return new Response(
             JSON.stringify({
@@ -1209,5 +1209,16 @@ describe("AMLLDB provider", () => {
         body: JSON.stringify({ query: "布拉格廣場", type: "title" })
       })
     );
+  });
+});
+
+
+describe("duplicate LRC timestamps", () => {
+  it("keeps both bilingual lines active until the next distinct timestamp", () => {
+    const lyrics = convertLrcToLineLyrics("[00:10]Hello\n[00:10]你好\n[00:15]Next", 20)!;
+    expect(lyrics.Content.map(line => [line.StartTime, line.EndTime])).toEqual([[10, 15], [10, 15], [15, 20]]);
+  });
+  it.each([0, 10, NaN, Infinity])("uses a positive last interval for invalid duration %s", duration => {
+    expect(convertLrcToLineLyrics("[00:10]Last", duration)?.EndTime).toBe(15);
   });
 });

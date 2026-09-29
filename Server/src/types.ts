@@ -1,6 +1,5 @@
 export type TextMetadata = {
   Text: string;
-  RomanizedText?: string;
 };
 
 export type TimeMetadata = {
@@ -67,6 +66,11 @@ export type SpotifyClientContext = {
   appVersion?: string;
 };
 
+export type RequestContext = {
+  signal?: AbortSignal;
+  deadline?: number;
+};
+
 export type ProviderClients = {
   // amlldb: AmllDbProvider;
   qqmusic: QqMusicProvider;
@@ -86,32 +90,34 @@ export type SpotifyProvider = {
   getLyrics(
     trackId: string,
     accessToken: string,
-    clientContext?: SpotifyClientContext
+    clientContext?: SpotifyClientContext,
+    context?: RequestContext
   ): Promise<BeautifulLyrics | undefined>;
   getTrackMetadata(
     trackId: string,
     accessToken: string,
-    clientContext?: SpotifyClientContext
+    clientContext?: SpotifyClientContext,
+    context?: RequestContext
   ): Promise<TrackMetadata | undefined>;
 };
 
 export type LrclibProvider = {
-  getLyrics(track: TrackMetadata): Promise<BeautifulLyrics | undefined>;
+  getLyrics(track: TrackMetadata, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
 };
 
 export type QqMusicProvider = {
-  getSyllableLyrics(track: TrackMetadata): Promise<SyllableSyncedLyrics | undefined>;
+  getSyllableLyrics(track: TrackMetadata, context?: RequestContext): Promise<SyllableSyncedLyrics | undefined>;
 };
 
 export type SyllableLyricsProvider = QqMusicProvider;
 
 export type LyricallyProvider = {
-  // getSyllableLyrics(track: TrackMetadata): Promise<SyllableSyncedLyrics | undefined>;
-  getAppleMusicLyrics(track: TrackMetadata): Promise<BeautifulLyrics | undefined>;
-  getKugouLyrics(track: TrackMetadata, word: boolean): Promise<BeautifulLyrics | undefined>;
-  getNeteaseLyrics(track: TrackMetadata, word: boolean): Promise<BeautifulLyrics | undefined>;
-  getLyrics(track: TrackMetadata): Promise<BeautifulLyrics | undefined>;
-  getYouTubeLyrics(track: TrackMetadata): Promise<BeautifulLyrics | undefined>;
-  getDeezerLyrics(track: TrackMetadata): Promise<BeautifulLyrics | undefined>;
-  getGeniusLyrics(track: TrackMetadata): Promise<StaticSyncedLyrics | undefined>;
+  // getSyllableLyrics(track: TrackMetadata, context?: RequestContext): Promise<SyllableSyncedLyrics | undefined>;
+  getAppleMusicLyrics(track: TrackMetadata, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
+  getKugouLyrics(track: TrackMetadata, word: boolean, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
+  getNeteaseLyrics(track: TrackMetadata, word: boolean, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
+  getLyrics(track: TrackMetadata, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
+  getYouTubeLyrics(track: TrackMetadata, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
+  getDeezerLyrics(track: TrackMetadata, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
+  getGeniusLyrics(track: TrackMetadata, context?: RequestContext): Promise<StaticSyncedLyrics | undefined>;
 };

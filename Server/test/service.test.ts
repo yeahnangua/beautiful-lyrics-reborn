@@ -127,7 +127,7 @@ describe("lyrics service", () => {
     vi.mocked(providers[source].getSyllableLyrics).mockResolvedValue(lyrics);
     const metadata = { id: "track", name: "Song", artists: ["Artist"] };
     expect(await createLyricsService(providers).getLyrics("track", "token", metadata)).toEqual(lyrics);
-    expect(providers[source].getSyllableLyrics).toHaveBeenCalledWith(metadata);
+    expect(providers[source].getSyllableLyrics).toHaveBeenCalledWith(metadata, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(providers.spotify.getLyrics).not.toHaveBeenCalled();
   });
 
@@ -169,7 +169,7 @@ describe("lyrics service", () => {
       Type: "Static",
       Lines: [{ Text: "Spotify lyric" }]
     });
-    expect(providers.spotify.getTrackMetadata).toHaveBeenCalledWith("track", "token", undefined);
+    expect(providers.spotify.getTrackMetadata).toHaveBeenCalledWith("track", "token", undefined, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(providers.lrclib.getLyrics).not.toHaveBeenCalled();
   });
 
@@ -276,7 +276,7 @@ describe("lyrics service", () => {
           name: "Song",
           artists: ["Artist"]
         },
-        true
+        true, expect.objectContaining({ signal: expect.any(AbortSignal) })
       );
       expect(providers.lyrically.getNeteaseLyrics).toHaveBeenCalledWith(
         {
@@ -284,7 +284,7 @@ describe("lyrics service", () => {
           name: "Song",
           artists: ["Artist"]
         },
-        true
+        true, expect.objectContaining({ signal: expect.any(AbortSignal) })
       );
       expect(providers.lyrically.getDeezerLyrics).toHaveBeenCalled();
     });
@@ -421,14 +421,14 @@ describe("lyrics service", () => {
       id: "track",
       name: "Song",
       artists: ["Artist"]
-    });
+    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     // Musixmatch syllable lookup is disabled.
     expect(providers.lyrically.getLyrics).toHaveBeenCalledWith({
       id: "track",
       name: "Song",
       artists: ["Artist"]
-    });
-    expect(providers.spotify.getLyrics).toHaveBeenCalledWith("track", "token", undefined);
+    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(providers.spotify.getLyrics).toHaveBeenCalledWith("track", "token", undefined, expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 
   it("returns the first available line lyrics without waiting for slower line providers", async () => {
@@ -471,7 +471,7 @@ describe("lyrics service", () => {
           name: "Song",
           artists: ["Artist"]
         },
-        false
+        false, expect.objectContaining({ signal: expect.any(AbortSignal) })
       );
       expect(providers.lyrically.getNeteaseLyrics).toHaveBeenCalledWith(
         {
@@ -479,7 +479,7 @@ describe("lyrics service", () => {
           name: "Song",
           artists: ["Artist"]
         },
-        false
+        false, expect.objectContaining({ signal: expect.any(AbortSignal) })
       );
       expect(providers.lrclib.getLyrics).toHaveBeenCalled();
     });
@@ -487,7 +487,7 @@ describe("lyrics service", () => {
     resolveLyrically(undefined);
   });
 
-  it("stops syllable lookups after 20 seconds and starts the line race", async () => {
+  it("stops syllable lookups after 15 seconds and starts the line race", async () => {
     vi.useFakeTimers();
     try {
       const providers = createProviders();
@@ -515,7 +515,7 @@ describe("lyrics service", () => {
         artists: ["Artist"]
       });
 
-      await vi.advanceTimersByTimeAsync(19_999);
+      await vi.advanceTimersByTimeAsync(14_999);
       expect(providers.spotify.getLyrics).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);
       expect(providers.spotify.getLyrics).toHaveBeenCalled();
@@ -707,7 +707,7 @@ describe("lyrics service", () => {
         }
       ]
     });
-    expect(providers.spotify.getTrackMetadata).toHaveBeenCalledWith("track", "token", undefined);
+    expect(providers.spotify.getTrackMetadata).toHaveBeenCalledWith("track", "token", undefined, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(providers.lrclib.getLyrics).not.toHaveBeenCalled();
   });
 
@@ -747,8 +747,8 @@ describe("lyrics service", () => {
       id: "track",
       name: "",
       artists: []
-    });
-    expect(providers.spotify.getLyrics).toHaveBeenCalledWith("track", "token", undefined);
+    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(providers.spotify.getLyrics).toHaveBeenCalledWith("track", "token", undefined, expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 
   it("uses Lyrically line lyrics when it wins the line race", async () => {
@@ -807,7 +807,7 @@ describe("lyrics service", () => {
       id: "track",
       name: "Song",
       artists: ["Artist"]
-    });
+    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 
   it("prefers LRCLIB line lyrics over Spotify static lyrics", async () => {
@@ -898,7 +898,7 @@ describe("lyrics service", () => {
       id: "track",
       name: "Song",
       artists: ["Artist"]
-    });
+    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 
   it("uses supplied track metadata for LRCLIB fallback before fetching Spotify metadata", async () => {
@@ -932,7 +932,7 @@ describe("lyrics service", () => {
       album: "Album",
       durationSeconds: 123,
       isrc: "ISRC"
-    });
+    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 
   it("passes Spotify client context to the Spotify provider", async () => {
@@ -949,7 +949,7 @@ describe("lyrics service", () => {
     expect(providers.spotify.getLyrics).toHaveBeenCalledWith("track", "token", {
       appPlatform: "Linux_x86_64",
       appVersion: "1.2.99.999"
-    });
+    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 });
 
@@ -1036,7 +1036,7 @@ describe("worker route", () => {
         durationSeconds: 123,
         isrc: "ISRC"
       },
-      undefined
+      undefined, expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
   });
 
@@ -1052,7 +1052,7 @@ describe("worker route", () => {
     );
     expect(service.getLyrics).toHaveBeenCalledWith("track", "token", {
       id: "track", name: "Song", artists: ["Artist"], appleMusicId: "123", appleMusicTitle: "Song (Live)"
-    }, undefined);
+    }, undefined, expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 
   it("passes Spotify client context headers to the lyrics service", async () => {
@@ -1081,6 +1081,74 @@ describe("worker route", () => {
     expect(service.getLyrics).toHaveBeenCalledWith("track", "token", undefined, {
       appPlatform: "Linux_x86_64",
       appVersion: "1.2.99.999"
-    });
+    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+  });
+});
+
+
+describe("bounded quality phases", () => {
+  const track = { id: "track", name: "Song", artists: ["Artist"] };
+  const plain = { Type: "Static" as const, Lines: [{ Text: "plain" }] };
+  const lineLyrics = { Type: "Line" as const, StartTime: 1, EndTime: 2,
+    Content: [{ Type: "Vocal" as const, Text: "line", StartTime: 1, EndTime: 2, OppositeAligned: false }] };
+  it("holds an early static result until a later syllable result arrives", async () => {
+    vi.useFakeTimers();
+    try {
+      const p = createProviders();
+      vi.mocked(p.lyrically.getDeezerLyrics).mockResolvedValue(plain);
+      vi.mocked(p.qqmusic.getSyllableLyrics).mockImplementation(() => new Promise(resolve => setTimeout(() => resolve(wordLyrics("word")), 14_000)));
+      const result = createLyricsService(p).getLyrics("track", "token", track);
+      let settled = false; void result.then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(13_999); expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1); expect((await result)?.Type).toBe("Syllable");
+      expect(p.spotify.getLyrics).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+  it("waits for a late line instead of returning an early static result", async () => {
+    vi.useFakeTimers();
+    try {
+      const p = createProviders();
+      vi.mocked(p.spotify.getLyrics).mockResolvedValue(plain);
+      vi.mocked(p.lrclib.getLyrics).mockImplementation(() => new Promise(resolve => setTimeout(() => resolve(lineLyrics), 9_000)));
+      const result = createLyricsService(p).getLyrics("track", "token", track);
+      let settled = false; void result.then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(8_999); expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1); expect(await result).toEqual(lineLyrics);
+    } finally { vi.useRealTimers(); }
+  });
+  it("returns saved static after the line deadline without waiting for Genius", async () => {
+    vi.useFakeTimers();
+    try {
+      const p = createProviders();
+      vi.mocked(p.spotify.getLyrics).mockReturnValue(new Promise(() => {}));
+      vi.mocked(p.lrclib.getLyrics).mockResolvedValue(plain);
+      const result = createLyricsService(p).getLyrics("track", "token", track);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(await result).toEqual(plain);
+      expect(p.lyrically.getGeniusLyrics).not.toHaveBeenCalled();
+      expect(vi.mocked(p.spotify.getLyrics).mock.calls[0]![3]?.signal?.aborted).toBe(true);
+    } finally { vi.useRealTimers(); }
+  });
+  it("ends fully stalled searches after 15 + 10 + 5 seconds", async () => {
+    vi.useFakeTimers();
+    try {
+      const p = createProviders();
+      vi.mocked(p.qqmusic.getSyllableLyrics).mockReturnValue(new Promise(() => {}));
+      vi.mocked(p.spotify.getLyrics).mockReturnValue(new Promise(() => {}));
+      vi.mocked(p.lyrically.getGeniusLyrics).mockReturnValue(new Promise(() => {}));
+      const result = createLyricsService(p).getLyrics("track", "token", track);
+      let settled = false; void result.then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(29_999); expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1); expect(await result).toBeUndefined();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+  it("cancels on disconnect without starting the following phases", async () => {
+    const p = createProviders(); const controller = new AbortController();
+    vi.mocked(p.qqmusic.getSyllableLyrics).mockReturnValue(new Promise(() => {}));
+    const result = createLyricsService(p).getLyrics("track", "token", track, undefined, { signal: controller.signal });
+    await vi.waitFor(() => expect(p.qqmusic.getSyllableLyrics).toHaveBeenCalled());
+    controller.abort(); expect(await result).toBeUndefined();
+    expect(p.spotify.getLyrics).not.toHaveBeenCalled();
   });
 });

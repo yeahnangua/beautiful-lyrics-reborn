@@ -34,7 +34,7 @@ export default class LyricsRenderer implements Giveable {
 	// Constructor
 	constructor(
 		parentContainer: HTMLDivElement,
-		transformedLyrics: TransformedLyrics, isRomanized: boolean
+		transformedLyrics: TransformedLyrics
 	) {
 		// Create our containers
 		const scrollContainer = this.Maid.Give(document.createElement("div"))
@@ -62,8 +62,7 @@ export default class LyricsRenderer implements Giveable {
 						Vocals: [
 							this.Maid.Give(
 								new StaticVocals(
-									lineContainer, line,
-									isRomanized
+									lineContainer, line
 								)
 							)
 						]
@@ -102,8 +101,7 @@ export default class LyricsRenderer implements Giveable {
 								Vocals: [
 									this.Maid.Give(
 										new LineVocals(
-											vocalGroupContainer, vocalGroup,
-											isRomanized
+											vocalGroupContainer, vocalGroup
 										)
 									)
 								]
@@ -142,8 +140,7 @@ export default class LyricsRenderer implements Giveable {
 						vocals.push(
 							this.Maid.Give(
 								new SyllableVocals(
-									vocalGroupContainer, vocalGroup.Lead.Syllables, false,
-									isRomanized
+									vocalGroupContainer, vocalGroup.Lead.Syllables, false
 								)
 							)
 						)
@@ -153,8 +150,7 @@ export default class LyricsRenderer implements Giveable {
 								vocals.push(
 									this.Maid.Give(
 										new SyllableVocals(
-											vocalGroupContainer, backgroundVocal.Syllables, true,
-											isRomanized
+											vocalGroupContainer, backgroundVocal.Syllables, true
 										)
 									)
 								)

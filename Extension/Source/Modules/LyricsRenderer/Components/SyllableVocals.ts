@@ -112,10 +112,10 @@ const CreateSprings = () => {
 // Emphasis Evaluation Constants
 const MinimumEmphasizedDuration = 1
 const MaximumEmphasizedCharacters = 12
-const IsEmphasized = (metadata: SyllableMetadata, isRomanized: boolean) => {
+const IsEmphasized = (metadata: SyllableMetadata) => {
 	return (
 		((metadata.EndTime - metadata.StartTime) >= MinimumEmphasizedDuration)
-		&& ((isRomanized && metadata.RomanizedText || metadata.Text).length <= MaximumEmphasizedCharacters)
+		&& (metadata.Text.length <= MaximumEmphasizedCharacters)
 	)
 }
 
@@ -144,8 +144,7 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 	// Constructor
 	public constructor(
 		lineContainer: HTMLElement,
-		syllablesMetadata: SyllableList, isBackground: boolean,
-		isRomanized: boolean
+		syllablesMetadata: SyllableList, isBackground: boolean
 	) {
 		// First create our container
 		const container = this.Maid.Give(document.createElement('div'))
@@ -206,7 +205,7 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 			// Now handle all our syllables
 			for (const [index, syllableMetadata] of syllableGroup.entries()) {
 				// Determine if we are emphasised
-				const isEmphasized = IsEmphasized(syllableMetadata, isRomanized)
+				const isEmphasized = IsEmphasized(syllableMetadata)
 
 				// Create our main span element
 				const syllableSpan = this.Maid.Give(document.createElement('span'))
@@ -239,7 +238,7 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 				if (isEmphasized) {
 					// Store all our "letters"
 					const letterTexts: string[] = []
-					for (const letter of (isRomanized && syllableMetadata.RomanizedText || syllableMetadata.Text)) {
+					for (const letter of syllableMetadata.Text) {
 						letterTexts.push(letter)
 					}
 
@@ -276,15 +275,16 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 					}
 				} else {
 					// Update our text
-					syllableSpan.innerText = (isRomanized && syllableMetadata.RomanizedText || syllableMetadata.Text)
+					syllableSpan.innerText = syllableMetadata.Text
 				}
 
 				// Determine our time information
 				const relativeStart = (syllableMetadata.StartTime - this.StartTime)
 				const relativeEnd = (syllableMetadata.EndTime - this.StartTime)
 
-				const relativeStartScale = (relativeStart / this.Duration)
-				const relativeEndScale = (relativeEnd / this.Duration)
+				const validDuration = this.Duration > 0 && Number.isFinite(this.Duration)
+				const relativeStartScale = validDuration ? relativeStart / this.Duration : 0
+				const relativeEndScale = validDuration ? relativeEnd / this.Duration : 0
 
 				const duration = (relativeEnd - relativeStart)
 				const durationScale = (relativeEndScale - relativeStartScale)
@@ -453,7 +453,7 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 
 		// Determine our relative time elements
 		const relativeTime = (displayTimestamp - this.StartTime)
-		const timeScale = Clamp((relativeTime / this.Duration), 0, 1)
+		const timeScale = (this.Duration > 0 && Number.isFinite(this.Duration) ? Clamp(relativeTime / this.Duration, 0, 1) : (relativeTime >= 0 ? 1 : 0))
 
 		// Determine if we should update our visual-states
 		const pastStart = (relativeTime >= 0), beforeEnd = (relativeTime <= this.Duration)
@@ -496,7 +496,7 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 			for (const syllable of this.Syllables) {
 				// Determine our time-scale for the syllable
 				const syllableTimeScale = Clamp(
-					((timeScale - syllable.StartScale) / syllable.DurationScale),
+					(syllable.DurationScale > 0 ? (timeScale - syllable.StartScale) / syllable.DurationScale : (timeScale >= syllable.StartScale ? 1 : 0)),
 					0, 1
 				)
 

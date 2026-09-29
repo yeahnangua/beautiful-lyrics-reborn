@@ -13,8 +13,7 @@ export default class StaticVocals implements BaseVocals, Giveable {
 
 	// Constructor
 	public constructor(
-		lineContainer: HTMLElement, lyricMetadata: TextMetadata,
-		isRomanized: boolean
+		lineContainer: HTMLElement, lyricMetadata: TextMetadata
 	) {
 		// Store our lyric-metadata
 		this.LyricMetadata = lyricMetadata
@@ -32,7 +31,7 @@ export default class StaticVocals implements BaseVocals, Giveable {
 		const syllableSpan = this.Maid.Give(document.createElement('span'))
 		syllableSpan.classList.add('Lyric')
 		syllableSpan.classList.add('Static')
-		syllableSpan.innerText = (isRomanized && lyricMetadata.RomanizedText || lyricMetadata.Text)
+		syllableSpan.innerText = lyricMetadata.Text
 		container.appendChild(syllableSpan)
 
 		// Finally, add our vocals to our line

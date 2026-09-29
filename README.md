@@ -21,7 +21,6 @@ https://lyrics.txw.qzz.io
 - Karaoke, line-synced, and static lyric rendering.
 - Fullscreen and page lyric views.
 - Dynamic cover-art based backgrounds.
-- Romanization support for supported CJK lyrics.
 - Reborn lyrics provider flow:
   1. The first available syllable lyrics from direct QQ Music QRC, KuGou KRC, NetEase YRC,
      or Musixmatch RichSync, plus Lyrically/Paxsenix Apple Music, Kugou,
@@ -31,7 +30,10 @@ https://lyrics.txw.qzz.io
   3. Static fallbacks from Lyrically/Paxsenix Spotify proxy, Spotify,
      Deezer, YouTube, Genius, and LRCLIB.
 
-The syllable-lyrics phase has a 20-second total time budget before the Line race starts.
+Lyrics preserve the quality order syllable > line > static. The syllable phase
+(including metadata) has a 15-second budget, followed by up to 10 seconds for
+line lyrics. Static results are used only after both phases miss or time out;
+a final static lookup has at most 5 seconds.
 
 The direct KuGou, NetEase, and Musixmatch providers do not use Paxsenix. KuGou and
 NetEase match the title, artist, and duration before retrieving KRC or YRC.

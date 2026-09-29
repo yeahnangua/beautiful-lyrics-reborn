@@ -7,19 +7,6 @@ body:has(.BeautifulLyricsPage) {
 
 // Shared Styles
 .ViewControls {
-	#Romanize {
-		svg.Enable {
-			height: calc(var(--ViewControlSize) * 0.475);
-			width: auto;
-			aspect-ratio: 1;
-		}
-
-		svg.Disable {
-			height: calc(var(--ViewControlSize) * 0.4);
-			width: auto;
-			aspect-ratio: 1;
-		}
-	}
 
 	// Gold tint highlighting that Cinema mode works again after the state crash fix
 	// #Cinema {

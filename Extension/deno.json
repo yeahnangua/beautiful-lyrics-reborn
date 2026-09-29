@@ -15,7 +15,6 @@
 
 	"imports": {
 		"@Spices/": "./Spices/",
-		"@Universal/": "../Universal/",
-		"@Pinyin/": "../Pinyin/"
+		"@Universal/": "../Universal/"
 	}
 }

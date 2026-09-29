@@ -1,3 +1,4 @@
+import { createAccessTokenProvider } from "./AccessToken.ts"
 // Imported Types
 import type SpicetifyTypes from "../Types/App/Spicetify.ts"
 
@@ -134,69 +135,15 @@ export const OnSpotifyReady = SpotifyReadyPromise
 	CheckForServices()
 }
 
-// Handle token-fetching
-type TokenProviderResponse = {
-	accessToken: string,
-	expiresAtTime: number,
-	tokenType: "Bearer"
-}
-let tokenProviderResponse: (TokenProviderResponse | undefined)
-let accessTokenPromise: Promise<string> | undefined
-export const GetSpotifyAccessToken = (): Promise<string> => {
-	// Determine if we're close to refreshing (meaning we should wait until then)
-	if (tokenProviderResponse !== undefined) {
-		const timeUntilRefresh = ((tokenProviderResponse.expiresAtTime - Date.now()) / 1000)
-		if (timeUntilRefresh <= 2) {
-			tokenProviderResponse = undefined
-			accessTokenPromise = (
-				new Promise(resolve => GlobalMaid.Give(Timeout(timeUntilRefresh, resolve)))
-				.then(
-					() => {
-						accessTokenPromise = undefined
-						return GetSpotifyAccessToken() // This actually causes a fetch to happen
-					}
-				)
-			)
-			return accessTokenPromise
-		}
-	}
-
-	// If we already have an access-token promise, return it
-	if (accessTokenPromise !== undefined) {
-		return accessTokenPromise
-	}
-
-	// Otherwise, fetch a new access-token
-	accessTokenPromise = (
-		SpotifyInternalFetch.get("sp://oauth/v2/token")
-		.then(
-			(result: TokenProviderResponse) => {
-				tokenProviderResponse = result, accessTokenPromise = Promise.resolve(result.accessToken)
-				return GetSpotifyAccessToken() // Re-run this to make sure we don't need to refresh again
-			}
-		)
-		.catch(
-			(error: Error) => {
-				// Means this method of fetching the token is not valid in the used version of Spotify
-				if (error.message.includes("Resolver not found")) {
-					if (SpotifyPlatform.Session === undefined) {
-						console.warn("Failed to find SpotifyPlatform.Session for fetching token")
-					} else {
-						tokenProviderResponse = {
-							accessToken: SpotifyPlatform.Session.accessToken,
-							expiresAtTime: SpotifyPlatform.Session.accessTokenExpirationTimestampMs,
-							tokenType: "Bearer"
-						}
-						accessTokenPromise = Promise.resolve(tokenProviderResponse.accessToken)
-					}
-				}
-
-				return GetSpotifyAccessToken() // Retry fetching the token
-			}
-		)
-	)
-	return accessTokenPromise!
-}
+// Shared requests recover after failure; each caller can independently stop waiting.
+export const GetSpotifyAccessToken = createAccessTokenProvider(
+	() => SpotifyInternalFetch.get("sp://oauth/v2/token"),
+	() => SpotifyPlatform.Session === undefined ? undefined : ({
+		accessToken: SpotifyPlatform.Session.accessToken,
+		expiresAtTime: SpotifyPlatform.Session.accessTokenExpirationTimestampMs,
+		tokenType: "Bearer"
+	})
+)
 
 // Allows for Spotify API requests to be made without CosmosASYNC (which doesn't support all endpoints anymore)
 export const SpotifyFetch = (url: string): Promise<Response> => {

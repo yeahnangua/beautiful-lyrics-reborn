@@ -21,7 +21,7 @@ describe("lyric request retries", () => {
         return new Promise<never>(() => {});
       });
       const result = withLyricRequestRetries(request, "test lyrics");
-      const rejection = expect(result).rejects.toThrow("timed out after 5 seconds");
+      const rejection = expect(result).rejects.toThrow("Request timed out");
 
       await vi.advanceTimersByTimeAsync(15_000);
       await rejection;
@@ -228,7 +228,7 @@ describe("QQ Music provider", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("matches the first search result by duration tolerance when metadata names differ", async () => {
+  it("rejects the first result when only its duration matches", async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body));
       const request = body.req ?? body["music.musichallSong.PlayLyricInfo.GetPlayLyricInfo"];
@@ -291,8 +291,8 @@ describe("QQ Music provider", () => {
       durationSeconds: 106
     });
 
-    expect(lyrics?.Type).toBe("Syllable");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(lyrics).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -486,5 +486,28 @@ describe("lyrically provider", () => {
 
     expect(lyrics?.Type).toBe("Line");
     logSpy.mockRestore();
+  });
+});
+
+describe("QQ candidate validation", () => {
+  it("skips a wrong first result and tries the next matching recording without QRC", async () => {
+    const downloaded: number[] = [];
+    const fetchMock = vi.fn(async (_: unknown, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      if (body.req) return Response.json({ req: { data: { body: { song: { list: [
+        { id: 1, title: "Wrong", singer: [{ name: "Other" }], interval: 200 },
+        { id: 2, title: "Song", singer: [{ name: "Artist" }], interval: 200 },
+        { id: 3, title: "Song", singer: [{ name: "Artist" }], interval: 201 }
+      ] } } } } });
+      const id = body["music.musichallSong.PlayLyricInfo.GetPlayLyricInfo"].param.songID;
+      downloaded.push(id);
+      return Response.json({ "music.musichallSong.PlayLyricInfo.GetPlayLyricInfo": {
+        data: id === 2 ? { qrc: 0 } : { qrc: 1, lyric: pragueSquareQrcHex }
+      } });
+    });
+    const result = await createQqMusicProvider(fetchMock as typeof fetch).getSyllableLyrics({
+      id: "track", name: "Song", artists: ["Artist"], durationSeconds: 200
+    });
+    expect(result?.Type).toBe("Syllable"); expect(downloaded).toEqual([2, 3]);
   });
 });

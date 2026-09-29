@@ -1,3 +1,4 @@
+import { contextFetch } from "./request";
 import { convertLrcToLineLyrics } from "../convert/lrc";
 import { convertPlainTextToStatic } from "../convert/plain";
 import type { BeautifulLyrics, LrclibProvider, TrackMetadata } from "../types";
@@ -43,7 +44,7 @@ function convertRecord(record: LrclibRecord, durationSeconds?: number): Beautifu
   );
 }
 
-export function createLrclibProvider(fetchImpl: FetchLike = fetch): LrclibProvider {
+function createLrclibProviderImplementation(fetchImpl: FetchLike = fetch): LrclibProvider {
   return {
     async getLyrics(track: TrackMetadata): Promise<BeautifulLyrics | undefined> {
       if (track.name.length === 0 || firstArtist(track).length === 0) {
@@ -75,3 +76,9 @@ export function createLrclibProvider(fetchImpl: FetchLike = fetch): LrclibProvid
 }
 
 export const lrclibProvider = createLrclibProvider();
+
+export function createLrclibProvider(fetchImpl: typeof fetch = fetch): LrclibProvider {
+  return {
+    getLyrics: (track, context) => createLrclibProviderImplementation(contextFetch(fetchImpl, context)).getLyrics(track, context),
+  };
+}

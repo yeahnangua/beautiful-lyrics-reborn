@@ -1,3 +1,4 @@
+import { contextFetch } from "./request";
 import OpenCC from "opencc-js";
 // import { convertEnhancedLrcToSyllableLyrics } from "../convert/enhanced-lrc";
 import { convertLrcToLineLyrics } from "../convert/lrc";
@@ -814,7 +815,7 @@ async function getGeniusLyrics(fetchImpl: FetchLike, track: TrackMetadata): Prom
   return convertPlainTextToStatic(payload.lyrics);
 }
 
-export function createLyricallyProvider(fetchImpl: FetchLike = fetch): LyricallyProvider {
+function createLyricallyProviderImplementation(fetchImpl: FetchLike = fetch): LyricallyProvider {
   return {
     
 
@@ -849,3 +850,15 @@ export function createLyricallyProvider(fetchImpl: FetchLike = fetch): Lyrically
 }
 
 export const lyricallyProvider = createLyricallyProvider();
+
+export function createLyricallyProvider(fetchImpl: typeof fetch = fetch): LyricallyProvider {
+  return {
+    getLyrics: (track, context) => createLyricallyProviderImplementation(contextFetch(fetchImpl, context)).getLyrics(track),
+    getAppleMusicLyrics: (track, context) => createLyricallyProviderImplementation(contextFetch(fetchImpl, context)).getAppleMusicLyrics(track),
+    getDeezerLyrics: (track, context) => createLyricallyProviderImplementation(contextFetch(fetchImpl, context)).getDeezerLyrics(track),
+    getYouTubeLyrics: (track, context) => createLyricallyProviderImplementation(contextFetch(fetchImpl, context)).getYouTubeLyrics(track),
+    getGeniusLyrics: (track, context) => createLyricallyProviderImplementation(contextFetch(fetchImpl, context)).getGeniusLyrics(track),
+    getKugouLyrics: (track, word, context) => createLyricallyProviderImplementation(contextFetch(fetchImpl, context)).getKugouLyrics(track, word),
+    getNeteaseLyrics: (track, word, context) => createLyricallyProviderImplementation(contextFetch(fetchImpl, context)).getNeteaseLyrics(track, word),
+  };
+}

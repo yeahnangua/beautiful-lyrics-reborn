@@ -1,3 +1,4 @@
+import { contextFetch } from "./request";
 // Adapted from lrcmux/internal/providers/kugou/provider.go (MIT).
 // Copyright © 2026 f1nniboy. See NOTICE.md and LICENSES/lrcmux-MIT.txt.
 // Changed 2026-09-19: HTTPS, native fetch, strict matching, bounded requests,
@@ -45,14 +46,14 @@ function matches(value: unknown, track: TrackMetadata): value is Candidate {
       Math.abs(candidate.duration / 1000 - track.durationSeconds) <= 8);
 }
 
-export function createKugouProvider(fetchImpl: typeof fetch = fetch): SyllableLyricsProvider {
+function createKugouProviderImplementation(fetchImpl: typeof fetch = fetch): SyllableLyricsProvider {
   async function getJson<T>(url: URL, signal: AbortSignal): Promise<T | undefined> {
     const response = await fetchImpl(url.toString(), { headers, signal });
     return response.ok ? await response.json() as T : undefined;
   }
 
   return {
-    async getSyllableLyrics(track) {
+    async getSyllableLyrics(track, context) {
       if (!track.name.trim() || !track.artists[0]?.trim()) {
         return undefined;
       }
@@ -88,9 +89,15 @@ export function createKugouProvider(fetchImpl: typeof fetch = fetch): SyllableLy
           }
         }
         return undefined;
-      }, "kugou direct");
+      }, "kugou direct", context);
     }
   };
 }
 
 export const kugouProvider = createKugouProvider();
+
+export function createKugouProvider(fetchImpl: typeof fetch = fetch): SyllableLyricsProvider {
+  return {
+    getSyllableLyrics: (track, context) => createKugouProviderImplementation(contextFetch(fetchImpl, context)).getSyllableLyrics(track, context),
+  };
+}

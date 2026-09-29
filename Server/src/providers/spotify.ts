@@ -1,3 +1,4 @@
+import { contextFetch } from "./request";
 import { convertSpotifyLyricsPayload } from "../convert/spotify";
 import type { BeautifulLyrics, SpotifyClientContext, SpotifyProvider, TrackMetadata } from "../types";
 
@@ -137,7 +138,7 @@ function convertInternalTrack(trackId: string, payload: SpotifyInternalTrackResp
   return track;
 }
 
-export function createSpotifyProvider(fetchImpl: FetchLike = fetch): SpotifyProvider {
+function createSpotifyProviderImplementation(fetchImpl: FetchLike = fetch): SpotifyProvider {
   return {
     async getLyrics(
       trackId: string,
@@ -198,3 +199,10 @@ export function createSpotifyProvider(fetchImpl: FetchLike = fetch): SpotifyProv
 }
 
 export const spotifyProvider = createSpotifyProvider();
+
+export function createSpotifyProvider(fetchImpl: typeof fetch = fetch): SpotifyProvider {
+  return {
+    getLyrics: (id, token, client, context) => createSpotifyProviderImplementation(contextFetch(fetchImpl, context)).getLyrics(id, token, client),
+    getTrackMetadata: (id, token, client, context) => createSpotifyProviderImplementation(contextFetch(fetchImpl, context)).getTrackMetadata(id, token, client),
+  };
+}

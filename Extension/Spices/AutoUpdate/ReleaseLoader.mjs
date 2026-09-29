@@ -59,15 +59,31 @@ export async function startReleaseLoader(fallback, runtime = globalThis) {
     state.version = selected.version;
     try { runtime.localStorage.setItem(storageKey, JSON.stringify(selected)); } catch { /* Storage may be unavailable. */ }
     runtime.console.info(`[Beautiful Lyrics Reborn] ${selected.version} (${selected.sha256.slice(0, 16)})`);
-    let checking = false, notified;
+    let checking = false, updateNoticeShown = false, updateNoticeDismissed = false;
     runtime.setInterval(async () => {
       if (checking) return;
       checking = true;
       try {
         const release = await latest();
-        if (release.sha256 !== state.build && release.sha256 !== notified && runtime.Spicetify?.showNotification) {
-          runtime.Spicetify.showNotification("Beautiful Lyrics Reborn has an update. Reload Spotify to apply it.", false, 10000);
-          notified = release.sha256;
+        const snackbar = runtime.Spicetify?.Snackbar;
+        const react = runtime.Spicetify?.React;
+        if (release.sha256 !== state.build && !updateNoticeShown && !updateNoticeDismissed
+          && snackbar?.enqueueSnackbar && snackbar?.closeSnackbar && react?.createElement) {
+          let noticeKey;
+          const notice = react.createElement("div", { style: { display: "flex", alignItems: "center", gap: "12px" } },
+            react.createElement("span", null, "Beautiful Lyrics Reborn has an update. Reload Spotify to apply it."),
+            react.createElement("button", {
+              type: "button",
+              "aria-label": "Dismiss update notification",
+              title: "Dismiss update notification",
+              style: { background: "none", border: 0, color: "inherit", cursor: "pointer", fontSize: "20px", lineHeight: 1, padding: "0 4px" },
+              onClick: () => {
+                updateNoticeDismissed = true;
+                snackbar.closeSnackbar(noticeKey);
+              },
+            }, "×"));
+          noticeKey = snackbar.enqueueSnackbar(notice, { persist: true });
+          updateNoticeShown = true;
         }
       } catch { /* Keep the active version when the update service is unavailable. */ }
       finally { checking = false; }

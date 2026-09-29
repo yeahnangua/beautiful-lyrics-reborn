@@ -11,14 +11,21 @@ function fixture() {
   const oldCode = "export default 'old';", newCode = "export default 'new';";
   const old = release(oldCode), fresh = release(newCode);
   const stored = new Map();
-  const calls = [], notifications = [], imports = [];
+  const calls = [], notifications = [], closedNotifications = [], imports = [];
   let interval;
   const runtime = {
     crypto: webcrypto, URL,
     console: { warn() {}, error() {}, info() {} },
     localStorage: { getItem: key => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value) },
     setInterval: callback => { interval = callback; },
-    Spicetify: { showNotification: (...args) => notifications.push(args) },
+    Spicetify: {
+      showNotification: (...args) => notifications.push(args),
+      Snackbar: {
+        enqueueSnackbar: (message, options) => { notifications.push({ message, options }); return "update-notice"; },
+        closeSnackbar: key => closedNotifications.push(key),
+      },
+      React: { createElement: (type, props, ...children) => ({ type, props, children }) },
+    },
     importModule: async url => imports.push(await (await fetch(url)).text()),
     fetch: async (url, options) => {
       calls.push({ url, options });
@@ -28,9 +35,9 @@ function fixture() {
       return new Response("Not found", { status: 404 });
     },
   };
-  return { runtime, old, fresh, imports, notifications, calls, stored, tick: () => interval() };
+  return { runtime, old, fresh, imports, notifications, closedNotifications, calls, stored, tick: () => interval() };
 }
-test("loads latest once even when two entry scripts run; polling only notifies", async () => {
+test("loads latest once and keeps one update notice visible until its close button is clicked", async () => {
   const f = fixture();
   await Promise.all([startReleaseLoader(f.old, f.runtime), startReleaseLoader(f.old, f.runtime)]);
   assert.equal(f.imports.length, 1);
@@ -39,7 +46,31 @@ test("loads latest once even when two entry scripts run; polling only notifies",
   f.runtime.fetch = async () => Response.json(f.old); // Rollback is also an update.
   await f.tick(); await f.tick();
   assert.equal(f.notifications.length, 1);
+  assert.equal(f.notifications[0].options.persist, true);
+  assert.equal(f.notifications[0].options.autoHideDuration, undefined);
+  assert.equal(f.notifications[0].message.children[0].children[0], "Beautiful Lyrics Reborn has an update. Reload Spotify to apply it.");
+  const closeButton = f.notifications[0].message.children[1];
+  assert.equal(closeButton.type, "button");
+  assert.equal(closeButton.props["aria-label"], "Dismiss update notification");
+  closeButton.props.onClick();
+  assert.deepEqual(f.closedNotifications, ["update-notice"]);
+  f.runtime.fetch = async () => Response.json(release("export default 'newer';"));
+  await f.tick();
+  assert.equal(f.notifications.length, 1);
   assert.equal(f.imports.length, 1);
+});
+test("reloading Spotify resets update notice dismissal", async () => {
+  const first = fixture();
+  await startReleaseLoader(first.old, first.runtime);
+  first.runtime.fetch = async () => Response.json(first.old);
+  await first.tick();
+  first.notifications[0].message.children[1].props.onClick();
+
+  const reloaded = fixture();
+  await startReleaseLoader(reloaded.old, reloaded.runtime);
+  reloaded.runtime.fetch = async () => Response.json(reloaded.old);
+  await reloaded.tick();
+  assert.equal(reloaded.notifications.length, 1);
 });
 test("a stale loader uses last successful release when pointer is unavailable", async () => {
   const f = fixture();

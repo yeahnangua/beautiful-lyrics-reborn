@@ -105,7 +105,7 @@ describe("lyrics service", () => {
     }
   });
 
-  it.each(["kugou", "netease", ] as const)("uses %s direct word lyrics before the line fallback", async (source) => {
+  it.each(["kugou", "netease"] as const)("uses %s direct word lyrics before the line fallback", async (source) => {
     const providers = createProviders();
     const lyrics = {
       Type: "Syllable" as const,
@@ -874,6 +874,7 @@ describe("lyrics service", () => {
     }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 });
+
 
 describe("worker route", () => {
   const env = {};

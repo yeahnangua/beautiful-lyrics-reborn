@@ -1,3 +1,4 @@
+import { BindLyricsFeedbackButton, LyricsFeedbackButton } from "../../Modules/LyricsFeedback.ts"
 import { Revision } from "@Universal/Modules/Revision.ts"
 // Styles
 import "./style.scss"
@@ -110,6 +111,7 @@ const Container = `
 						<div class="Grid"></div>
 					</div>
 					<div class="ViewControls">
+						${LyricsFeedbackButton}
 						<button id="AddToPlaylist" class="ViewControl">${Icons.AddToPlaylist}</button>
 						<button id="SmallerView" class="ViewControl"></button>
 						<button id="Fullscreen" class="ViewControl">${LyricViewIcons.FullscreenOpen}</button>
@@ -232,6 +234,7 @@ export default class PageView implements Giveable {
 			const coverArt = mediaSpace.querySelector<HTMLImageElement>(".CoverArt")!
 			const addToPlaylistCover = mediaSpace.querySelector<HTMLDivElement>(".AddToPlaylistCover")!
 			const viewControls = mediaSpace.querySelector<HTMLDivElement>(".ViewControls")!
+			BindLyricsFeedbackButton(viewControls, this.Maid)
 			const likeStateContainer = mediaSpace.querySelector<HTMLDivElement>(".LikeState .Hitbox")!
 			const playbackControls = mediaSpace.querySelector<HTMLDivElement>(".PlaybackControls")!
 

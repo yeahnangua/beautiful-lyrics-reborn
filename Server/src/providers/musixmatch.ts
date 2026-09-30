@@ -4,12 +4,12 @@
 // See NOTICE.md and LICENSES/Spicetify-LGPL-2.1.txt.
 import { convertRichsyncToSyllableLyrics } from "../convert/richsync";
 import { withLyricRequestRetries, contextFetch, abortable } from "./request";
-import { withMatchedTitle } from "./matched-title";
+import { withSource, recordMatch } from "./matched-title";
 import type { SyllableLyricsProvider, TrackMetadata, RequestContext } from "../types";
 
 type Message<T> = { header?: { status_code?: number }; body?: T };
 type MacroCalls = {
-  "matcher.track.get"?: { message?: Message<{ track?: { track_name?: string; has_richsync?: number; instrumental?: number; restricted?: number } }> };
+  "matcher.track.get"?: { message?: Message<{ track?: { track_id?: number; track_name?: string; has_richsync?: number; instrumental?: number; restricted?: number } }> };
   "track.lyrics.get"?: { message?: Message<{ lyrics?: { restricted?: number } }> };
   "track.richsync.get"?: { message?: Message<{ richsync?: { richsync_body?: string; restricted?: number } }> };
 };
@@ -118,12 +118,14 @@ export function createMusixmatchProvider(fetchImpl: typeof fetch = fetch): Sylla
       const match = calls?.["matcher.track.get"]?.message;
       const metadata = match?.body?.track;
       const richsync = calls?.["track.richsync.get"]?.message;
+      if (metadata) recordMatch(context, { Provider: "musixmatch", Transport: "direct",
+        ...(metadata.track_id ? { TrackId: String(metadata.track_id) } : {}), ...(metadata.track_name ? { MatchedTitle: metadata.track_name } : {}) });
       if (match?.header?.status_code !== 200 || !metadata?.has_richsync || metadata.instrumental ||
         metadata.restricted || calls?.["track.lyrics.get"]?.message?.body?.lyrics?.restricted ||
         richsync?.header?.status_code !== 200 || richsync.body?.richsync?.restricted) {
         return undefined;
       }
-      return withMatchedTitle(convertRichsyncToSyllableLyrics(richsync.body?.richsync?.richsync_body), metadata.track_name);
+      return withSource(convertRichsyncToSyllableLyrics(richsync.body?.richsync?.richsync_body), { Provider: "musixmatch", Transport: "direct", ...(metadata.track_id ? { TrackId: String(metadata.track_id) } : {}), ...(metadata.track_name ? { MatchedTitle: metadata.track_name } : {}) });
     }
   };
 }

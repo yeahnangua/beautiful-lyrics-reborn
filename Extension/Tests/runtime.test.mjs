@@ -153,3 +153,43 @@ test('desktop AuthorizationAPI fallback handles clients without Session credenti
  assert.equal((await getPlatformToken({Session:{accessToken:'legacy',accessTokenExpirationTimestampMs:Date.now()+60000}})).accessToken,'legacy');
  assert.equal(await getPlatformToken({Session:{}}),undefined);
 });
+
+test('lyric transform carries provenance unchanged while retaining the original snapshot', async()=>{
+ const transform=evaluate(await read('../Spices/Spicetify/Services/Player/LyricUtilities.ts'),{franc:()=> 'eng'},'TransformProviderLyrics');
+ const input={Type:'Line',StartTime:3,EndTime:4,Source:{Provider:'netease',Transport:'direct',TrackId:'123'},RequestId:'request-a',LyricsHash:'hash-a',RetrievedAt:'2026-09-30T00:00:00Z',Content:[{Type:'Vocal',Text:'word',StartTime:3,EndTime:4,OppositeAligned:false}]};
+ const saved=structuredClone(input), output=await transform(input);
+ for(const key of ['Source','RequestId','LyricsHash','RetrievedAt'])assert.deepEqual(output[key],input[key]);
+ assert.deepEqual(input,saved);assert.equal(output.Content[0].Type,'Interlude');
+});
+
+test('feedback captures the current song and lyrics before a song change',async()=>{
+ const source=await read('../Source/Modules/LyricsFeedback.ts');
+ const capture=source.slice(source.indexOf('export const CaptureLyricsFeedback'),source.indexOf('export const BindLyricsFeedbackButton'));
+ const snapshot={Type:'Static',Lines:[{Text:'original'}],Source:{Provider:'spotify',Transport:'direct'},RequestId:'request-a',LyricsHash:'hash-a'};
+ const state=evaluate('let Song=initialSong,SongDetails=initialDetails,SongProviderLyrics=original,SongLyrics=displayed,HaveSongLyricsLoaded=true,SongLyricsFromCache=true,Timestamp=10;'+capture,
+ {initialSong:{Type:'Streamed',Id:'songA'},initialDetails:{IsLocal:false,Name:'Song A',Artists:[{Name:'Artist A'}]},original:snapshot,displayed:structuredClone(snapshot),SpotifyPlayer:{data:{}},Build:{Version:'5.2.2'},GetLyricsOffset:()=>.2},
+ '({capture:CaptureLyricsFeedback,change:()=>{Song={Type:"Streamed",Id:"songB"};SongLyrics.Lines[0].Text="new";SongProviderLyrics=undefined}})');
+ const captured=state.capture();state.change();assert.equal(captured.track.id,'songA');assert.equal(captured.original.Lines[0].Text,'original');assert.equal(captured.displayed.Lines[0].Text,'original');assert.equal(captured.playbackPosition,10);assert.equal(captured.lyricsOffset,.2);assert.equal(captured.fromCache,true);assert.equal(state.capture(),undefined);
+});
+
+test('actual lyric loader regenerates mismatched transformed caches and never publishes after switching songs', async()=>{
+ const source=await read('../Spices/Spicetify/Services/Player/mod.ts');
+ const loader=source.slice(source.indexOf('const LoadSongLyrics = () =>'),source.indexOf('export const RetrySongLyricsIfMissing'));
+ assert.match(source,/"Player_ProviderLyrics", 9/);assert.match(source,/"Player_TransformedLyrics", 9/);
+ const raw={Type:'Static',Lines:[{Text:'correct'}],RequestId:'A',LyricsHash:'a',Source:{Provider:'spotify',Transport:'direct'}};
+ const wrong={...raw,RequestId:'B',Lines:[{Text:'wrong'}]};
+ let transforms=0;
+ function setup(providerPromise){
+  const ready=deferred();
+  const state=evaluate('let Song=initialSong,SongLyrics,SongProviderLyrics,SongLyricsFromCache=false,HaveSongLyricsLoaded=false,lyricsController;'+loader,
+   {initialSong:{Type:'Streamed',Id:'songA'},ProviderLyricsStore:{GetItem:()=>providerPromise},TransformedLyricsStore:{GetItem:async()=>wrong,SetItem:async()=>{}},
+    BuildLyricsRequestURL:()=> 'https://example.test/lyrics/songA',TransformProviderLyrics:async value=>{transforms++;return {...structuredClone(value),Language:'eng'}},SongLyricsLoadedSignal:{Fire:()=>ready.resolve()},
+    GetSpotifyAccessToken:()=>{throw Error('cache must not fetch')},ResolveAppleMusicId:()=>{},Abortable,CreateAbortScope,LyricsCacheExpiration:()=>{},Delay:()=>{}},
+   '({load:LoadSongLyrics,state:()=>({SongLyrics,SongProviderLyrics,SongLyricsFromCache,HaveSongLyricsLoaded}),switch:()=>{Song={Type:"Streamed",Id:"songB"}}})');
+  return {...state,ready:ready.promise};
+ }
+ const loaded=setup(Promise.resolve(raw));loaded.load();await loaded.ready;
+ assert.equal(transforms,1);assert.equal(loaded.state().SongLyrics.RequestId,'A');assert.equal(loaded.state().SongLyrics.Lines[0].Text,'correct');assert.deepEqual(loaded.state().SongProviderLyrics,raw);assert.equal(loaded.state().SongLyricsFromCache,true);
+ const pending=deferred(),stale=setup(pending.promise);stale.load();stale.switch();pending.resolve(raw);await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(stale.state().SongLyrics,undefined);assert.equal(stale.state().SongProviderLyrics,undefined);
+});

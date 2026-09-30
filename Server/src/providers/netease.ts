@@ -1,11 +1,11 @@
-import { contextFetch } from "./request";
+import { contextFetch, getFetchContext } from "./request";
 // Inspired by Spicetify lyrics-plus/ProviderNetease.js (LGPL-2.1).
 // Adapted on 2026-09-19 for native fetch, direct NetEase endpoints, and YRC timing.
 // See NOTICE.md and LICENSES/Spicetify-LGPL-2.1.txt for attribution and license.
 import OpenCC from "opencc-js";
 import { convertYrcToSyllableLyrics } from "../convert/karaoke";
 import { withLyricRequestRetries } from "./request";
-import { withMatchedTitle } from "./matched-title";
+import { withSource, recordMatch } from "./matched-title";
 import type { SyllableLyricsProvider, TrackMetadata } from "../types";
 
 type Song = {
@@ -93,6 +93,8 @@ function createNeteaseProviderImplementation(fetchImpl: typeof fetch = fetch): S
 
         // The same recording can occur on several albums; not all entries have YRC.
         for (const song of candidates.slice(0, 3)) {
+          const source = { Provider: "netease", Transport: "direct", TrackId: String(song.id), ...(song.name ? { MatchedTitle: song.name } : {}) } as const;
+          recordMatch(getFetchContext(fetchImpl), source);
           const lyricUrl = new URL("https://music.163.com/api/song/lyric/v1");
           lyricUrl.search = new URLSearchParams({ id: String(song.id), lv: "-1", yv: "-1" }).toString();
           const payload = await getJson<LyricResponse>(lyricUrl, signal);
@@ -104,7 +106,7 @@ function createNeteaseProviderImplementation(fetchImpl: typeof fetch = fetch): S
           }
           const lyrics = convertYrcToSyllableLyrics(payload.yrc?.lyric);
           if (lyrics !== undefined) {
-            return withMatchedTitle(lyrics, song.name);
+            return withSource(lyrics, source);
           }
         }
         return undefined;

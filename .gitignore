@@ -156,3 +156,8 @@ Server/.wrangler/
 docs/superpowers/
 deno.lock
 .DS_Store
+
+# Local feedback development secrets and transient deploy configuration
+Server/.dev.vars
+Server/.dev.vars.*
+Server/wrangler.feedback.*.toml

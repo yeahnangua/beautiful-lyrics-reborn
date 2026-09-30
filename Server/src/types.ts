@@ -1,3 +1,16 @@
+export type LyricsSource = {
+  Provider: string;
+  Transport: "direct" | "lyrically";
+  TrackId?: string;
+  LyricsId?: string;
+  MatchedTitle?: string;
+};
+export type LyricsProvenance = {
+  Source?: LyricsSource;
+  RequestId?: string;
+  RetrievedAt?: string;
+  LyricsHash?: string;
+};
 export type TextMetadata = {
   Text: string;
 };
@@ -7,7 +20,7 @@ export type TimeMetadata = {
   EndTime: number;
 };
 
-export type StaticSyncedLyrics = {
+export type StaticSyncedLyrics = LyricsProvenance & {
   Type: "Static";
   Lines: TextMetadata[];
 };
@@ -22,7 +35,7 @@ export type Interlude = TimeMetadata & {
   Type: "Interlude";
 };
 
-export type LineSyncedLyrics = TimeMetadata & {
+export type LineSyncedLyrics = LyricsProvenance & TimeMetadata & {
   Type: "Line";
   Content: (LineVocal | Interlude)[];
 };
@@ -43,7 +56,7 @@ export type SyllableVocalSet = {
   Background?: SyllableVocal[];
 };
 
-export type SyllableSyncedLyrics = TimeMetadata & {
+export type SyllableSyncedLyrics = LyricsProvenance & TimeMetadata & {
   Type: "Syllable";
   Content: (SyllableVocalSet | Interlude)[];
 };
@@ -69,6 +82,8 @@ export type SpotifyClientContext = {
 export type RequestContext = {
   signal?: AbortSignal;
   deadline?: number;
+  trace?: ProviderAttempt;
+  diagnostics?: RequestDiagnostics;
 };
 
 export type ProviderClients = {
@@ -120,4 +135,34 @@ export type LyricallyProvider = {
   getYouTubeLyrics(track: TrackMetadata, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
   getDeezerLyrics(track: TrackMetadata, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
   getGeniusLyrics(track: TrackMetadata, context?: RequestContext): Promise<StaticSyncedLyrics | undefined>;
+};
+
+export type UpstreamEvent = {
+  endpoint: string;
+  durationMs: number;
+  status?: number;
+  outcome: "pending" | "success" | "failed" | "timeout" | "cancelled";
+};
+export type ProviderAttempt = {
+  provider: string;
+  stage: "metadata" | "syllable" | "line" | "static";
+  startedAt: string;
+  durationMs: number;
+  outcome: "pending" | "success" | "none" | "failed" | "timeout" | "cancelled";
+  lyricsType?: BeautifulLyrics["Type"];
+  source?: LyricsSource;
+  error?: string;
+  matches?: LyricsSource[];
+  retries: number;
+  upstream: UpstreamEvent[];
+};
+export type RequestDiagnostics = {
+  id: string;
+  track: TrackMetadata;
+  startedAt: string;
+  durationMs: number;
+  outcome: "pending" | "success" | "none" | "failed" | "cancelled";
+  source?: LyricsSource;
+  lyricsHash?: string;
+  attempts: ProviderAttempt[];
 };

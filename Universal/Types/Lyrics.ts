@@ -1,3 +1,16 @@
+export type LyricsSource = {
+  Provider: string;
+  Transport: "direct" | "lyrically";
+  TrackId?: string;
+  LyricsId?: string;
+  MatchedTitle?: string;
+};
+export type LyricsProvenance = {
+  Source?: LyricsSource;
+  RequestId?: string;
+  RetrievedAt?: string;
+  LyricsHash?: string;
+};
 // Finalized Lyric Structure
 type TimeMetadata = {
 	StartTime: number;
@@ -18,7 +31,7 @@ export type Interlude = (
 	}
 )
 
-export type StaticSyncedLyrics = {
+export type StaticSyncedLyrics = LyricsProvenance & {
 	Type: "Static";
 	Lines: TextMetadata[];
 }
@@ -31,7 +44,7 @@ export type LineVocal = (
 		OppositeAligned: boolean;
 	}
 )
-export type LineSyncedLyrics = (
+export type LineSyncedLyrics = LyricsProvenance & (
 	TimeMetadata
 	& {
 		Type: "Line";
@@ -60,7 +73,7 @@ export type SyllableVocalSet = {
 	Lead: SyllableVocal;
 	Background?: SyllableVocal[];
 }
-export type SyllableSyncedLyrics = (
+export type SyllableSyncedLyrics = LyricsProvenance & (
 	TimeMetadata
 	& {
 		Type: "Syllable";

@@ -1,0 +1,19 @@
+.BeautifulLyricsPage .LyricsFeedbackButton:disabled { opacity: .35; cursor: default; }
+dialog.BeautifulLyricsFeedback {
+  box-sizing: border-box; width: min(480px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 28px;
+  border: 1px solid #53615a; border-radius: 16px; background: #18201d; color: #f0f4f2; font: 14px/1.5 system-ui, sans-serif; box-shadow: 0 20px 100px #0008;
+  &::backdrop { background: #0009; }
+  h2 { margin: 0 0 12px; font-size: 22px; }
+  .Track { font-weight: 600; overflow-wrap: anywhere; }
+  .Hint { color: #b5c4bb; }
+  label { display: grid; gap: 6px; margin-top: 16px; }
+  input, select, textarea { box-sizing: border-box; width: 100%; padding: 10px; border: 1px solid #63746a; border-radius: 6px; color: inherit; background: #101713; font: inherit; }
+  textarea { resize: vertical; min-height: 90px; }
+  input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px solid #81d6a6; outline-offset: 2px; }
+  .Status { min-height: 21px; overflow-wrap: anywhere; color: #cfdecf; }
+  .Actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 12px; }
+  button { padding: 10px 16px; border: 1px solid #63746a; border-radius: 999px; font: inherit; color: inherit; background: #202b25; cursor: pointer; }
+  .Submit { background: #91dcac; color: #10291b; font-weight: 600; border-color: transparent; }
+  button:disabled { opacity: .5; cursor: default; }
+  @media (max-width: 400px) { padding: 20px; }
+}

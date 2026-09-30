@@ -20,11 +20,12 @@ describe("Spotify provider", () => {
     );
 
     const provider = createSpotifyProvider(fetchMock);
-    await provider.getLyrics("6OsRo5kez17uDLwddaKfrI", "token", {
+    const lyrics = await provider.getLyrics("6OsRo5kez17uDLwddaKfrI", "token", {
       appPlatform: "Linux_x86_64",
       appVersion: "1.2.99.999"
     });
 
+    expect(lyrics?.Source).toEqual({ Provider: "spotify", Transport: "direct", TrackId: "6OsRo5kez17uDLwddaKfrI" });
     expect(fetchMock).toHaveBeenCalledWith(
       "https://spclient.wg.spotify.com/color-lyrics/v2/track/6OsRo5kez17uDLwddaKfrI?format=json&vocalRemoval=false&market=from_token",
       expect.objectContaining({

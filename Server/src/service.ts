@@ -16,6 +16,7 @@ export type LyricsService = {
 export function createLyricsService(providers: ProviderClients): LyricsService {
   return {
     async getLyrics(trackId, accessToken, suppliedTrackMetadata, clientContext, context = {}) {
+      const musixmatchEligibleAt = Date.now() + 5_000;
       const available = new Map<string, BeautifulLyrics>();
       let metadata = suppliedTrackMetadata;
       let stage: ProviderAttempt["stage"] = "syllable";
@@ -104,17 +105,43 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
           run("qq music", withMetadata((t, scope) => providers.qqmusic.getSyllableLyrics(t, scope)), syllable),
           run("kugou direct", withMetadata((t, scope) => providers.kugou.getSyllableLyrics(t, scope)), syllable),
           run("netease direct", withMetadata((t, scope) => providers.netease.getSyllableLyrics(t, scope)), syllable),
-          run("musixmatch direct", withMetadata((t, scope) => providers.musixmatch.getSyllableLyrics(t, scope)), syllable),
           run("apple music", withMetadata((t, scope) => providers.lyrically.getAppleMusicLyrics(t, scope)), syllable),
           run("kugou", withMetadata((t, scope) => providers.lyrically.getKugouLyrics(t, true, scope)), syllable),
           run("netease", withMetadata((t, scope) => providers.lyrically.getNeteaseLyrics(t, true, scope)), syllable),
           run("deezer", withMetadata((t, scope) => providers.lyrically.getDeezerLyrics(t, scope)), syllable)
         );
-        let winner = await first(candidates, lyrics => lyrics.Type === "Syllable");
+        // Musixmatch requests concurrently, but only wins once all preferred
+        // syllable sources are exhausted (including their shared deadline).
+        const preferredCandidates = [...candidates];
+        const musixmatchRequest = run("musixmatch direct",
+          withMetadata((t, scope) => providers.musixmatch.getSyllableLyrics(t, scope)), syllable);
+        candidates.push(musixmatchRequest);
+        const musixmatchResult = musixmatchRequest.catch(() => undefined);
+        let winner = await first(preferredCandidates, lyrics => lyrics.Type === "Syllable");
+        if (!winner) {
+          const fallback = await musixmatchResult;
+          if (fallback?.[1].Type === "Syllable") {
+            const remaining = musixmatchEligibleAt - Date.now();
+            if (remaining > 0) {
+              let timer: ReturnType<typeof setTimeout> | undefined;
+              try {
+                await abortable(() => new Promise<void>(resolve => {
+                  timer = setTimeout(resolve, remaining);
+                }), syllable.signal);
+                winner = fallback;
+              } catch {
+                // An interrupted hold must not bypass the delay via line fallback.
+                available.delete("musixmatch direct");
+              } finally { clearTimeout(timer); }
+            } else {
+              winner = fallback;
+            }
+          }
+        }
         if (winner && isLiveTitle(matchedTitle(winner[1]) ?? metadata?.name ?? "")) {
           const alternativeScope = requestScope(2_000, syllable);
           try {
-            const alternative = await abortable(() => Promise.any(candidates.map(async candidate => {
+            const alternative = await abortable(() => Promise.any(preferredCandidates.map(async candidate => {
               const result = await candidate;
               if (result[1].Type !== "Syllable" || isLiveTitle(matchedTitle(result[1]) ?? metadata?.name ?? "")) {
                 throw new Error("Not a studio syllable result");

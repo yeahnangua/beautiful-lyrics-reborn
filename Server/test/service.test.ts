@@ -109,7 +109,7 @@ describe("lyrics service", () => {
     }
   });
 
-  it.each(["kugou", "netease", "musixmatch"] as const)("uses %s direct word lyrics before the line fallback", async (source) => {
+  it.each(["kugou", "netease"] as const)("uses %s direct word lyrics before the line fallback", async (source) => {
     const providers = createProviders();
     const lyrics = {
       Type: "Syllable" as const,
@@ -951,6 +951,117 @@ describe("lyrics service", () => {
       appPlatform: "Linux_x86_64",
       appVersion: "1.2.99.999"
     }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+  });
+});
+
+describe("Musixmatch syllable fallback", () => {
+  const track = { id: "track", name: "Song", artists: ["Artist"] };
+
+  it("holds Musixmatch until five seconds even when all other sources return no lyrics immediately", async () => {
+    vi.useFakeTimers();
+    try {
+      const p = createProviders();
+      const lyrics = wordLyrics("Musixmatch");
+      vi.mocked(p.musixmatch.getSyllableLyrics).mockResolvedValue(lyrics);
+      const result = createLyricsService(p).getLyrics("track", "token", track);
+      let settled = false; void result.then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(4_999);
+      expect(p.musixmatch.getSyllableLyrics).toHaveBeenCalled();
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await result).toEqual(contentEqual(lyrics));
+      expect(p.spotify.getLyrics).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it.each([2_000, 7_000])("prefers other syllable lyrics arriving at %i ms over early Musixmatch", async (delay) => {
+    vi.useFakeTimers();
+    try {
+      const p = createProviders();
+      const preferred = wordLyrics("KuGou");
+      vi.mocked(p.musixmatch.getSyllableLyrics).mockResolvedValue(wordLyrics("Musixmatch"));
+      vi.mocked(p.kugou.getSyllableLyrics).mockImplementation(() => new Promise(resolve => {
+        setTimeout(() => resolve(preferred), delay);
+      }));
+      const result = createLyricsService(p).getLyrics("track", "token", track);
+      let settled = false; void result.then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(delay - 1);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await result).toEqual(contentEqual(preferred));
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it.each(["Line", "Static"] as const)("keeps Musixmatch syllables above other %s lyrics", async (type) => {
+    vi.useFakeTimers();
+    try {
+      const p = createProviders();
+      const lyrics = wordLyrics("Musixmatch");
+      vi.mocked(p.musixmatch.getSyllableLyrics).mockResolvedValue(lyrics);
+      vi.mocked(p.lyrically.getAppleMusicLyrics).mockResolvedValue(type === "Line"
+        ? { Type: "Line", StartTime: 0, EndTime: 1, Content: [] }
+        : { Type: "Static", Lines: [{ Text: "Apple" }] });
+      const result = createLyricsService(p).getLyrics("track", "token", track);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await result).toEqual(contentEqual(lyrics));
+      expect(p.spotify.getLyrics).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("returns saved Musixmatch syllables when another source reaches the 15-second deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const p = createProviders();
+      const lyrics = wordLyrics("Musixmatch");
+      vi.mocked(p.musixmatch.getSyllableLyrics).mockResolvedValue(lyrics);
+      vi.mocked(p.kugou.getSyllableLyrics).mockReturnValue(new Promise(() => {}));
+      const result = createLyricsService(p).getLyrics("track", "token", track);
+      let settled = false; void result.then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(14_999);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await result).toEqual(contentEqual(lyrics));
+      expect(p.spotify.getLyrics).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("counts the five seconds from request start, without adding five seconds to a slow Musixmatch response", async () => {
+    vi.useFakeTimers();
+    try {
+      const p = createProviders();
+      const lyrics = wordLyrics("Musixmatch");
+      vi.mocked(p.musixmatch.getSyllableLyrics).mockImplementation(() => new Promise(resolve => {
+        setTimeout(() => resolve(lyrics), 6_000);
+      }));
+      const result = createLyricsService(p).getLyrics("track", "token", track);
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect(await result).toEqual(contentEqual(lyrics));
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("cancels the hold on disconnect while preserving the actual provider duration", async () => {
+    vi.useFakeTimers();
+    try {
+      const p = createProviders();
+      const controller = new AbortController();
+      const diagnostics: import("../src/types").RequestDiagnostics = {
+        id: "request", track, startedAt: new Date().toISOString(), durationMs: 0, outcome: "pending", attempts: []
+      };
+      vi.mocked(p.musixmatch.getSyllableLyrics).mockResolvedValue(wordLyrics("Musixmatch"));
+      const result = createLyricsService(p).getLyrics("track", "token", track, undefined,
+        { signal: controller.signal, diagnostics });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(diagnostics.attempts.find(attempt => attempt.provider === "musixmatch direct"))
+        .toMatchObject({ outcome: "success", durationMs: 0 });
+      controller.abort();
+      expect(await result).toBeUndefined();
+      expect(p.spotify.getLyrics).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
   });
 });
 

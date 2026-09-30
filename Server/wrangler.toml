@@ -21,3 +21,13 @@ enabled = false
 directory = "../Extension/Builds/Release"
 binding = "RELEASE_ASSETS"
 run_worker_first = true
+
+# Replace this local placeholder with the D1 UUID, or supply FEEDBACK_DATABASE_ID to Tasks/Deploy.mjs.
+[[d1_databases]]
+binding = "FEEDBACK_DB"
+database_name = "beautiful-lyrics-feedback"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[triggers]
+crons = ["15 19 * * *"]

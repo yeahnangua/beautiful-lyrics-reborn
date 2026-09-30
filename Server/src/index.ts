@@ -1,3 +1,6 @@
+import { feedbackResponse, type FeedbackEnv } from "./feedback";
+import { hashLyrics, saveDiagnostics, cleanupFeedback } from "./diagnostics";
+import type { RequestDiagnostics } from "./types";
 import { extensionReleaseResponse } from "./extension-release";
 // import { amllDbProvider } from "./providers/amlldb";
 import { kugouProvider } from "./providers/kugou";
@@ -128,7 +131,7 @@ function extractTrackMetadata(url: URL, trackId: string): TrackMetadata | undefi
   return trackMetadata;
 }
 
-type WorkerEnv = {
+export type WorkerEnv = FeedbackEnv & {
   RELEASE_ASSETS?: Fetcher;
   STATS?: AnalyticsEngineDataset;
   STATS_ACCOUNT_ID?: string;
@@ -184,7 +187,12 @@ async function statsResponse(env: WorkerEnv, url: URL): Promise<Response> {
 
 export function createWorker(service: LyricsService): ExportedHandler<WorkerEnv> {
   return {
-    async fetch(request: Request, env: WorkerEnv): Promise<Response> {
+    scheduled(_event, env, ctx) {
+      ctx.waitUntil(cleanupFeedback(env.FEEDBACK_DB).catch(() => console.warn("Feedback cleanup failed")));
+    },
+    async fetch(request: Request, env: WorkerEnv, ctx?: ExecutionContext): Promise<Response> {
+      const feedback = await feedbackResponse(request, env);
+      if (feedback) return feedback;
       if (request.method === "OPTIONS") {
         return new Response(null, {
           status: 204,
@@ -234,14 +242,44 @@ export function createWorker(service: LyricsService): ExportedHandler<WorkerEnv>
         });
       }
 
-      const trackId = decodeURIComponent(trackIdMatch);
-      const lyrics = await service.getLyrics(
-        trackId,
-        accessToken,
-        extractTrackMetadata(url, trackId),
-        extractSpotifyClientContext(request),
-        { signal: request.signal }
-      );
+      let trackId: string;
+      try { trackId = decodeURIComponent(trackIdMatch); }
+      catch { return new Response("Invalid track ID", { status: 400, headers: corsHeaders }); }
+      if (!/^[a-zA-Z0-9]+$/.test(trackId) || trackId.length > 100) return new Response("Invalid track ID", { status: 400, headers: corsHeaders });
+      const metadata = extractTrackMetadata(url, trackId);
+      const started = Date.now();
+      const diagnostics: RequestDiagnostics = {
+        id: crypto.randomUUID(), track: metadata ?? { id: trackId, name: "", artists: [] },
+        startedAt: new Date(started).toISOString(), durationMs: 0, outcome: "pending", attempts: []
+      };
+      let lyrics: BeautifulLyrics | undefined;
+      let failed = false;
+      try {
+        lyrics = await service.getLyrics(trackId, accessToken, metadata, extractSpotifyClientContext(request),
+          { signal: request.signal, diagnostics });
+        diagnostics.outcome = request.signal.aborted ? "cancelled" : lyrics ? "success" : "none";
+        if (lyrics) {
+          // Metadata never participates in the content fingerprint.
+          const hash = await hashLyrics(lyrics);
+          lyrics.RequestId = diagnostics.id;
+          lyrics.RetrievedAt = diagnostics.startedAt;
+          lyrics.LyricsHash = hash;
+          diagnostics.lyricsHash = hash;
+          if (lyrics.Source) diagnostics.source = lyrics.Source;
+        }
+      } catch {
+        diagnostics.outcome = request.signal.aborted ? "cancelled" : "failed";
+        failed = true;
+      } finally {
+        // Allow scope cancellation handlers to settle before snapshotting attempts.
+        await Promise.resolve();
+        diagnostics.durationMs = Date.now() - started;
+        const record = structuredClone(diagnostics);
+        const write = saveDiagnostics(env.FEEDBACK_DB, record).catch(() => console.warn("Lyrics diagnostics write failed"));
+        if (ctx?.waitUntil) ctx.waitUntil(write);
+        else await write;
+      }
+      if (failed) return new Response("Lyrics request failed", { status: 502, headers: corsHeaders });
 
       recordOutcome(env, lyrics);
 

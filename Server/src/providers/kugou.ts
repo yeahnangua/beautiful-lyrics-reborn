@@ -1,4 +1,4 @@
-import { contextFetch } from "./request";
+import { contextFetch, getFetchContext } from "./request";
 // Adapted from lrcmux/internal/providers/kugou/provider.go (MIT).
 // Copyright © 2026 f1nniboy. See NOTICE.md and LICENSES/lrcmux-MIT.txt.
 // Changed 2026-09-19: HTTPS, native fetch, strict matching, bounded requests,
@@ -6,7 +6,7 @@ import { contextFetch } from "./request";
 import OpenCC from "opencc-js";
 import { convertKrcToSyllableLyrics, decodeKrc } from "../convert/krc";
 import { withLyricRequestRetries } from "./request";
-import { withMatchedTitle } from "./matched-title";
+import { withSource, recordMatch } from "./matched-title";
 import type { SyllableLyricsProvider, TrackMetadata } from "../types";
 
 type Candidate = {
@@ -74,6 +74,8 @@ function createKugouProviderImplementation(fetchImpl: typeof fetch = fetch): Syl
           ? 0 : Math.abs((candidate.duration ?? Infinity) / 1000 - track.durationSeconds);
         candidates.sort((a, b) => difference(a) - difference(b) || (b.score ?? 0) - (a.score ?? 0));
         for (const candidate of candidates.slice(0, 3)) {
+          const source = { Provider: "kugou", Transport: "direct", LyricsId: candidate.id, ...(candidate.song ? { MatchedTitle: candidate.song } : {}) } as const;
+          recordMatch(getFetchContext(fetchImpl), source);
           const lyricUrl = new URL("https://lyrics.kugou.com/download");
           lyricUrl.search = new URLSearchParams({
             ver: "1", client: "pc", id: candidate.id, accesskey: candidate.accesskey,
@@ -85,7 +87,7 @@ function createKugouProviderImplementation(fetchImpl: typeof fetch = fetch): Syl
           }
           const lyrics = convertKrcToSyllableLyrics(await decodeKrc(payload.content));
           if (lyrics !== undefined) {
-            return withMatchedTitle(lyrics, candidate.song);
+            return withSource(lyrics, source);
           }
         }
         return undefined;

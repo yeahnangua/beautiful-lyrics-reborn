@@ -1,3 +1,4 @@
+import { contentEqual } from "./lyrics-content";
 import { describe, expect, it, vi } from "vitest";
 import worker, { createWorker } from "../src/index";
 import { createLyricsService } from "../src/service";
@@ -80,7 +81,7 @@ describe("lyrics service", () => {
         await vi.advanceTimersByTimeAsync(1_000);
         expect(settled).toBe(false);
         resolveAlternative(studio);
-        await expect(request).resolves.toEqual(studio);
+        await expect(request).resolves.toEqual(contentEqual(studio));
       } finally {
         vi.useRealTimers();
       }
@@ -102,7 +103,7 @@ describe("lyrics service", () => {
       await vi.advanceTimersByTimeAsync(1_999);
       expect(settled).toBe(false);
       await vi.advanceTimersByTimeAsync(1);
-      await expect(request).resolves.toEqual(live);
+      await expect(request).resolves.toEqual(contentEqual(live));
     } finally {
       vi.useRealTimers();
     }
@@ -126,7 +127,7 @@ describe("lyrics service", () => {
     };
     vi.mocked(providers[source].getSyllableLyrics).mockResolvedValue(lyrics);
     const metadata = { id: "track", name: "Song", artists: ["Artist"] };
-    expect(await createLyricsService(providers).getLyrics("track", "token", metadata)).toEqual(lyrics);
+    expect(await createLyricsService(providers).getLyrics("track", "token", metadata)).toEqual(contentEqual(lyrics));
     expect(providers[source].getSyllableLyrics).toHaveBeenCalledWith(metadata, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(providers.spotify.getLyrics).not.toHaveBeenCalled();
   });
@@ -140,7 +141,7 @@ describe("lyrics service", () => {
     vi.mocked(providers.spotify.getLyrics).mockResolvedValue(lyrics);
     expect(await createLyricsService(providers).getLyrics("track", "token", {
       id: "track", name: "Song", artists: ["Artist"]
-    })).toEqual(lyrics);
+    })).toEqual(contentEqual(lyrics));
   });
 
   it("decodes leaked HTML entities in whatever lyrics a provider returns", async () => {
@@ -151,10 +152,10 @@ describe("lyrics service", () => {
     });
 
     const service = createLyricsService(providers);
-    await expect(service.getLyrics("track", "token")).resolves.toEqual({
+    await expect(service.getLyrics("track", "token")).resolves.toEqual(contentEqual({
       Type: "Static",
       Lines: [{ Text: "you're & I'm" }]
-    });
+    }));
   });
 
   it("returns Spotify static lyrics when no metadata is available for fallbacks", async () => {
@@ -165,10 +166,10 @@ describe("lyrics service", () => {
     });
 
     const service = createLyricsService(providers);
-    await expect(service.getLyrics("track", "token")).resolves.toEqual({
+    await expect(service.getLyrics("track", "token")).resolves.toEqual(contentEqual({
       Type: "Static",
       Lines: [{ Text: "Spotify lyric" }]
-    });
+    }));
     expect(providers.spotify.getTrackMetadata).toHaveBeenCalledWith("track", "token", undefined, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(providers.lrclib.getLyrics).not.toHaveBeenCalled();
   });
@@ -288,7 +289,7 @@ describe("lyrics service", () => {
       );
       expect(providers.lyrically.getDeezerLyrics).toHaveBeenCalled();
     });
-    await expect(request).resolves.toEqual(qqMusicLyrics);
+    await expect(request).resolves.toEqual(contentEqual(qqMusicLyrics));
     resolveDeezer(undefined);
   });
 
@@ -339,7 +340,7 @@ describe("lyrics service", () => {
         name: "Song",
         artists: ["Artist"]
       })
-    ).resolves.toEqual({
+    ).resolves.toEqual(contentEqual({
       Type: "Syllable",
       StartTime: 1,
       EndTime: 2,
@@ -361,7 +362,7 @@ describe("lyrics service", () => {
           }
         }
       ]
-    });
+    }));
     expect(providers.spotify.getLyrics).not.toHaveBeenCalled();
   });
 
@@ -403,7 +404,7 @@ describe("lyrics service", () => {
         name: "Song",
         artists: ["Artist"]
       })
-    ).resolves.toEqual({
+    ).resolves.toEqual(contentEqual({
       Type: "Line",
       StartTime: 1,
       EndTime: 2,
@@ -416,7 +417,7 @@ describe("lyrics service", () => {
           OppositeAligned: false
         }
       ]
-    });
+    }));
     expect(providers.qqmusic.getSyllableLyrics).toHaveBeenCalledWith({
       id: "track",
       name: "Song",
@@ -483,7 +484,7 @@ describe("lyrics service", () => {
       );
       expect(providers.lrclib.getLyrics).toHaveBeenCalled();
     });
-    await expect(request).resolves.toEqual(spotifyLyrics);
+    await expect(request).resolves.toEqual(contentEqual(spotifyLyrics));
     resolveLyrically(undefined);
   });
 
@@ -519,7 +520,7 @@ describe("lyrics service", () => {
       expect(providers.spotify.getLyrics).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);
       expect(providers.spotify.getLyrics).toHaveBeenCalled();
-      await expect(request).resolves.toEqual(spotifyLyrics);
+      await expect(request).resolves.toEqual(contentEqual(spotifyLyrics));
       expect(providers.qqmusic.getSyllableLyrics).toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
@@ -648,7 +649,7 @@ describe("lyrics service", () => {
         name: "Song",
         artists: ["Artist"]
       })
-    ).resolves.toEqual({
+    ).resolves.toEqual(contentEqual({
       Type: "Syllable",
       StartTime: 1,
       EndTime: 2,
@@ -670,7 +671,7 @@ describe("lyrics service", () => {
           }
         }
       ]
-    });
+    }));
     expect(providers.lyrically.getLyrics).not.toHaveBeenCalled();
     expect(providers.spotify.getLyrics).not.toHaveBeenCalled();
   });
@@ -693,7 +694,7 @@ describe("lyrics service", () => {
     });
 
     const service = createLyricsService(providers);
-    await expect(service.getLyrics("track", "token")).resolves.toEqual({
+    await expect(service.getLyrics("track", "token")).resolves.toEqual(contentEqual({
       Type: "Line",
       StartTime: 1,
       EndTime: 2,
@@ -706,7 +707,7 @@ describe("lyrics service", () => {
           OppositeAligned: false
         }
       ]
-    });
+    }));
     expect(providers.spotify.getTrackMetadata).toHaveBeenCalledWith("track", "token", undefined, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(providers.lrclib.getLyrics).not.toHaveBeenCalled();
   });
@@ -729,7 +730,7 @@ describe("lyrics service", () => {
     });
 
     const service = createLyricsService(providers);
-    await expect(service.getLyrics("track", "token")).resolves.toEqual({
+    await expect(service.getLyrics("track", "token")).resolves.toEqual(contentEqual({
       Type: "Line",
       StartTime: 1,
       EndTime: 2,
@@ -742,7 +743,7 @@ describe("lyrics service", () => {
           OppositeAligned: false
         }
       ]
-    });
+    }));
     expect(providers.lyrically.getLyrics).toHaveBeenCalledWith({
       id: "track",
       name: "",
@@ -789,7 +790,7 @@ describe("lyrics service", () => {
     });
 
     const service = createLyricsService(providers);
-    await expect(service.getLyrics("track", "token")).resolves.toEqual({
+    await expect(service.getLyrics("track", "token")).resolves.toEqual(contentEqual({
       Type: "Line",
       StartTime: 1,
       EndTime: 2,
@@ -802,7 +803,7 @@ describe("lyrics service", () => {
           OppositeAligned: false
         }
       ]
-    });
+    }));
     expect(providers.lrclib.getLyrics).toHaveBeenCalledWith({
       id: "track",
       name: "Song",
@@ -837,7 +838,7 @@ describe("lyrics service", () => {
     });
 
     const service = createLyricsService(providers);
-    await expect(service.getLyrics("track", "token")).resolves.toEqual({
+    await expect(service.getLyrics("track", "token")).resolves.toEqual(contentEqual({
       Type: "Line",
       StartTime: 1,
       EndTime: 2,
@@ -850,7 +851,7 @@ describe("lyrics service", () => {
           OppositeAligned: false
         }
       ]
-    });
+    }));
   });
 
   it("prefers Spotify static lyrics over LRCLIB static lyrics", async () => {
@@ -870,10 +871,10 @@ describe("lyrics service", () => {
     });
 
     const service = createLyricsService(providers);
-    await expect(service.getLyrics("track", "token")).resolves.toEqual({
+    await expect(service.getLyrics("track", "token")).resolves.toEqual(contentEqual({
       Type: "Static",
       Lines: [{ Text: "Spotify static" }]
-    });
+    }));
   });
 
   it("falls back to LRCLIB when Spotify lyrics are missing", async () => {
@@ -890,10 +891,10 @@ describe("lyrics service", () => {
     });
 
     const service = createLyricsService(providers);
-    await expect(service.getLyrics("track", "token")).resolves.toEqual({
+    await expect(service.getLyrics("track", "token")).resolves.toEqual(contentEqual({
       Type: "Static",
       Lines: [{ Text: "Fallback lyric" }]
-    });
+    }));
     expect(providers.lrclib.getLyrics).toHaveBeenCalledWith({
       id: "track",
       name: "Song",
@@ -919,10 +920,10 @@ describe("lyrics service", () => {
         durationSeconds: 123,
         isrc: "ISRC"
       })
-    ).resolves.toEqual({
+    ).resolves.toEqual(contentEqual({
       Type: "Static",
       Lines: [{ Text: "Fallback lyric" }]
-    });
+    }));
 
     expect(providers.spotify.getTrackMetadata).not.toHaveBeenCalled();
     expect(providers.lrclib.getLyrics).toHaveBeenCalledWith({
@@ -1113,7 +1114,7 @@ describe("bounded quality phases", () => {
       const result = createLyricsService(p).getLyrics("track", "token", track);
       let settled = false; void result.then(() => { settled = true; });
       await vi.advanceTimersByTimeAsync(8_999); expect(settled).toBe(false);
-      await vi.advanceTimersByTimeAsync(1); expect(await result).toEqual(lineLyrics);
+      await vi.advanceTimersByTimeAsync(1); expect(await result).toEqual(contentEqual(lineLyrics));
     } finally { vi.useRealTimers(); }
   });
   it("returns saved static after the line deadline without waiting for Genius", async () => {
@@ -1124,7 +1125,7 @@ describe("bounded quality phases", () => {
       vi.mocked(p.lrclib.getLyrics).mockResolvedValue(plain);
       const result = createLyricsService(p).getLyrics("track", "token", track);
       await vi.advanceTimersByTimeAsync(10_000);
-      expect(await result).toEqual(plain);
+      expect(await result).toEqual(contentEqual(plain));
       expect(p.lyrically.getGeniusLyrics).not.toHaveBeenCalled();
       expect(vi.mocked(p.spotify.getLyrics).mock.calls[0]![3]?.signal?.aborted).toBe(true);
     } finally { vi.useRealTimers(); }
@@ -1150,5 +1151,35 @@ describe("bounded quality phases", () => {
     await vi.waitFor(() => expect(p.qqmusic.getSyllableLyrics).toHaveBeenCalled());
     controller.abort(); expect(await result).toBeUndefined();
     expect(p.spotify.getLyrics).not.toHaveBeenCalled();
+  });
+});
+
+describe("provider attempt diagnostics", () => {
+  const diagnostics = (): import("../src/types").RequestDiagnostics => ({ id: crypto.randomUUID(), track: { id: "track", name: "Song", artists: ["Artist"] }, startedAt: new Date().toISOString(), durationMs: 0, outcome: "pending", attempts: [] });
+  it("records the winner, failures and losing cancellations without leaked errors", async () => {
+    const providers = createProviders();
+    const record = diagnostics();
+    vi.mocked(providers.qqmusic.getSyllableLyrics).mockResolvedValue({ Type: "Syllable", StartTime: 1, EndTime: 2, Content: [], Source: { Provider: "qqmusic", Transport: "direct", TrackId: "123" } });
+    vi.mocked(providers.kugou.getSyllableLyrics).mockRejectedValue(new Error("https://private.test?accesskey=SECRET"));
+    vi.mocked(providers.netease.getSyllableLyrics).mockImplementation(() => new Promise(() => {}));
+    const lyrics = await createLyricsService(providers).getLyrics("track", "token", record.track, undefined, { diagnostics: record });
+    await Promise.resolve();
+    expect(lyrics?.Source).toEqual(record.source);
+    expect(record.attempts.find(attempt => attempt.provider === "qq music")).toMatchObject({ outcome: "success", stage: "syllable", lyricsType: "Syllable", source: lyrics?.Source });
+    expect(record.attempts.find(attempt => attempt.provider === "kugou direct")).toMatchObject({ outcome: "failed", error: "Provider request failed" });
+    expect(record.attempts.find(attempt => attempt.provider === "netease direct")?.outcome).toBe("cancelled");
+    expect(record.attempts.some(attempt => attempt.outcome === "pending")).toBe(false);
+    expect(JSON.stringify(record)).not.toMatch(/SECRET|accesskey|private\.test/);
+  });
+  it("records all pending sources as cancelled when the client aborts", async () => {
+    const providers = createProviders();
+    for (const provider of [providers.qqmusic, providers.kugou, providers.netease, providers.musixmatch]) vi.mocked(provider.getSyllableLyrics).mockImplementation(() => new Promise(() => {}));
+    for (const method of ["getAppleMusicLyrics", "getKugouLyrics", "getNeteaseLyrics", "getDeezerLyrics"] as const) vi.mocked(providers.lyrically[method]).mockImplementation(() => new Promise(() => {}));
+    const record = diagnostics(), controller = new AbortController();
+    const pending = createLyricsService(providers).getLyrics("track", "token", record.track, undefined, { diagnostics: record, signal: controller.signal });
+    await Promise.resolve();controller.abort();
+    expect(await pending).toBeUndefined();
+    expect(record.attempts).toHaveLength(8);
+    expect(record.attempts.every(attempt => attempt.outcome === "cancelled")).toBe(true);
   });
 });

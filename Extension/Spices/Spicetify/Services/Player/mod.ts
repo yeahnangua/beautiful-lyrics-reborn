@@ -336,7 +336,7 @@ const LoadSongDetails = () => {
 
 // Handle our Lyrics
 const ProviderLyricsStore = GetExpireStore<ProviderLyrics | false>(
-	"Player_ProviderLyrics", 8,
+	"Player_ProviderLyrics", 9,
 	{
 		Duration: 2,
 		Unit: "Days"
@@ -344,7 +344,7 @@ const ProviderLyricsStore = GetExpireStore<ProviderLyrics | false>(
 	true
 )
 const TransformedLyricsStore = GetExpireStore<TransformedLyrics | false>(
-	"Player_TransformedLyrics", 8,
+	"Player_TransformedLyrics", 9,
 	{
 		Duration: 2,
 		Unit: "Days"
@@ -371,6 +371,8 @@ const LyricsCacheExpiration = (lyrics: (ProviderLyrics | TransformedLyrics | fal
 	((lyrics !== false) && (lyrics.Type === "Syllable")) ? SyllableLyricsExpiration : undefined
 )
 
+export let SongProviderLyrics: (ProviderLyrics | undefined) = undefined
+export let SongLyricsFromCache = false
 export let SongLyrics: (TransformedLyrics | undefined) = undefined
 export let HaveSongLyricsLoaded: boolean = false
 const BuildLyricsRequestURL = (song: StreamedSongMetadata): string => {
@@ -458,7 +460,7 @@ const LoadSongLyrics = () => {
 	lyricsController?.abort()
 	const controller = lyricsController = new AbortController()
 	// Remove our prior lyric state
-	HaveSongLyricsLoaded = false, SongLyrics = undefined
+	HaveSongLyricsLoaded = false, SongLyrics = undefined, SongProviderLyrics = undefined, SongLyricsFromCache = false
 
 	// Check if we can even possibly have lyrics
 	const songAtUpdate = Song
@@ -467,6 +469,8 @@ const LoadSongLyrics = () => {
 		SongLyricsLoadedSignal.Fire()
 		return
 	}
+	let fromCache = false
+	let originalLyrics: ProviderLyrics | undefined
 	const lyricsRequestURL = BuildLyricsRequestURL(songAtUpdate)
 	const FetchProviderLyrics = async (remainingRetries: number): Promise<ProviderLyrics | false> => {
 		const [accessToken, appleMusicTrack] = await Abortable(controller.signal, () =>
@@ -516,6 +520,7 @@ const LoadSongLyrics = () => {
 				if ((providerLyrics === undefined) || (providerLyrics === false)) {
 					return FetchProviderLyrics(1)
 				} else {
+					fromCache = true
 					return providerLyrics
 				}
 			}
@@ -537,8 +542,11 @@ const LoadSongLyrics = () => {
 				if (storedProviderLyrics === false) {
 					return Promise.resolve(undefined)
 				}
-				// If we do not have anything stored for our transformed-lyrics then we need to generate it
-				if ((storedTransformedLyrics === undefined) || (storedTransformedLyrics === false)) {
+				originalLyrics = storedProviderLyrics
+				// Only reuse the transformed snapshot that belongs to this exact provider response.
+				if ((storedTransformedLyrics === undefined) || (storedTransformedLyrics === false)
+					|| (storedTransformedLyrics.RequestId !== storedProviderLyrics.RequestId)
+					|| (storedTransformedLyrics.LyricsHash !== storedProviderLyrics.LyricsHash)) {
 					return (
 						TransformProviderLyrics(storedProviderLyrics)
 						.then(
@@ -565,7 +573,7 @@ const LoadSongLyrics = () => {
 				}
 
 				// Update our lyrics
-				SongLyrics = transformedLyrics, HaveSongLyricsLoaded = true
+				SongLyrics = transformedLyrics, SongProviderLyrics = originalLyrics, SongLyricsFromCache = fromCache, HaveSongLyricsLoaded = true
 				SongLyricsLoadedSignal.Fire()
 			}
 		)

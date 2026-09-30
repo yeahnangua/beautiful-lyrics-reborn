@@ -1,3 +1,4 @@
+import { contentEqual } from "./lyrics-content";
 import { describe, expect, it, vi } from "vitest";
 import { decodeEntitiesDeep, decodeHtmlEntities } from "../src/convert/entities";
 import { convertPlainTextToStatic } from "../src/convert/plain";
@@ -504,7 +505,8 @@ describe("LRCLIB provider", () => {
         album: "Album",
         durationSeconds: 20
       })
-    ).resolves.toEqual({
+    ).resolves.toEqual(contentEqual({
+      Source: {"Provider": "lrclib", "Transport": "direct", "TrackId": "1", "MatchedTitle": "Song"},
       Type: "Line",
       StartTime: 1,
       EndTime: 20,
@@ -517,7 +519,7 @@ describe("LRCLIB provider", () => {
           OppositeAligned: false
         }
       ]
-    });
+    }));
   });
 });
 
@@ -575,7 +577,8 @@ describe("Lyrically provider", () => {
         artists: ["Artist"],
         durationSeconds: 3
       })
-    ).resolves.toEqual({
+    ).resolves.toEqual(contentEqual({
+      Source: {"Provider": "spotify", "Transport": "lyrically", "TrackId": "spotifyTrack"},
       Type: "Line",
       StartTime: 1,
       EndTime: 3,
@@ -588,7 +591,7 @@ describe("Lyrically provider", () => {
           OppositeAligned: false
         }
       ]
-    });
+    }));
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -643,7 +646,8 @@ describe("Lyrically provider", () => {
       durationSeconds: 243
     };
 
-    await expect(provider.getKugouLyrics(track, true)).resolves.toEqual({
+    await expect(provider.getKugouLyrics(track, true)).resolves.toEqual(contentEqual({
+      Source: {"Provider": "kugou", "Transport": "lyrically", "TrackId": "d7e7a2c2b33386e834238ac7cbc3524e", "MatchedTitle": "暖暖"},
       Type: "Syllable",
       StartTime: 1,
       EndTime: 2,
@@ -661,9 +665,10 @@ describe("Lyrically provider", () => {
           }
         }
       ]
-    });
+    }));
     syllableRequest = false;
-    await expect(provider.getKugouLyrics(track, false)).resolves.toEqual({
+    await expect(provider.getKugouLyrics(track, false)).resolves.toEqual(contentEqual({
+      Source: {"Provider": "kugou", "Transport": "lyrically", "TrackId": "d7e7a2c2b33386e834238ac7cbc3524e", "MatchedTitle": "暖暖"},
       Type: "Line",
       StartTime: 1,
       EndTime: 2,
@@ -676,7 +681,7 @@ describe("Lyrically provider", () => {
           OppositeAligned: false
         }
       ]
-    });
+    }));
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
@@ -746,7 +751,8 @@ describe("Lyrically provider", () => {
       durationSeconds: 243
     };
 
-    await expect(provider.getNeteaseLyrics(track, true)).resolves.toEqual({
+    await expect(provider.getNeteaseLyrics(track, true)).resolves.toEqual(contentEqual({
+      Source: {"Provider": "netease", "Transport": "lyrically", "TrackId": "254141", "MatchedTitle": "暖暖"},
       Type: "Syllable",
       StartTime: 1,
       EndTime: 2,
@@ -764,9 +770,10 @@ describe("Lyrically provider", () => {
           }
         }
       ]
-    });
+    }));
     syllableRequest = false;
-    await expect(provider.getNeteaseLyrics(track, false)).resolves.toEqual({
+    await expect(provider.getNeteaseLyrics(track, false)).resolves.toEqual(contentEqual({
+      Source: {"Provider": "netease", "Transport": "lyrically", "TrackId": "254141", "MatchedTitle": "暖暖"},
       Type: "Line",
       StartTime: 1,
       EndTime: 243,
@@ -779,7 +786,7 @@ describe("Lyrically provider", () => {
           OppositeAligned: false
         }
       ]
-    });
+    }));
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
@@ -836,7 +843,8 @@ describe("Lyrically provider", () => {
         artists: ["Billie Eilish"],
         durationSeconds: 194
       })
-    ).resolves.toEqual({
+    ).resolves.toEqual(contentEqual({
+      Source: {"Provider": "deezer", "Transport": "lyrically", "TrackId": "655095912", "MatchedTitle": "bad guy"},
       Type: "Syllable",
       StartTime: 14.175,
       EndTime: 14.937,
@@ -864,7 +872,7 @@ describe("Lyrically provider", () => {
           }
         }
       ]
-    });
+    }));
   });
 
   it("keeps Lyrically Deezer line lyrics as Line output", async () => {
@@ -915,7 +923,8 @@ describe("Lyrically provider", () => {
         artists: ["Ella Langley"],
         durationSeconds: 190
       })
-    ).resolves.toEqual({
+    ).resolves.toEqual(contentEqual({
+      Source: {"Provider": "deezer", "Transport": "lyrically", "TrackId": "3602074142", "MatchedTitle": "Choosin' Texas"},
       Type: "Line",
       StartTime: 17.33,
       EndTime: 23.31,
@@ -928,7 +937,7 @@ describe("Lyrically provider", () => {
           OppositeAligned: false
         }
       ]
-    });
+    }));
   });
 
   it("tries later YouTube candidates when the first matched video has no lyrics", async () => {
@@ -973,7 +982,8 @@ describe("Lyrically provider", () => {
         artists: ["徐良", "小凌"],
         durationSeconds: 227
       })
-    ).resolves.toEqual({
+    ).resolves.toEqual(contentEqual({
+      Source: {"Provider": "youtube", "Transport": "lyrically", "TrackId": "good", "MatchedTitle": "客官不可以 (feat. 小凌)"},
       Type: "Line",
       StartTime: 1,
       EndTime: 227,
@@ -986,7 +996,7 @@ describe("Lyrically provider", () => {
           OppositeAligned: false
         }
       ]
-    });
+    }));
   });
 
   it("gets Lyrically Genius static lyrics by searching Genius", async () => {
@@ -1034,10 +1044,11 @@ describe("Lyrically provider", () => {
         name: "Shape of You",
         artists: ["Ed Sheeran"]
       })
-    ).resolves.toEqual({
+    ).resolves.toEqual(contentEqual({
+      Source: {"Provider": "genius", "Transport": "lyrically", "TrackId": "/Ed-sheeran-shape-of-you-lyrics", "MatchedTitle": "Shape of You"},
       Type: "Static",
       Lines: [{ Text: "[Verse]" }, { Text: "A club isn't the best place" }]
-    });
+    }));
   });
 });
 

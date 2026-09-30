@@ -1,4 +1,5 @@
-import { contextFetch } from "./request";
+import { withSource, recordMatch } from "./matched-title";
+import { contextFetch, getFetchContext } from "./request";
 import { convertSpotifyLyricsPayload } from "../convert/spotify";
 import type { BeautifulLyrics, SpotifyClientContext, SpotifyProvider, TrackMetadata } from "../types";
 
@@ -145,6 +146,7 @@ function createSpotifyProviderImplementation(fetchImpl: FetchLike = fetch): Spot
       accessToken: string,
       clientContext?: SpotifyClientContext
     ): Promise<BeautifulLyrics | undefined> {
+      recordMatch(getFetchContext(fetchImpl), { Provider: "spotify", Transport: "direct", TrackId: trackId });
       const url = `${spotifyLyricsBaseUrl}/${encodeURIComponent(trackId)}?format=json&vocalRemoval=false&market=from_token`;
       const payload = await getJson(fetchImpl, url, accessToken, clientContext, `${trackId} lyrics`);
       if (payload === undefined) {
@@ -156,7 +158,7 @@ function createSpotifyProviderImplementation(fetchImpl: FetchLike = fetch): Spot
         console.log(`[spotify] ${trackId} lyrics: response contained no usable lyrics`);
       }
 
-      return lyrics;
+      return withSource(lyrics, { Provider: "spotify", Transport: "direct", TrackId: trackId });
     },
 
     async getTrackMetadata(

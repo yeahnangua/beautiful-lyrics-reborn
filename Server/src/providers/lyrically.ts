@@ -1,10 +1,10 @@
-import { contextFetch } from "./request";
+import { contextFetch, getFetchContext } from "./request";
 import OpenCC from "opencc-js";
 // import { convertEnhancedLrcToSyllableLyrics } from "../convert/enhanced-lrc";
 import { convertLrcToLineLyrics } from "../convert/lrc";
 import { convertPlainTextToStatic } from "../convert/plain";
 import { withLyricRequestRetries } from "./request";
-import { withMatchedTitle } from "./matched-title";
+import { withSource, recordMatch } from "./matched-title";
 import type {
   BeautifulLyrics,
   LineSyncedLyrics,
@@ -173,7 +173,7 @@ async function getJson<T>(fetchImpl: FetchLike, url: string, retryOnTimeout = fa
   };
 
   return retryOnTimeout
-    ? withLyricRequestRetries((signal) => request(signal), new URL(url).pathname)
+    ? withLyricRequestRetries((signal) => request(signal), new URL(url).pathname, getFetchContext(fetchImpl))
     : request();
 }
 
@@ -456,6 +456,7 @@ async function getMusixmatchWordLyrics(
 */
 
 async function getSpotifyLineLyrics(fetchImpl: FetchLike, track: TrackMetadata): Promise<BeautifulLyrics | undefined> {
+  recordMatch(getFetchContext(fetchImpl), { Provider: "spotify", Transport: "lyrically", TrackId: track.id });
   const payload = await getJson<unknown>(
     fetchImpl,
     buildUrl("/spotify/lyrics", {
@@ -464,7 +465,7 @@ async function getSpotifyLineLyrics(fetchImpl: FetchLike, track: TrackMetadata):
     })
   );
 
-  return parseLyricallyTextLyrics(payload, track.durationSeconds);
+  return withSource(parseLyricallyTextLyrics(payload, track.durationSeconds), { Provider: "spotify", Transport: "lyrically", TrackId: track.id });
 }
 
 async function searchAppleMusic(
@@ -524,6 +525,8 @@ async function getAppleMusicLyrics(fetchImpl: FetchLike, track: TrackMetadata): 
     console.log(`[lyrically:apple] using client-supplied id ${trackId}`);
   }
 
+  const source = { Provider: "applemusic", Transport: "lyrically", TrackId: String(trackId), MatchedTitle: matchedTitle } as const;
+  recordMatch(getFetchContext(fetchImpl), source);
   const payload = await getJson<AppleMusicLyricResponse>(
     fetchImpl,
     buildUrl("/apple-music/lyrics", {
@@ -548,7 +551,7 @@ async function getAppleMusicLyrics(fetchImpl: FetchLike, track: TrackMetadata): 
       }, ${asArray(payload?.lyrics).length} timed line(s))`
     );
   }
-  return withMatchedTitle(lyrics, matchedTitle);
+  return withSource(lyrics, source);
 }
 
 async function searchKugou(
@@ -593,6 +596,8 @@ async function getKugouLyrics(
   if (matchedSong?.hash === undefined) {
     return undefined;
   }
+  const source = { Provider: "kugou", Transport: "lyrically", TrackId: String(matchedSong.hash), ...(matchedSong.title ? { MatchedTitle: matchedSong.title } : {}) } as const;
+  recordMatch(getFetchContext(fetchImpl), source);
   console.log(`[lyrically:kugou] matched ${matchedSong.hash} "${matchedSong.title ?? "unknown title"}"`);
 
   const payload = await getJson<KugouLyricResponse>(
@@ -619,7 +624,7 @@ async function getKugouLyrics(
       }, ${asArray(payload?.lyrics).length} timed line(s))`
     );
   }
-  return withMatchedTitle(lyrics, matchedSong.title);
+  return withSource(lyrics, source);
 }
 
 async function getNeteaseLyrics(
@@ -651,6 +656,8 @@ async function getNeteaseLyrics(
   if (matchedSong?.id === undefined) {
     return undefined;
   }
+  const source = { Provider: "netease", Transport: "lyrically", TrackId: String(matchedSong.id), ...(matchedSong.name ? { MatchedTitle: matchedSong.name } : {}) } as const;
+  recordMatch(getFetchContext(fetchImpl), source);
   console.log(`[lyrically:netease] matched ${matchedSong.id} "${matchedSong.name ?? "unknown title"}"`);
 
   const lyricsPayload = await getJson<NeteaseLyricResponse>(
@@ -678,7 +685,7 @@ async function getNeteaseLyrics(
       }, ${asArray(lyricsPayload?.lyrics).length} timed line(s))`
     );
   }
-  return withMatchedTitle(lyrics, matchedSong.name);
+  return withSource(lyrics, source);
 }
 
 async function getYouTubeLyrics(fetchImpl: FetchLike, track: TrackMetadata): Promise<BeautifulLyrics | undefined> {
@@ -711,6 +718,8 @@ async function getYouTubeLyrics(fetchImpl: FetchLike, track: TrackMetadata): Pro
     if (matchedVideo.videoId === undefined) {
       continue;
     }
+    const source = { Provider: "youtube", Transport: "lyrically", TrackId: matchedVideo.videoId, ...(matchedVideo.title ? { MatchedTitle: matchedVideo.title } : {}) } as const;
+    recordMatch(getFetchContext(fetchImpl), source);
     console.log(`[lyrically:youtube] matched ${matchedVideo.videoId} "${matchedVideo.title ?? "unknown title"}"`);
 
     const payload = await getJson<unknown>(
@@ -722,7 +731,7 @@ async function getYouTubeLyrics(fetchImpl: FetchLike, track: TrackMetadata): Pro
     );
     const lyrics = parseLyricallyTextLyrics(payload, track.durationSeconds);
     if (lyrics !== undefined) {
-      return lyrics;
+      return withSource(lyrics, source);
     }
     console.log(`[lyrically:youtube] lyrics ${matchedVideo.videoId}: no usable lyrics`);
   }
@@ -761,6 +770,8 @@ async function getDeezerLyrics(fetchImpl: FetchLike, track: TrackMetadata): Prom
   if (matchedSong?.id === undefined) {
     return undefined;
   }
+  const source = { Provider: "deezer", Transport: "lyrically", TrackId: String(matchedSong.id), ...(matchedSong.title ? { MatchedTitle: matchedSong.title } : {}) } as const;
+  recordMatch(getFetchContext(fetchImpl), source);
   console.log(`[lyrically:deezer] matched ${matchedSong.id} "${matchedSong.title ?? "unknown title"}"`);
 
   const payload = await getJson<DeezerLyricResponse>(
@@ -789,10 +800,10 @@ async function getDeezerLyrics(fetchImpl: FetchLike, track: TrackMetadata): Prom
   if (lyrics === undefined) {
     console.log(`[lyrically:deezer] lyrics ${matchedSong.id}: no usable lyrics`);
   }
-  return withMatchedTitle(lyrics, matchedSong.title);
+  return withSource(lyrics, source);
 }
 
-async function searchGenius(fetchImpl: FetchLike, track: TrackMetadata): Promise<string | undefined> {
+async function searchGenius(fetchImpl: FetchLike, track: TrackMetadata): Promise<{ url: string; title?: string } | undefined> {
   if (track.name.length === 0 || firstArtist(track).length === 0) {
     return undefined;
   }
@@ -810,14 +821,18 @@ async function searchGenius(fetchImpl: FetchLike, track: TrackMetadata): Promise
     return result !== undefined && titleMatches(result.title, track) && artistMatches(result.primary_artist_names ?? result.artist_names, track);
   });
 
-  return matchedHit?.result?.url;
+  const result = matchedHit?.result;
+  return result?.url ? { url: result.url, ...(result.title ? { title: result.title } : {}) } : undefined;
 }
 
 async function getGeniusLyrics(fetchImpl: FetchLike, track: TrackMetadata): Promise<StaticSyncedLyrics | undefined> {
-  const geniusUrl = await searchGenius(fetchImpl, track);
-  if (geniusUrl === undefined) {
+  const matchedSong = await searchGenius(fetchImpl, track);
+  if (matchedSong === undefined) {
     return undefined;
   }
+  const geniusUrl = matchedSong.url;
+  const source = { Provider: "genius", Transport: "lyrically", TrackId: new URL(geniusUrl).pathname, ...(matchedSong.title ? { MatchedTitle: matchedSong.title } : {}) } as const;
+  recordMatch(getFetchContext(fetchImpl), source);
   console.log(`[lyrically:genius] matched ${geniusUrl}`);
 
   const payload = await getJson<GeniusLyricResponse>(
@@ -831,7 +846,7 @@ async function getGeniusLyrics(fetchImpl: FetchLike, track: TrackMetadata): Prom
     return undefined;
   }
 
-  return convertPlainTextToStatic(payload.lyrics);
+  return withSource(convertPlainTextToStatic(payload.lyrics), source);
 }
 
 function createLyricallyProviderImplementation(fetchImpl: FetchLike = fetch): LyricallyProvider {

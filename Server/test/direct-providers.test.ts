@@ -28,7 +28,7 @@ function macroResponse() {
       body: {
         macro_calls: {
           "matcher.track.get": {
-            message: { header: { status_code: 200 }, body: { track: { has_richsync: 1, instrumental: 0 } } }
+            message: { header: { status_code: 200 }, body: { track: { track_id: 123, track_name: "Matched title", has_richsync: 1, instrumental: 0 } } }
           },
           "track.lyrics.get": {
             message: { header: { status_code: 200 }, body: { lyrics: { restricted: 0 } } }
@@ -136,6 +136,7 @@ describe("NetEase direct provider", () => {
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(matchedTitle(lyrics!)).toBe("范例歌曲");
+    expect(lyrics?.Source).toEqual({ Provider: "netease", Transport: "direct", TrackId: "5", MatchedTitle: "范例歌曲" });
   });
 
   it("tries another matching release when the first has only line lyrics", async () => {
@@ -188,6 +189,7 @@ describe("Musixmatch direct provider", () => {
     const provider = createMusixmatchProvider(fetchMock as typeof fetch);
     const lyrics = await Promise.all([provider.getSyllableLyrics(track), provider.getSyllableLyrics(track)]);
     expect(lyrics.map((result) => result?.Type)).toEqual(["Syllable", "Syllable"]);
+    for (const result of lyrics) expect(result?.Source).toEqual({ Provider: "musixmatch", Transport: "direct", TrackId: "123", MatchedTitle: "Matched title" });
     expect(tokenCalls).toBe(1);
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });

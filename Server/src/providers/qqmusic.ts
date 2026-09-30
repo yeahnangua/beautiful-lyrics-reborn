@@ -1,10 +1,10 @@
-import { contextFetch } from "./request";
+import { contextFetch, getFetchContext } from "./request";
 import OpenCC from "opencc-js";
 import { decryptQrc } from "qrc-decoder";
 import { convertQrcXmlToSyllableLyrics } from "../convert/karaoke";
 import type { QqMusicProvider, SyllableSyncedLyrics, TrackMetadata } from "../types";
 import { withLyricRequestRetries } from "./request";
-import { withMatchedTitle } from "./matched-title";
+import { withSource, recordMatch } from "./matched-title";
 
 type FetchLike = typeof fetch;
 
@@ -197,7 +197,7 @@ async function postMusicu<T>(fetchImpl: FetchLike, body: unknown, retryOnTimeout
     return (await response.json()) as T;
   };
 
-  return retryOnTimeout ? withLyricRequestRetries((signal) => request(signal), "qqmusic request") : request();
+  return retryOnTimeout ? withLyricRequestRetries((signal) => request(signal), "qqmusic request", getFetchContext(fetchImpl)) : request();
 }
 
 async function searchSongs(fetchImpl: FetchLike, query: string): Promise<QqMusicSearchSong[]> {
@@ -273,9 +273,11 @@ function createQqMusicProviderImplementation(fetchImpl: FetchLike = fetch): QqMu
       const songs = await searchSongs(fetchImpl, traditionalToSimplified(track.name));
       const candidates = songs.filter((song) => matchesTrack(song, track)).slice(0, 3);
       for (const song of candidates) {
+        const source = { Provider: "qqmusic", Transport: "direct", TrackId: String(song.id), MatchedTitle: songTitle(song) } as const;
+        recordMatch(getFetchContext(fetchImpl), source);
         logMatchedSong(song);
         const lyrics = await getQrcLyrics(fetchImpl, song.id!);
-        if (lyrics !== undefined) return withMatchedTitle(lyrics, songTitle(song));
+        if (lyrics !== undefined) return withSource(lyrics, source);
       }
       return undefined;
     }

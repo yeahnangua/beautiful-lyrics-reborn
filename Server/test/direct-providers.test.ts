@@ -50,6 +50,7 @@ describe("NetEase direct provider", () => {
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(matchedTitle(lyrics!)).toBe("范例歌曲");
+    expect(lyrics?.Source).toEqual({ Provider: "netease", Transport: "direct", TrackId: "5", MatchedTitle: "范例歌曲" });
   });
 
   it("tries another matching release when the first has only line lyrics", async () => {

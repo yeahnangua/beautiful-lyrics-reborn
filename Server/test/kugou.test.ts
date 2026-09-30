@@ -1,3 +1,4 @@
+import { contentEqual } from "./lyrics-content";
 import { describe, expect, it, vi } from "vitest";
 import { convertKrcToSyllableLyrics, decodeKrc } from "../src/convert/krc";
 import { createKugouProvider } from "../src/providers/kugou";
@@ -108,8 +109,9 @@ describe("KuGou direct provider", () => {
       return json({ status: 200, content: encodedKrc });
     });
     const lyrics = await createKugouProvider(fetchMock as typeof fetch).getSyllableLyrics(track);
-    expect(lyrics).toEqual(convertKrcToSyllableLyrics(krc));
+    expect(lyrics).toEqual(contentEqual(convertKrcToSyllableLyrics(krc)));
     expect(matchedTitle(lyrics!)).toBe("范例歌曲");
+    expect(lyrics?.Source).toEqual({ Provider: "kugou", Transport: "direct", LyricsId: "best", MatchedTitle: "范例歌曲" });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -148,4 +150,15 @@ describe("KuGou direct provider", () => {
     expect(await provider.getSyllableLyrics({ id: "id", name: "Title", artists: [] })).toBeUndefined();
     expect(fetchMock).not.toHaveBeenCalled();
   });
+});
+
+it("retains matched IDs even when the downloaded lyrics are unusable, excluding accesskeys", async () => {
+  const trace: import("../src/types").ProviderAttempt = { provider: "kugou direct", stage: "syllable", startedAt: new Date().toISOString(), durationMs: 0, outcome: "pending", retries: 0, upstream: [] };
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(json({ status: 200, candidates: [candidate] }))
+    .mockResolvedValueOnce(json({ status: 200, content: encodedLineOnly }));
+  expect(await createKugouProvider(fetchMock as typeof fetch).getSyllableLyrics(track, { trace })).toBeUndefined();
+  expect(trace.matches).toEqual([{ Provider: "kugou", Transport: "direct", LyricsId: "1", MatchedTitle: "范例歌曲" }]);
+  expect(trace.upstream.every(event => event.outcome === "success")).toBe(true);
+  expect(JSON.stringify(trace)).not.toContain("test-key");
 });

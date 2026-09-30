@@ -1,4 +1,5 @@
-import { contextFetch } from "./request";
+import { withSource, recordMatch } from "./matched-title";
+import { contextFetch, getFetchContext } from "./request";
 import { convertLrcToLineLyrics } from "../convert/lrc";
 import { convertPlainTextToStatic } from "../convert/plain";
 import type { BeautifulLyrics, LrclibProvider, TrackMetadata } from "../types";
@@ -64,9 +65,11 @@ function createLrclibProviderImplementation(fetchImpl: FetchLike = fetch): Lrcli
 
       const records = (await response.json()) as LrclibRecord[];
       for (const record of records) {
+        const source = { Provider: "lrclib", Transport: "direct", TrackId: String(record.id), ...(record.trackName ? { MatchedTitle: record.trackName } : {}) } as const;
+        recordMatch(getFetchContext(fetchImpl), source);
         const lyrics = convertRecord(record, track.durationSeconds);
         if (lyrics !== undefined) {
-          return lyrics;
+          return withSource(lyrics, source);
         }
       }
 

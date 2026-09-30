@@ -106,6 +106,7 @@ describe("QQ Music provider", () => {
     expect(lyrics?.Type).toBe("Syllable");
     expect(lyrics?.StartTime).toBeCloseTo(0);
     expect(matchedTitle(lyrics!)).toBe("布拉格广场");
+    expect(lyrics?.Source).toEqual({ Provider: "qqmusic", Transport: "direct", TrackId: "13410", MatchedTitle: "布拉格广场" });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -347,6 +348,7 @@ describe("lyrically provider", () => {
     });
 
     expect(lyrics).toMatchObject({ Type: "Syllable", StartTime: 1 });
+    expect(lyrics?.Source).toEqual({ Provider: "applemusic", Transport: "lyrically", TrackId: "183919743", MatchedTitle: "倔強" });
     expect(logSpy).toHaveBeenCalledWith('[lyrically:apple] matched 183919743 "倔強"');
     logSpy.mockRestore();
   });
@@ -389,6 +391,7 @@ describe("lyrically provider", () => {
 
     expect(lyrics).toMatchObject({ Type: "Syllable" });
     expect(matchedTitle(lyrics!)).toBe("倔強 (Live)");
+    expect(lyrics?.Source).toEqual({ Provider: "applemusic", Transport: "lyrically", TrackId: "183919743", MatchedTitle: "倔強 (Live)" });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     logSpy.mockRestore();
   });

@@ -1,5 +1,5 @@
 import { feedbackResponse, type FeedbackEnv } from "./feedback";
-import { hashLyrics, saveDiagnostics, cleanupFeedback, shouldSaveDiagnostics, diagnosticsDailyLimit, type DiagnosticsEnv } from "./diagnostics";
+import { hashLyrics, saveDiagnostics, cleanupFeedback } from "./diagnostics";
 import type { RequestDiagnostics } from "./types";
 import { extensionReleaseResponse } from "./extension-release";
 // import { amllDbProvider } from "./providers/amlldb";
@@ -131,7 +131,7 @@ function extractTrackMetadata(url: URL, trackId: string): TrackMetadata | undefi
   return trackMetadata;
 }
 
-export type WorkerEnv = FeedbackEnv & DiagnosticsEnv & {
+export type WorkerEnv = FeedbackEnv & {
   RELEASE_ASSETS?: Fetcher;
   STATS?: AnalyticsEngineDataset;
   STATS_ACCOUNT_ID?: string;
@@ -274,9 +274,9 @@ export function createWorker(service: LyricsService): ExportedHandler<WorkerEnv>
         // Allow scope cancellation handlers to settle before snapshotting attempts.
         await Promise.resolve();
         diagnostics.durationMs = Date.now() - started;
-        if (env.FEEDBACK_DB && diagnosticsDailyLimit(env) > 0 && shouldSaveDiagnostics(env, diagnostics)) {
+        if (env.FEEDBACK_DB) {
           const record = structuredClone(diagnostics);
-          const write = saveDiagnostics(env.FEEDBACK_DB, record, diagnosticsDailyLimit(env))
+          const write = saveDiagnostics(env.FEEDBACK_DB, record)
             .catch(() => console.warn("Lyrics diagnostics write failed"));
           if (ctx?.waitUntil) ctx.waitUntil(write);
           else await write;

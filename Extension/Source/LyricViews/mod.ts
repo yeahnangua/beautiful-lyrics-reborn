@@ -39,8 +39,11 @@ const ViewMaid = GlobalMaid.Give(new Maid())
 const LoadingLyricsCard = `<div class="LoadingLyricsCard Loading"></div>`
 
 // DOM Search Constants
-const CurrentMainPage = ".Root__main-view .main-view-container div[data-overlayscrollbars-viewport]"
-const LegacyMainPage = ".Root__main-view .main-view-container .os-host"
+// Spotify 1.3.3 can leave the root class unmapped on Windows; the ID is stable.
+const MainView = ":is(#main-view, .Root__main-view)"
+const CurrentMainPage = `${MainView} .main-view-container div[data-overlayscrollbars-viewport]`
+const LegacyMainPage = `${MainView} .main-view-container .os-host`
+const NativeMainPage = `${MainView} .main-view-container__scroll-node`
 const RightSidebar = ".Root__right-sidebar"
 const ContentsContainer = "aside, section.main-buddyFeed-container"
 const CardInsertAnchor = ".main-nowPlayingView-nowPlayingWidget, canvas"
@@ -134,6 +137,42 @@ OnSpotifyReady
 			ViewMaid.Give(SongChanged.Connect(CheckForSongExistence))
 			ViewMaid.Give(Timeout(1, CheckForSongExistence))
 		}
+	}
+)
+.then( // Location Handler
+	() => {
+		const HandleSpotifyLocation = (location: HistoryLocation) => {
+			// Cancel a pending mount when navigating away or switching view types.
+			ViewMaid.Clean("FindPageContainer")
+			// Remove our previous page-view
+			ViewMaid.Clean("PageView")
+
+			// Now handle our page-view
+			if (location.pathname === "/BeautifulLyrics/Page") {
+				const MountPage = () => {
+					if (SpotifyHistory.location.pathname !== "/BeautifulLyrics/Page") return
+					const current = document.querySelector<HTMLDivElement>(CurrentMainPage)
+					const legacy = current ? null : document.querySelector<HTMLDivElement>(LegacyMainPage)
+					const page = current ?? legacy ?? document.querySelector<HTMLDivElement>(NativeMainPage)
+					if (page === null) {
+						ViewMaid.Give(Defer(MountPage), "FindPageContainer")
+						return
+					}
+					SetPlaybarPageIconActiveState(true)
+					ActivePageView = ViewMaid.Give(new ContainedPageView(page, legacy !== null), "PageView")
+					ActivePageView.Closed.Connect(() => SetPlaybarPageIconActiveState(false))
+					ActivePageView.Closed.Connect(() => ActivePageView = undefined)
+				}
+				MountPage()
+			} else if (location.pathname === "/BeautifulLyrics/Fullscreen") {
+				ActivePageView = ViewMaid.Give(new FullscreenPageView(location.state?.FromPlaybar), "PageView")
+				ActivePageView.Closed.Connect(() => ActivePageView = undefined)
+			}
+		}
+
+		// Fullscreen mounts to the body and must not wait for a contained-page viewport.
+		ViewMaid.Give(SpotifyHistory.listen(HandleSpotifyLocation))
+		HandleSpotifyLocation(SpotifyHistory.location)
 	}
 )
 .then( // Right Side-bar/Card View
@@ -255,50 +294,6 @@ OnSpotifyReady
 			}
 		}
 		CheckForSidebar()
-	}
-)
-.then( // Location Handler
-	() => {
-		let pageContainer: HTMLDivElement
-		let pageContainerIsLegacy = false
-
-		const HandleSpotifyLocation = (location: HistoryLocation) => {
-			// Remove our previous page-view
-			ViewMaid.Clean("PageView")
-	
-			// Now handle our page-view
-			if (location.pathname === "/BeautifulLyrics/Page") {
-				SetPlaybarPageIconActiveState(true)
-				ActivePageView = ViewMaid.Give(new ContainedPageView(pageContainer, pageContainerIsLegacy), "PageView")
-				ActivePageView.Closed.Connect(() => SetPlaybarPageIconActiveState(false))
-				ActivePageView.Closed.Connect(() => ActivePageView = undefined)
-			} else if (location.pathname === "/BeautifulLyrics/Fullscreen") {
-				ActivePageView = ViewMaid.Give(new FullscreenPageView(location.state?.FromPlaybar), "PageView")
-				ActivePageView.Closed.Connect(() => ActivePageView = undefined)
-			}
-		}
-
-		// Wait until we find our MainPageContainer
-		const SearchDOM = () => {
-			// Go through each container possibility
-			let possibleContainer = document.querySelector<HTMLDivElement>(CurrentMainPage) ?? undefined
-			let possiblyLegacy = false
-			if (possibleContainer === undefined) {
-				possibleContainer = document.querySelector<HTMLDivElement>(LegacyMainPage) ?? undefined
-				possiblyLegacy = true
-			}
-
-			// If we still have no container we need to wait again for it
-			if (possibleContainer === undefined) {
-				ViewMaid.Give(Defer(SearchDOM))
-			} else {
-				pageContainer = possibleContainer
-				pageContainerIsLegacy = possiblyLegacy
-				HandleSpotifyLocation(SpotifyHistory.location)
-				ViewMaid.Give(SpotifyHistory.listen(HandleSpotifyLocation))
-			}
-		}
-		SearchDOM()
 	}
 )
 .then( // Spotify Fullscreen Button Removal

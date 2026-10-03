@@ -1,14 +1,14 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { Miniflare } from "miniflare";
-import { beforeAll, afterAll, beforeEach, describe, it, expect } from "vitest";
-import { feedbackResponse, type FeedbackEnv } from "../src/feedback";
+import { beforeAll, afterAll, beforeEach, describe, it, expect, vi } from "vitest";
+import { feedbackResponse } from "../src/feedback";
 import { cleanupFeedback, saveDiagnostics, loadDiagnostics, hashLyrics } from "../src/diagnostics";
-import { createWorker } from "../src/index";
+import { createWorker, type WorkerEnv } from "../src/index";
 import type { RequestDiagnostics, BeautifulLyrics } from "../src/types";
 
 let mf: Miniflare;
 let db: D1Database;
-let env: FeedbackEnv;
+let env: WorkerEnv;
 const base = "https://lyrics.test";
 const original: BeautifulLyrics = { Type: "Static", Lines: [{ Text: "  lyric <script>alert(1)</script>  " }] };
 function payload(extra: Record<string, unknown> = {}) {
@@ -31,17 +31,30 @@ async function login() {
   expect(response.status).toBe(200);
   return response.headers.get("Set-Cookie")!.split(";")[0]!;
 }
+async function saveLegacyDiagnostics(log: RequestDiagnostics) {
+  const { attempts, ...summary } = log;
+  await db.batch([
+    db.prepare(`INSERT INTO lyric_requests(id,created_at,spotify_id,song,artists,provider,outcome,data)
+      VALUES(?,?,?,?,?,?,?,?)`).bind(log.id, log.startedAt, log.track.id, log.track.name,
+      log.track.artists.join(", "), log.source?.Provider ?? "unknown", log.outcome, JSON.stringify(summary)),
+    ...attempts.map((attempt, ordinal) => db.prepare("INSERT INTO provider_attempts(request_id,ordinal,data) VALUES(?,?,?)")
+      .bind(log.id, ordinal, JSON.stringify(attempt)))
+  ]);
+}
 beforeAll(async () => {
   mf = new Miniflare({ modules: true, script: "export default {fetch(){return new Response('ok')}}", d1Databases: ["FEEDBACK_DB"], compatibilityDate: "2026-05-22" });
   db = await mf.getD1Database("FEEDBACK_DB") as unknown as D1Database;
-  const migration = await readFile("migrations/0001_feedback.sql", "utf8");
-  // D1 exec accepts one statement per line. Execute the real migration, not a mocked SQL adapter.
-  await db.exec(migration.replace(/\n/g, " "));
+  for (const file of (await readdir("migrations")).filter(file => file.endsWith(".sql")).sort()) {
+    const migration = await readFile("migrations/" + file, "utf8");
+    // D1 exec accepts one statement per line. Preserve SQL semantics when stripping line comments.
+    await db.exec(migration.replace(/^\s*--.*$/gm, "").replace(/\n/g, " "));
+  }
 }, 20000);
 afterAll(async () => { await mf?.dispose(); });
 beforeEach(async () => {
-  env = { FEEDBACK_DB: db, ADMIN_PASSWORD: "test-password", ADMIN_SESSION_SECRET: "test-session-key-with-at-least-32-bytes" };
-  await db.batch(["lyric_reports", "lyric_requests", "rate_limits", "admin_sessions"].map(table => db.prepare(`DELETE FROM ${table}`)));
+  env = { FEEDBACK_DB: db, ADMIN_PASSWORD: "test-password", ADMIN_SESSION_SECRET: "test-session-key-with-at-least-32-bytes",
+    DIAGNOSTICS_SUCCESS_SAMPLE_RATE: "1", DIAGNOSTICS_FAILURE_SAMPLE_RATE: "1" };
+  await db.batch(["lyric_reports", "lyric_requests", "rate_limits", "admin_sessions", "diagnostic_daily_budget"].map(table => db.prepare(`DELETE FROM ${table}`)));
 });
 
 describe("feedback with real local D1", () => {
@@ -67,6 +80,8 @@ describe("feedback with real local D1", () => {
     const first = payload();
     for (let i = 0; i < 5; i++) expect((await call("/reports", "POST", i === 0 ? first : payload())).status).toBe(201);
     expect((await call("/reports", "POST", payload())).status).toBe(429);
+    for (let i = 0; i < 10; i++) expect((await call("/reports", "POST", payload())).status).toBe(429);
+    expect((await db.prepare("SELECT count FROM rate_limits").first<{ count: number }>())?.count).toBe(5);
     expect((await call("/reports", "POST", first)).status).toBe(200);
   });
   it("copies diagnostics and fills in late waitUntil logs", async () => {
@@ -88,14 +103,14 @@ describe("feedback with real local D1", () => {
     const { id } = await (await call("/reports", "POST", payload({ requestId: log.id }))).json() as { id: string };
     expect((await db.prepare("SELECT diagnostics FROM lyric_reports WHERE id=?").bind(id).first<{ diagnostics: string }>())?.diagnostics).toBe(JSON.stringify(log));
   });
-  it("closes the race between diagnostics lookup and report insert", async () => {
+  it.each(["packed", "legacy"])("closes the race between %s diagnostics lookup and report insert", async format => {
     const log = record();
     const originalPrepare = db.prepare.bind(db);
     let inserted = false;
     const racedDb = { ...db, prepare: (sql: string) => {
       const statement = originalPrepare(sql);
       if (sql === "SELECT data FROM lyric_requests WHERE id=?") return { bind: () => ({ first: async () => {
-        if (!inserted) { inserted = true; await saveDiagnostics(db, log); }
+        if (!inserted) { inserted = true; await (format === "legacy" ? saveLegacyDiagnostics(log) : saveDiagnostics(db, log)); }
         return null;
       } }) };
       return statement;
@@ -124,6 +139,8 @@ describe("feedback with real local D1", () => {
     expect(response.headers.get("Set-Cookie")).toContain("HttpOnly; Secure; SameSite=Strict");
     for (let i = 0; i < 4; i++) expect((await call("/admin/api/login", "POST", { password: "wrong" })).status).toBe(401);
     expect((await call("/admin/api/login", "POST", { password: "wrong" })).status).toBe(429);
+    for (let i = 0; i < 10; i++) expect((await call("/admin/api/login", "POST", { password: "wrong" })).status).toBe(429);
+    expect((await db.prepare("SELECT count FROM rate_limits").first<{ count: number }>())?.count).toBe(5);
   });
   it("paginates 50 records without duplicates, applies filters and records processing history", async () => {
     const logs = Array.from({ length: 53 }, () => record({ startedAt: "2026-09-30T01:00:00.000Z" }));
@@ -154,7 +171,7 @@ describe("feedback with real local D1", () => {
     await cleanupFeedback(db);
     expect((await db.prepare("SELECT * FROM report_snapshots").all()).results).toEqual([]);
   });
-  it("fails explicitly without D1 while lyrics continue and logs use waitUntil", async () => {
+  it("fails explicitly without D1 while lyrics continue without scheduling a write", async () => {
     delete env.FEEDBACK_DB;
     expect((await call("/reports", "POST", payload())).status).toBe(503);
     const pending: Promise<unknown>[] = [];
@@ -163,8 +180,75 @@ describe("feedback with real local D1", () => {
     const lyrics = await response.json() as BeautifulLyrics;
     expect(lyrics.LyricsHash).toMatch(/^[a-f0-9]{64}$/);
     expect(lyrics.RequestId).toMatch(/^[a-f0-9-]{36}$/);
+    expect(pending).toHaveLength(0);
+    await Promise.all(pending);
+  });
+  it("schedules sampled logs through waitUntil", async () => {
+    const pending: Promise<unknown>[] = [];
+    const handler = createWorker({ getLyrics: async () => structuredClone(original) });
+    const response = await handler.fetch!(new Request(base + "/lyrics/track", { headers: { Authorization: "Bearer PRIVATE" } }), env,
+      { waitUntil: (promise: Promise<unknown>) => pending.push(promise) } as unknown as ExecutionContext);
+    const lyrics = await response.json() as BeautifulLyrics;
     expect(pending).toHaveLength(1);
     await Promise.all(pending);
+    expect((await loadDiagnostics(db, lyrics.RequestId!))?.outcome).toBe("success");
+  });
+  it("keeps all provider attempts in one row and reads legacy logs", async () => {
+    const log = record();
+    log.attempts = Array.from({ length: 30 }, () => structuredClone(log.attempts[0]!));
+    await saveDiagnostics(db, log);
+    expect(await loadDiagnostics(db, log.id)).toEqual(log);
+    expect((await db.prepare("SELECT * FROM provider_attempts").all()).results).toHaveLength(0);
+    const legacy = record();
+    await saveLegacyDiagnostics(legacy);
+    expect(await loadDiagnostics(db, legacy.id)).toEqual(legacy);
+    const { id } = await (await call("/reports", "POST", payload({ requestId: legacy.id }))).json() as { id: string };
+    expect(JSON.parse((await db.prepare("SELECT diagnostics FROM lyric_reports WHERE id=?").bind(id).first<{ diagnostics: string }>())!.diagnostics)).toEqual(legacy);
+  });
+  it("enforces a global daily log cap even with concurrent writers, and resumes on a new UTC day", async () => {
+    const yesterday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10);
+    await db.prepare("INSERT INTO diagnostic_daily_budget(day,count) VALUES(?,1000)").bind(yesterday).run();
+    await Promise.all(Array.from({ length: 12 }, () => saveDiagnostics(db, record(), 3)));
+    expect((await db.prepare("SELECT count(*) AS n FROM lyric_requests").first<{ n: number }>())?.n).toBe(3);
+    expect((await db.prepare("SELECT count FROM diagnostic_daily_budget WHERE day=?").bind(new Date().toISOString().slice(0, 10)).first<{ count: number }>())?.count).toBe(3);
+    // Rejected reservations do not increment the counter, even on later invocations.
+    await saveDiagnostics(db, record(), 3);
+    expect((await db.prepare("SELECT count(*) AS n FROM lyric_requests").first<{ n: number }>())?.n).toBe(3);
+  });
+  it.each(["sample rates", "daily limit"])("avoids D1 entirely when logging is disabled via %s", async setting => {
+    if (setting === "sample rates") { env.DIAGNOSTICS_SUCCESS_SAMPLE_RATE = "0"; env.DIAGNOSTICS_FAILURE_SAMPLE_RATE = "0"; }
+    else env.DIAGNOSTICS_DAILY_LIMIT = "0";
+    const prepare = vi.fn(() => { throw Error("unexpected D1 query"); });
+    env.FEEDBACK_DB = { prepare } as unknown as D1Database;
+    for (const outcome of ["success", "none", "failed"] as const) {
+      const handler = createWorker({ getLyrics: async () => { if (outcome === "failed") throw Error("upstream failed"); return outcome === "success" ? structuredClone(original) : undefined; } });
+      const response = await handler.fetch!(new Request(base + "/lyrics/track", { headers: { Authorization: "Bearer PRIVATE" } }), env, {} as ExecutionContext);
+      expect(response.status).toBe(outcome === "failed" ? 502 : 200);
+    }
+    expect(prepare).not.toHaveBeenCalled();
+  });
+  it("accepts feedback for an unsampled request and identifies the missing diagnostics", async () => {
+    env.DIAGNOSTICS_SUCCESS_SAMPLE_RATE = "0";
+    const handler = createWorker({ getLyrics: async () => structuredClone(original) });
+    const response = await handler.fetch!(new Request(base + "/lyrics/track", { headers: { Authorization: "Bearer PRIVATE" } }), env, {} as ExecutionContext);
+    const lyrics = await response.json() as BeautifulLyrics;
+    const { id } = await (await call("/reports", "POST", payload({ requestId: lyrics.RequestId, lyricsHash: lyrics.LyricsHash }))).json() as { id: string };
+    const detail = await (await call("/admin/api/reports/" + id, "GET", undefined, await login())).json() as any;
+    expect(detail.original).toEqual(original);
+    expect(detail.diagnosticsAvailable).toBe(false);
+    expect(await loadDiagnostics(db, lyrics.RequestId!)).toBeNull();
+  });
+  it("bounds legacy attempt deletion before removing expired parents", async () => {
+    const old = record({ startedAt: new Date(Date.now() - 61 * 86400_000).toISOString(), attempts: [] });
+    await saveLegacyDiagnostics(old);
+    await db.prepare(`WITH RECURSIVE ord(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM ord WHERE n<1004)
+      INSERT INTO provider_attempts(request_id,ordinal,data) SELECT ?,n,'{}' FROM ord`).bind(old.id).run();
+    await cleanupFeedback(db);
+    expect((await db.prepare("SELECT count(*) AS n FROM provider_attempts").first<{ n: number }>())?.n).toBe(5);
+    expect(await loadDiagnostics(db, old.id)).not.toBeNull();
+    await cleanupFeedback(db);
+    expect(await loadDiagnostics(db, old.id)).toBeNull();
+    expect((await db.prepare("SELECT * FROM provider_attempts").all()).results).toHaveLength(0);
   });
   it.each(["none", "failed", "cancelled"] as const)("persists %s lyric request outcomes without credentials", async outcome => {
     const handler = createWorker({ getLyrics: async () => { if (outcome === "failed") throw Error("PRIVATE token"); return undefined; } });

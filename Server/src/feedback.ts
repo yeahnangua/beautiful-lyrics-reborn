@@ -111,7 +111,7 @@ async function rateLimit(db: D1Database, request: Request, kind: string): Promis
   const key = await sha256(kind + ":" + (request.headers.get("CF-Connecting-IP") ?? "local"));
   const minute = Math.floor(Date.now() / 60000);
   const row = await db.prepare(`INSERT INTO rate_limits(key,minute,count) VALUES(?,?,1)
-    ON CONFLICT(key,minute) DO UPDATE SET count=count+1 RETURNING count`).bind(key, minute).first<{ count: number }>();
+    ON CONFLICT(key,minute) DO UPDATE SET count=count+1 WHERE count<5 RETURNING count`).bind(key, minute).first<{ count: number }>();
   if (!row || row.count > 5) throw new HttpError(429, "Too many requests; retry in a minute");
 }
 async function signature(secret: string, data: string): Promise<string> {
@@ -214,8 +214,9 @@ export async function feedbackResponse(request: Request, env: FeedbackEnv): Prom
         db.prepare(`INSERT INTO report_snapshots(report_id,original,displayed) SELECT id,?,? FROM lyric_reports WHERE submission_id=?
           ON CONFLICT(report_id) DO NOTHING`).bind(JSON.stringify(original), JSON.stringify(displayed), payload.submissionId),
         // Close the race where logging committed after the first lookup but before this batch.
-        db.prepare(`UPDATE lyric_reports SET diagnostics=(SELECT json_set(data,'$.attempts',json(COALESCE(
-          (SELECT json_group_array(json(data)) FROM (SELECT data FROM provider_attempts WHERE request_id=? ORDER BY ordinal)),'[]')))
+        db.prepare(`UPDATE lyric_reports SET diagnostics=(SELECT CASE WHEN json_type(data,'$.attempts')='array' THEN data
+          ELSE json_set(data,'$.attempts',json(COALESCE(
+          (SELECT json_group_array(json(data)) FROM (SELECT data FROM provider_attempts WHERE request_id=? ORDER BY ordinal)),'[]'))) END
           FROM lyric_requests WHERE id=?) WHERE submission_id=? AND diagnostics IS NULL`).bind(payload.requestId, payload.requestId, payload.submissionId)
       ]);
       const saved = await db.prepare("SELECT id FROM lyric_reports WHERE submission_id=?").bind(payload.submissionId).first<{ id: string }>();
@@ -248,7 +249,7 @@ export async function feedbackResponse(request: Request, env: FeedbackEnv): Prom
       if (!id) return json(await list(db, url, reports));
       if (reports) return json(await reportDetail(db, id));
       const data = await loadDiagnostics(db, id);
-      if (!data) throw new HttpError(404, "Request log unavailable or expired");
+      if (!data) throw new HttpError(404, "Request log not sampled, unavailable or expired");
       return json(data);
     }
     if (reports && id && request.method === "PATCH") {

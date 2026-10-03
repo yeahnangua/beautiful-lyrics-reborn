@@ -2,6 +2,12 @@ name = "beautiful-lyrics-reborn-server"
 main = "src/index.ts"
 compatibility_date = "2026-05-22"
 
+[vars]
+# Rates are fractions (0 disables logging). The daily cap is global, UTC, and at most 1000.
+DIAGNOSTICS_SUCCESS_SAMPLE_RATE = "0.01"
+DIAGNOSTICS_FAILURE_SAMPLE_RATE = "0.10"
+DIAGNOSTICS_DAILY_LIMIT = "1000"
+
 [[routes]]
 pattern = "lyrics.txw.qzz.io"
 custom_domain = true

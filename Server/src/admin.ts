@@ -15,7 +15,6 @@ export const adminHtml = `<!doctype html>
 <label data-report>处理状态<select name="status"><option value="">全部</option><option value="pending">待处理</option><option value="in_progress">处理中</option><option value="resolved">已解决</option><option value="ignored">已忽略</option></select></label>
 <label data-request hidden>请求结果<select name="outcome"><option value="">全部</option><option value="success">成功</option><option value="none">无歌词</option><option value="failed">失败</option><option value="cancelled">取消</option></select></label>
 <label>开始时间<input name="from" type="datetime-local"></label><label>结束时间<input name="to" type="datetime-local"></label><button class="primary">查询</button><button type="reset">重置</button></form>
-<p class="muted" data-request hidden>请求日志按配置抽样保存，并设有每日上限。未查到日志的请求仍可能已正常取得歌词。</p>
 <div class="table-wrap"><table><thead><tr><th>时间</th><th>歌曲 / 歌手</th><th>Spotify ID</th><th>来源</th><th>类型 / 结果</th><th>状态</th><th>详情</th></tr></thead><tbody id="rows"></tbody></table></div><button id="next" hidden>下一页</button></section>
 <dialog id="detail"><header><h2 id="detailTitle">详情</h2><div><button id="export">导出 JSON</button> <button id="close">关闭</button></div></header><div id="metadata"></div>
 <details open><summary>来源与关联诊断</summary><pre id="diagnostics"></pre></details><details id="snapshots"><summary>原始歌词 / 显示歌词快照</summary><pre id="original"></pre><pre id="displayed"></pre></details><details id="historySection"><summary>处理历史</summary><pre id="history"></pre></details>

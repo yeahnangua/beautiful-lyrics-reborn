@@ -1269,7 +1269,7 @@ body:has(.BeautifulLyricsPage.Fullscreen) {
 }
 
 // External Container View Support
-.Root__main-view, div.os-host {
+:is(#main-view, .Root__main-view), div.os-host {
 	&:has(.BeautifulLyricsPage) {
 		container-type: size;
 

@@ -77,7 +77,7 @@ body:has(.SliderBar.Active) {
 // Improves scroll-bar
 .os-host:has(.BeautifulLyricsBackground),
 #lyrics-cinema,
-.Root__main-view:has(.BeautifulLyricsBackground) {
+:is(#main-view, .Root__main-view):has(.BeautifulLyricsBackground) {
 	.os-scrollbar {
 		padding: 5px;
 

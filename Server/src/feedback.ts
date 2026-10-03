@@ -217,7 +217,9 @@ export async function feedbackResponse(request: Request, env: FeedbackEnv): Prom
         db.prepare(`UPDATE lyric_reports SET diagnostics=(SELECT CASE WHEN json_type(data,'$.attempts')='array' THEN data
           ELSE json_set(data,'$.attempts',json(COALESCE(
           (SELECT json_group_array(json(data)) FROM (SELECT data FROM provider_attempts WHERE request_id=? ORDER BY ordinal)),'[]'))) END
-          FROM lyric_requests WHERE id=?) WHERE submission_id=? AND diagnostics IS NULL`).bind(payload.requestId, payload.requestId, payload.submissionId)
+          FROM lyric_requests WHERE id=?) WHERE submission_id=? AND diagnostics IS NULL
+          AND EXISTS(SELECT 1 FROM lyric_requests WHERE id=?)`)
+          .bind(payload.requestId, payload.requestId, payload.submissionId, payload.requestId)
       ]);
       const saved = await db.prepare("SELECT id FROM lyric_reports WHERE submission_id=?").bind(payload.submissionId).first<{ id: string }>();
       if (!saved) throw new Error("Missing committed report");
@@ -249,7 +251,7 @@ export async function feedbackResponse(request: Request, env: FeedbackEnv): Prom
       if (!id) return json(await list(db, url, reports));
       if (reports) return json(await reportDetail(db, id));
       const data = await loadDiagnostics(db, id);
-      if (!data) throw new HttpError(404, "Request log not sampled, unavailable or expired");
+      if (!data) throw new HttpError(404, "Request log unavailable or expired");
       return json(data);
     }
     if (reports && id && request.method === "PATCH") {

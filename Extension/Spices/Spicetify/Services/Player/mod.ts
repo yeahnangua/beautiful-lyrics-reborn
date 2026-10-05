@@ -23,6 +23,7 @@ import {
 	type ProviderLyrics, type TransformedLyrics
 } from "./LyricUtilities.ts"
 import { SimplifySearchText } from "./SearchText.ts"
+import { ShouldRefreshCachedLyrics } from "./LyricsPolicy.ts"
 
 // Re-export some useful types
 export type { TransformedLyrics }
@@ -515,11 +516,20 @@ const LoadSongLyrics = () => {
 		ProviderLyricsStore.GetItem(songAtUpdate.Id)
 		.catch(() => undefined)
 		.then(
-			providerLyrics => {
+			async providerLyrics => {
 				controller.signal.throwIfAborted()
 				if ((providerLyrics === undefined) || (providerLyrics === false)) {
 					return FetchProviderLyrics(1)
 				} else {
+					if (await ShouldRefreshCachedLyrics(songAtUpdate.Id, providerLyrics, controller.signal)) {
+						await Promise.all([
+							ProviderLyricsStore.DeleteItem(songAtUpdate.Id),
+							TransformedLyricsStore.DeleteItem(songAtUpdate.Id)
+						]).catch(() => console.warn("Could not remove blocked lyrics cache"))
+						controller.signal.throwIfAborted()
+						return FetchProviderLyrics(1)
+					}
+					controller.signal.throwIfAborted()
 					fromCache = true
 					return providerLyrics
 				}

@@ -5,6 +5,8 @@ import { feedbackResponse } from "../src/feedback";
 import { cleanupFeedback, saveDiagnostics, loadDiagnostics, hashLyrics } from "../src/diagnostics";
 import { createWorker, type WorkerEnv } from "../src/index";
 import type { RequestDiagnostics, BeautifulLyrics } from "../src/types";
+import { loadSourcePolicy } from "../src/source-policy";
+import type { LyricsService } from "../src/service";
 
 let mf: Miniflare;
 let db: D1Database;
@@ -53,7 +55,85 @@ beforeAll(async () => {
 afterAll(async () => { await mf?.dispose(); });
 beforeEach(async () => {
   env = { FEEDBACK_DB: db, ADMIN_PASSWORD: "test-password", ADMIN_SESSION_SECRET: "test-session-key-with-at-least-32-bytes" };
-  await db.batch(["lyric_reports", "lyric_requests", "rate_limits", "admin_sessions", "diagnostic_daily_budget"].map(table => db.prepare(`DELETE FROM ${table}`)));
+  await db.batch(["source_block_history", "source_blocks", "lyric_reports", "lyric_requests", "rate_limits", "admin_sessions", "diagnostic_daily_budget"].map(table => db.prepare(`DELETE FROM ${table}`)));
+});
+
+describe("source-block administration with real D1", () => {
+  const rule = { spotifyId: "1rutoX4kIkjtKW8OqBNYFP", provider: "qqmusic", lyricsType: "Syllable", enabled: true, reason: "时间不同步" };
+  it("atomically deduplicates concurrent PUTs, audits changes, and keeps feedback status independent", async () => {
+    const reportData = payload({ track: { id: rule.spotifyId, name: "Song", artists: ["Artist"] },
+      source: { Provider: rule.provider, Transport: "direct" }, original: { Type: "Syllable", StartTime: 0, EndTime: 1, Content: [] } });
+    const report = await (await call("/reports", "POST", reportData)).json() as { id: string };
+    const cookie = await login();
+    const input = { ...rule, reportId: report.id };
+    const responses = await Promise.all([call("/admin/api/source-blocks", "PUT", input, cookie), call("/admin/api/source-blocks", "PUT", input, cookie)]);
+    expect(responses.map(response => response.status)).toEqual([200, 200]);
+    const [a, b] = await Promise.all(responses.map(response => response.json() as Promise<any>));
+    expect(a.id).toBe(b.id);
+    const read = async () => (await call("/admin/api/source-blocks/" + a.id, "GET", undefined, cookie)).json() as Promise<any>;
+    expect((await read()).history).toHaveLength(1);
+    const updated = await (await call("/admin/api/source-blocks", "PUT", { ...rule, reason: "已确认时间轴错误" }, cookie)).json() as any;
+    expect(updated.id).toBe(a.id);expect(updated.reportId).toBe(report.id);expect(updated.history).toHaveLength(2);
+    const restored = await (await call("/admin/api/source-blocks", "PUT", { ...rule, enabled: false, reason: "已恢复" }, cookie)).json() as any;
+    expect(restored.history).toHaveLength(3);expect(restored.enabled).toBe(false);
+    expect(await loadSourcePolicy(db, rule.spotifyId)).toEqual([]);
+    expect((await (await call("/admin/api/reports/" + report.id, "GET", undefined, cookie)).json() as any).status).toBe("pending");
+    await db.prepare("UPDATE lyric_reports SET created_at=? WHERE id=?").bind("2020-01-01T00:00:00.000Z", report.id).run();
+    await cleanupFeedback(db);
+    expect((await read()).history).toHaveLength(3);
+    expect((await read()).reportId).toBe(report.id);
+    expect((await call("/admin/api/source-blocks", "PUT", { ...rule, reason: "再次屏蔽" }, cookie)).status).toBe(200);
+  });
+  it("requires a session and same-origin writes and validates rule fields and report association", async () => {
+    expect((await call("/admin/api/source-blocks")).status).toBe(401);
+    expect((await call("/admin/api/source-blocks", "PUT", rule)).status).toBe(401);
+    const cookie = await login();
+    const crossOrigin = new Request(base + "/admin/api/source-blocks", { method: "PUT", headers: { Cookie: cookie, Origin: "https://other.test", "Content-Type": "application/json" }, body: JSON.stringify(rule) });
+    expect((await feedbackResponse(crossOrigin, env))!.status).toBe(403);
+    for (const extra of [{ spotifyId: "bad/id" }, { spotifyId: "a".repeat(101) }, { provider: "unknown" }, { lyricsType: "word" }, { enabled: 1 }, { reason: "a".repeat(2001) }, { reportId: "bad" }]) {
+      expect((await call("/admin/api/source-blocks", "PUT", { ...rule, ...extra }, cookie)).status).toBe(400);
+    }
+    expect((await call("/admin/api/source-blocks", "PUT", { ...rule, reportId: crypto.randomUUID() }, cookie)).status).toBe(404);
+    const report = await (await call("/reports", "POST", payload())).json() as { id: string };
+    expect((await call("/admin/api/source-blocks", "PUT", { ...rule, reportId: report.id }, cookie)).status).toBe(400);
+    expect((await call("/admin/api/source-blocks", "DELETE", {}, cookie)).status).toBe(405);
+  });
+  it("paginates and filters rules by track, provider, type and enabled state", async () => {
+    const cookie = await login();
+    await db.batch(Array.from({ length: 53 }, (_, index) => db.prepare(`INSERT INTO source_blocks
+      (id,spotify_id,provider,lyrics_type,enabled,reason,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)`)
+      .bind(crypto.randomUUID(), "track" + index, "qqmusic", "Syllable", 1, "", "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z")));
+    await call("/admin/api/source-blocks", "PUT", { ...rule, enabled: false }, cookie);
+    const first = await (await call("/admin/api/source-blocks?source=qqmusic&lyricsType=Syllable&enabled=true", "GET", undefined, cookie)).json() as any;
+    expect(first.items).toHaveLength(50);expect(first.nextCursor).toBeTruthy();
+    const second = await (await call("/admin/api/source-blocks?enabled=true&cursor=" + encodeURIComponent(first.nextCursor), "GET", undefined, cookie)).json() as any;
+    expect(second.items).toHaveLength(3);expect(second.nextCursor).toBeNull();
+    expect(new Set([...first.items, ...second.items].map(item => item.id)).size).toBe(53);
+    const filtered = await (await call("/admin/api/source-blocks?spotifyId=" + rule.spotifyId + "&enabled=false", "GET", undefined, cookie)).json() as any;
+    expect(filtered.items).toHaveLength(1);expect(filtered.items[0]).toMatchObject({ ...rule, enabled: false });
+  });
+  it("serves only enabled policy pairs without private notes, applies them per track, and fails open for lyrics", async () => {
+    const cookie = await login();
+    await call("/admin/api/source-blocks", "PUT", rule, cookie);
+    await call("/admin/api/source-blocks", "PUT", { ...rule, lyricsType: "Line", enabled: false }, cookie);
+    const getLyrics = vi.fn<LyricsService["getLyrics"]>(async () => structuredClone(original));
+    const handler = createWorker({ getLyrics });
+    const fetch = (path: string) => handler.fetch!(new Request(base + path, { headers: { Authorization: "Bearer token" } }), env, {} as ExecutionContext) as Promise<Response>;
+    const response = await fetch("/lyrics-policy/" + rule.spotifyId);
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await response.json()).toEqual({ blocks: [{ provider: "qqmusic", lyricsType: "Syllable" }] });
+    expect((await fetch("/lyrics-policy/bad%2Fid")).status).toBe(400);
+    expect((await fetch("/lyrics/" + rule.spotifyId)).status).toBe(200);
+    expect(getLyrics.mock.calls[0]?.[4]).toMatchObject({ sourceBlocks: [{ provider: "qqmusic", lyricsType: "Syllable" }] });
+    expect((await fetch("/lyrics/otherTrack")).status).toBe(200);
+    expect(getLyrics.mock.calls[1]?.[4]).toMatchObject({ sourceBlocks: [] });
+    env.FEEDBACK_DB = { prepare: () => { throw Error("PRIVATE DATABASE ERROR"); } } as unknown as D1Database;
+    expect((await fetch("/lyrics-policy/" + rule.spotifyId)).status).toBe(503);
+    expect((await fetch("/lyrics/" + rule.spotifyId)).status).toBe(200);
+    expect(getLyrics.mock.calls[2]?.[4]).toMatchObject({ sourceBlocks: [], diagnostics: { sourcePolicyStatus: "unavailable" } });
+    env = {};
+    expect(await (await fetch("/lyrics-policy/" + rule.spotifyId)).json()).toEqual({ blocks: [] });
+  });
 });
 
 describe("feedback with real local D1", () => {

@@ -1,6 +1,7 @@
 import { adminHtml } from "./admin";
 import { loadDiagnostics, sha256 } from "./diagnostics";
 import type { BeautifulLyrics, LyricsSource, TrackMetadata } from "./types";
+import { listSourceBlocks, putSourceBlock, sourceBlockDetail, SourceBlockError } from "./source-blocks";
 
 export type FeedbackEnv = {
   FEEDBACK_DB?: D1Database;
@@ -243,6 +244,12 @@ export async function feedbackResponse(request: Request, env: FeedbackEnv): Prom
       await db.prepare("DELETE FROM admin_sessions WHERE id=?").bind(sessionId).run();
       return json({ ok: true }, 200, { "Set-Cookie": cookie("", 0) });
     }
+    const blockRoute = /^\/admin\/api\/source-blocks(?:\/([a-f0-9-]+))?$/.exec(url.pathname);
+    if (blockRoute) {
+      if (request.method === "GET") return json(blockRoute[1] ? await sourceBlockDetail(db, blockRoute[1]) : await listSourceBlocks(db, url));
+      if (request.method === "PUT" && !blockRoute[1]) return json(await putSourceBlock(db, await body(request, 16000)));
+      throw new HttpError(405, "Method not allowed");
+    }
     const match = /^\/admin\/api\/(reports|requests)(?:\/([a-f0-9-]+))?$/.exec(url.pathname);
     if (!match) throw new HttpError(404, "Not found");
     const reports = match[1] === "reports";
@@ -269,8 +276,9 @@ export async function feedbackResponse(request: Request, env: FeedbackEnv): Prom
     }
     throw new HttpError(405, "Method not allowed");
   } catch (error) {
-    const status = error instanceof HttpError ? error.status : 503;
-    return json({ error: error instanceof HttpError ? error.message : "Storage operation failed; retry later" }, status,
+    const knownError = error instanceof HttpError || error instanceof SourceBlockError;
+    const status = knownError ? error.status : 503;
+    return json({ error: knownError ? error.message : "Storage operation failed; retry later" }, status,
       { ...headers, ...(status === 429 ? { "Retry-After": "60" } : {}) });
   }
 }

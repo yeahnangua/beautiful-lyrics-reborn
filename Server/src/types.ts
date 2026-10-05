@@ -80,6 +80,7 @@ export type SpotifyClientContext = {
 };
 
 export type RequestContext = {
+  sourceBlocks?: readonly SourceBlock[];
   signal?: AbortSignal;
   deadline?: number;
   trace?: ProviderAttempt;
@@ -146,7 +147,8 @@ export type ProviderAttempt = {
   stage: "metadata" | "syllable" | "line" | "static";
   startedAt: string;
   durationMs: number;
-  outcome: "pending" | "success" | "none" | "failed" | "timeout" | "cancelled";
+  outcome: "pending" | "success" | "none" | "failed" | "timeout" | "cancelled" | "blocked";
+  blockAction?: "skipped" | "filtered";
   lyricsType?: BeautifulLyrics["Type"];
   source?: LyricsSource;
   error?: string;
@@ -163,4 +165,8 @@ export type RequestDiagnostics = {
   source?: LyricsSource;
   lyricsHash?: string;
   attempts: ProviderAttempt[];
+  sourceBlocks?: readonly SourceBlock[];
+  sourcePolicyStatus?: "applied" | "unavailable" | "unconfigured";
 };
+
+export type SourceBlock = { provider: string; lyricsType: BeautifulLyrics["Type"] };

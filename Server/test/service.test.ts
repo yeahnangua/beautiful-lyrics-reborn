@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import worker, { createWorker } from "../src/index";
 import { createLyricsService } from "../src/service";
 import { withMatchedTitle } from "../src/providers/matched-title";
-import type { ProviderClients } from "../src/types";
+import type { ProviderClients, RequestDiagnostics, SourceBlock } from "../src/types";
+import { sourceProviders, lyricsTypes } from "../src/source-policy";
 
 function createProviders(): ProviderClients {
   return {
@@ -58,6 +59,80 @@ function wordLyrics(text: string) {
     }]
   };
 }
+
+describe("per-type source blocks", () => {
+  const track = { id: "track", name: "Song", artists: ["Artist"] };
+  const line = { Type: "Line" as const, StartTime: 1, EndTime: 2, Content: [] };
+  const plain = { Type: "Static" as const, Lines: [{ Text: "fallback" }] };
+  const diagnostic = (): RequestDiagnostics => ({ id: crypto.randomUUID(), track, startedAt: new Date().toISOString(), durationMs: 0, outcome: "pending", attempts: [] });
+  it("skips blocked direct syllables, filters the proxy and retains same-platform lines", async () => {
+    const providers = createProviders();
+    vi.mocked(providers.lyrically.getNeteaseLyrics).mockImplementation(async (_track, word) => word ? wordLyrics("blocked") : line);
+    const diagnostics = diagnostic();
+    const sourceBlocks: SourceBlock[] = [{ provider: "netease", lyricsType: "Syllable" }];
+    const result = await createLyricsService(providers).getLyrics("track", "token", track, undefined, { sourceBlocks, diagnostics });
+    expect(result).toMatchObject({ Type: "Line", Source: { Provider: "netease", Transport: "lyrically" } });
+    expect(providers.netease.getSyllableLyrics).not.toHaveBeenCalled();
+    expect(diagnostics.attempts).toContainEqual(expect.objectContaining({ provider: "netease direct", outcome: "blocked", blockAction: "skipped", upstream: [] }));
+    expect(diagnostics.attempts).toContainEqual(expect.objectContaining({ provider: "netease", stage: "syllable", outcome: "blocked", blockAction: "filtered", lyricsType: "Syllable" }));
+  });
+  it("checks returned types rather than the stage and retains line results from the syllable race", async () => {
+    const providers = createProviders();
+    vi.mocked(providers.lyrically.getAppleMusicLyrics).mockResolvedValue(line);
+    const result = await createLyricsService(providers).getLyrics("track", "token", track, undefined,
+      { sourceBlocks: [{ provider: "applemusic", lyricsType: "Syllable" }] });
+    expect(result).toMatchObject({ Type: "Line", Source: { Provider: "applemusic" } });
+  });
+  it("filters line results received during a syllable attempt before any fallback can reuse them", async () => {
+    const providers = createProviders();
+    vi.mocked(providers.lyrically.getAppleMusicLyrics).mockResolvedValue(line);
+    vi.mocked(providers.lyrically.getGeniusLyrics).mockResolvedValue(plain);
+    const result = await createLyricsService(providers).getLyrics("track", "token", track, undefined,
+      { sourceBlocks: [{ provider: "applemusic", lyricsType: "Line" }] });
+    expect(result).toMatchObject({ Type: "Static", Source: { Provider: "genius" } });
+  });
+  it("blocks Spotify lyrics on both paths while still requesting Spotify metadata", async () => {
+    const providers = createProviders();
+    vi.mocked(providers.spotify.getTrackMetadata).mockResolvedValue(track);
+    vi.mocked(providers.spotify.getLyrics).mockResolvedValue(line);
+    vi.mocked(providers.lyrically.getLyrics).mockResolvedValue(line);
+    vi.mocked(providers.lrclib.getLyrics).mockResolvedValue({ ...line, Source: { Provider: "lrclib", Transport: "direct" } });
+    const result = await createLyricsService(providers).getLyrics("track", "token", undefined, undefined,
+      { sourceBlocks: [{ provider: "spotify", lyricsType: "Line" }] });
+    expect(providers.spotify.getTrackMetadata).toHaveBeenCalled();
+    expect(result?.Source?.Provider).toBe("lrclib");
+  });
+  it("does not reuse blocked static results, and preserves unblocked static results", async () => {
+    const providers = createProviders();
+    vi.mocked(providers.lyrically.getDeezerLyrics).mockResolvedValue(plain);
+    vi.mocked(providers.lyrically.getLyrics).mockResolvedValue(plain);
+    const result = await createLyricsService(providers).getLyrics("track", "token", track, undefined,
+      { sourceBlocks: [{ provider: "spotify", lyricsType: "Static" }] });
+    expect(result).toMatchObject({ Type: "Static", Source: { Provider: "deezer" } });
+  });
+  it("returns no lyrics when every available result is blocked", async () => {
+    const providers = createProviders();
+    vi.mocked(providers.qqmusic.getSyllableLyrics).mockResolvedValue(wordLyrics("blocked"));
+    vi.mocked(providers.lyrically.getAppleMusicLyrics).mockResolvedValue(wordLyrics("blocked"));
+    vi.mocked(providers.spotify.getLyrics).mockResolvedValue(line);
+    vi.mocked(providers.lyrically.getGeniusLyrics).mockResolvedValue(plain);
+    const sourceBlocks = sourceProviders.flatMap(provider => lyricsTypes.map(lyricsType => ({ provider, lyricsType })));
+    expect(await createLyricsService(providers).getLyrics("track", "token", track, undefined, { sourceBlocks })).toBeUndefined();
+    expect(providers.lyrically.getGeniusLyrics).not.toHaveBeenCalled();
+  });
+  it("preserves the delayed Musixmatch fallback after preferred sources are blocked", async () => {
+    vi.useFakeTimers();
+    try {
+      const providers = createProviders();
+      vi.mocked(providers.musixmatch.getSyllableLyrics).mockResolvedValue(wordLyrics("fallback"));
+      const pending = createLyricsService(providers).getLyrics("track", "token", track, undefined,
+        { sourceBlocks: [{ provider: "qqmusic", lyricsType: "Syllable" }] });
+      let settled = false;void pending.then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(4999);expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);expect((await pending)?.Source?.Provider).toBe("musixmatch");
+    } finally { vi.useRealTimers(); }
+  });
+});
 
 describe("lyrics service", () => {
   it.each(["Song (Live)", "Song 演唱會", "Song 现场版"])(

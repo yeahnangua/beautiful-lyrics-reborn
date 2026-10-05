@@ -1,6 +1,7 @@
 import { decodeEntitiesDeep } from "./convert/entities";
 import { matchedTitle } from "./providers/matched-title";
 import { abortable, requestScope } from "./providers/request";
+import { candidateSource, isSourceBlocked, providerName } from "./source-policy";
 import type { BeautifulLyrics, ProviderClients, RequestContext, SpotifyClientContext, TrackMetadata, ProviderAttempt, LyricsSource } from "./types";
 
 function isLiveTitle(title: string): boolean {
@@ -20,16 +21,13 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
       const available = new Map<string, BeautifulLyrics>();
       let metadata = suppliedTrackMetadata;
       let stage: ProviderAttempt["stage"] = "syllable";
+      const blocks = context.sourceBlocks ?? [];
       const finish = (result: Candidate | undefined) => {
         if (!result || context.signal?.aborted) return undefined;
         console.log(`[lyrics] ${trackId}: using ${result[0]} ${result[1].Type}`);
         const lyrics = decodeEntitiesDeep(result[1]);
-        const providerNames: Record<string, string> = { "qq music": "qqmusic", "apple music": "applemusic", "spotify proxy": "spotify" };
-        const source: LyricsSource = lyrics.Source ?? {
-          Provider: providerNames[result[0]] ?? result[0].replace(" direct", ""),
-          Transport: ["apple music", "kugou", "netease", "deezer", "spotify proxy", "youtube", "genius"].includes(result[0]) ? "lyrically" : "direct",
-          ...(matchedTitle(result[1]) ? { MatchedTitle: matchedTitle(result[1])! } : {})
-        };
+        const source: LyricsSource = candidateSource(result[0], lyrics);
+        if (!source.MatchedTitle && matchedTitle(result[1])) source.MatchedTitle = matchedTitle(result[1])!;
         lyrics.Source = source;
         if (context.diagnostics) {
           context.diagnostics.source = source;
@@ -44,13 +42,27 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
           durationMs: 0, outcome: "pending", retries: 0, upstream: [] };
         context.diagnostics?.attempts.push(attempt);
         try {
+          // These paths can only return one type. Mixed-type paths must still run.
+          const onlyType = ["qq music", "kugou direct", "netease direct", "musixmatch direct"].includes(name)
+            ? "Syllable" : name === "genius" ? "Static" : undefined;
+          if (onlyType && isSourceBlocked(blocks, providerName(name), onlyType)) {
+            attempt.outcome = "blocked";
+            attempt.blockAction = "skipped";
+            attempt.lyricsType = onlyType;
+            throw new Error("Source blocked");
+          }
           const lyrics = await abortable(() => request({ ...scope, trace: attempt }), scope.signal!);
           scope.signal?.throwIfAborted();
           attempt.outcome = lyrics ? "success" : attempt.upstream.some(event => event.outcome === "timeout") ? "timeout"
             : attempt.upstream.some(event => event.outcome === "failed") ? "failed" : "none";
           if (!lyrics) throw new Error("No usable lyrics");
           attempt.lyricsType = lyrics.Type;
-          if (lyrics.Source) attempt.source = lyrics.Source;
+          attempt.source = candidateSource(name, lyrics);
+          if (isSourceBlocked(blocks, attempt.source.Provider, lyrics.Type)) {
+            attempt.outcome = "blocked";
+            attempt.blockAction = "filtered";
+            throw new Error("Source blocked");
+          }
           available.set(name, lyrics);
           return [name, lyrics];
         } catch (error) {

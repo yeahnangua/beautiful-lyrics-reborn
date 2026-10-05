@@ -13,6 +13,7 @@ import { spotifyProvider } from "./providers/spotify";
 import { createLyricsService, type LyricsService } from "./service";
 import type { BeautifulLyrics, SpotifyClientContext, TrackMetadata } from "./types";
 import { dashboardHtml } from "./dashboard";
+import { loadSourcePolicy, validSpotifyId } from "./source-policy";
 
 const defaultService = createLyricsService({
   // amlldb: amllDbProvider,
@@ -202,6 +203,23 @@ export function createWorker(service: LyricsService): ExportedHandler<WorkerEnv>
 
       const url = new URL(request.url);
 
+      const policyRoute = /^\/lyrics-policy\/([^/]+)$/.exec(url.pathname);
+      if (request.method === "GET" && policyRoute) {
+        const headers = { ...corsHeaders, "Cache-Control": "no-store" };
+        let spotifyId: string;
+        try { spotifyId = decodeURIComponent(policyRoute[1]!); }
+        catch { return new Response("Invalid track ID", { status: 400, headers }); }
+        if (!validSpotifyId(spotifyId)) return new Response("Invalid track ID", { status: 400, headers });
+        try {
+          const response = jsonResponse({ blocks: await loadSourcePolicy(env.FEEDBACK_DB, spotifyId) });
+          response.headers.set("Cache-Control", "no-store");
+          return response;
+        } catch {
+          console.warn("Lyrics source policy read failed");
+          return new Response("Source policy unavailable", { status: 503, headers });
+        }
+      }
+
       if (request.method === "GET" && url.pathname.startsWith("/extension/")) {
         return extensionReleaseResponse(request, env.RELEASE_ASSETS);
       }
@@ -255,8 +273,17 @@ export function createWorker(service: LyricsService): ExportedHandler<WorkerEnv>
       let lyrics: BeautifulLyrics | undefined;
       let failed = false;
       try {
+        let sourceBlocks: Awaited<ReturnType<typeof loadSourcePolicy>> = [];
+        try {
+          sourceBlocks = await loadSourcePolicy(env.FEEDBACK_DB, trackId);
+          diagnostics.sourcePolicyStatus = env.FEEDBACK_DB ? "applied" : "unconfigured";
+        } catch {
+          diagnostics.sourcePolicyStatus = "unavailable";
+          console.warn("Lyrics source policy read failed");
+        }
+        diagnostics.sourceBlocks = sourceBlocks;
         lyrics = await service.getLyrics(trackId, accessToken, metadata, extractSpotifyClientContext(request),
-          { signal: request.signal, diagnostics });
+          { signal: request.signal, diagnostics, sourceBlocks });
         diagnostics.outcome = request.signal.aborted ? "cancelled" : lyrics ? "success" : "none";
         if (lyrics) {
           // Metadata never participates in the content fingerprint.

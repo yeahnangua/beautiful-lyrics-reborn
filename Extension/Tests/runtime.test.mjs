@@ -184,7 +184,7 @@ test('actual lyric loader regenerates mismatched transformed caches and never pu
   const state=evaluate('let Song=initialSong,SongLyrics,SongProviderLyrics,SongLyricsFromCache=false,HaveSongLyricsLoaded=false,lyricsController;'+loader,
    {initialSong:{Type:'Streamed',Id:'songA'},ProviderLyricsStore:{GetItem:()=>providerPromise},TransformedLyricsStore:{GetItem:async()=>wrong,SetItem:async()=>{}},
     BuildLyricsRequestURL:()=> 'https://example.test/lyrics/songA',TransformProviderLyrics:async value=>{transforms++;return {...structuredClone(value),Language:'eng'}},SongLyricsLoadedSignal:{Fire:()=>ready.resolve()},
-    GetSpotifyAccessToken:()=>{throw Error('cache must not fetch')},ResolveAppleMusicId:()=>{},Abortable,CreateAbortScope,LyricsCacheExpiration:()=>{},Delay:()=>{}},
+    GetSpotifyAccessToken:()=>{throw Error('cache must not fetch')},ResolveAppleMusicId:()=>{},ShouldRefreshCachedLyrics:async()=>false,Abortable,CreateAbortScope,LyricsCacheExpiration:()=>{},Delay:()=>{}},
    '({load:LoadSongLyrics,state:()=>({SongLyrics,SongProviderLyrics,SongLyricsFromCache,HaveSongLyricsLoaded}),switch:()=>{Song={Type:"Streamed",Id:"songB"}}})');
   return {...state,ready:ready.promise};
  }
@@ -192,4 +192,65 @@ test('actual lyric loader regenerates mismatched transformed caches and never pu
  assert.equal(transforms,1);assert.equal(loaded.state().SongLyrics.RequestId,'A');assert.equal(loaded.state().SongLyrics.Lines[0].Text,'correct');assert.deepEqual(loaded.state().SongProviderLyrics,raw);assert.equal(loaded.state().SongLyricsFromCache,true);
  const pending=deferred(),stale=setup(pending.promise);stale.load();stale.switch();pending.resolve(raw);await new Promise(resolve=>setImmediate(resolve));
  assert.equal(stale.state().SongLyrics,undefined);assert.equal(stale.state().SongProviderLyrics,undefined);
+});
+
+test('source policy matches platform and actual type across transports and refreshes unknown provenance',async()=>{
+ const code=await read('../Spices/Spicetify/Services/Player/LyricsPolicy.ts');
+ const {IsCachedLyricsBlocked:blocked}=evaluate(code,{Abortable,CreateAbortScope},'({IsCachedLyricsBlocked})');
+ for(const Type of ['Syllable','Line','Static'])for(const Transport of ['direct','lyrically']){
+  const raw={Type,Source:{Provider:'netease',Transport}},rules=[{provider:'netease',lyricsType:Type}];
+  assert.equal(blocked(raw,rules),true);assert.equal(blocked(raw,[{provider:'qqmusic',lyricsType:Type}]),false);
+  assert.equal(blocked(raw,[{provider:'netease',lyricsType:Type==='Line'?'Syllable':'Line'}]),false);
+  assert.equal(blocked({Type},rules),true);assert.equal(blocked({Type},[]),false);
+ }
+});
+
+test('actual policy query handles errors, validates payloads, and bounds stalled bodies to two seconds',async()=>{
+ const code=await read('../Spices/Spicetify/Services/Player/LyricsPolicy.ts');
+ const raw={Type:'Syllable',Source:{Provider:'qqmusic',Transport:'direct'}};
+ const query=fetch=>evaluate(code,{fetch,Abortable,CreateAbortScope},'ShouldRefreshCachedLyrics');
+ const parent=new AbortController();
+ let requests=0;
+ const good=query(async(url,options)=>{requests++;assert.equal(url,'https://lyrics.txw.qzz.io/lyrics-policy/songA');assert.equal(options.cache,'no-store');assert.equal(options.headers,undefined);return Response.json({blocks:[{provider:'qqmusic',lyricsType:'Syllable'}]})});
+ assert.equal(await good('songA',raw,parent.signal),true);assert.equal(requests,1);
+ for(const fetch of [async()=>{throw Error('offline')},async()=>new Response('',{status:503}),async()=>new Response('',{status:404}),async()=>Response.json({}),async()=>Response.json({blocks:[{provider:'qqmusic',lyricsType:'bad'}]})]){
+  assert.equal(await query(fetch)('songA',raw,parent.signal),false);
+ }
+ const start=performance.now();let signal;
+ assert.equal(await query(async(_url,options)=>{signal=options.signal;return {ok:true,json:()=>new Promise(()=>{})}})('songA',raw,parent.signal),false);
+ assert.equal(signal.aborted,true);assert.ok(performance.now()-start>=1900);assert.ok(performance.now()-start<3500);
+ const cancelled=new AbortController();const pending=query(()=>new Promise(()=>{}))('songA',raw,cancelled.signal);cancelled.abort();await assert.rejects(pending,{name:'AbortError'});
+});
+
+test('actual loader removes only blocked track caches, retains unaffected/restored caches, and ignores late policy replies',async()=>{
+ const code=await read('../Spices/Spicetify/Services/Player/mod.ts');
+ const loader=code.slice(code.indexOf('const LoadSongLyrics = () =>'),code.indexOf('export const RetrySongLyricsIfMissing'));
+ const policyCode=await read('../Spices/Spicetify/Services/Player/LyricsPolicy.ts');
+ const raw={Type:'Syllable',StartTime:0,EndTime:1,Content:[],Source:{Provider:'qqmusic',Transport:'direct'},RequestId:'old',LyricsHash:'oldhash'};
+ const fresh={Type:'Line',StartTime:0,EndTime:1,Content:[],Source:{Provider:'netease',Transport:'lyrically'},RequestId:'new',LyricsHash:'newhash'};
+ function setup(blocks){
+  const ready=deferred(),deleted=[],requests=[],cached=[],transforms=[];
+  const fetch=async(url,options)=>{
+   requests.push(url);
+   if(url.includes('/lyrics-policy/'))return {ok:true,json:async()=>({blocks:await blocks})};
+   assert.equal(options.headers.Authorization,'Bearer token');return Response.json(fresh);
+  };
+  const shouldRefresh=evaluate(policyCode,{fetch,Abortable,CreateAbortScope},'ShouldRefreshCachedLyrics');
+  const state=evaluate('let Song=initialSong,SongLyrics,SongProviderLyrics,SongLyricsFromCache=false,HaveSongLyricsLoaded=false,lyricsController;'+loader,
+   {initialSong:{Type:'Streamed',Id:'songA'},ShouldRefreshCachedLyrics:shouldRefresh,fetch,
+    ProviderLyricsStore:{GetItem:async()=>structuredClone(raw),DeleteItem:async id=>{deleted.push('raw:'+id)},SetItem:async(id,value)=>{cached.push(value)}},
+    TransformedLyricsStore:{GetItem:async()=>({...raw,Language:'eng'}),DeleteItem:async id=>{deleted.push('transformed:'+id)},SetItem:async()=>{}},
+    BuildLyricsRequestURL:()=> 'https://lyrics.txw.qzz.io/lyrics/songA',TransformProviderLyrics:async value=>{transforms.push(value);return {...structuredClone(value),Language:'eng'}},SongLyricsLoadedSignal:{Fire:()=>ready.resolve()},
+    SpotifyPlatform:{PlatformData:{app_platform:'Win32_x86_64'},version:'test'},GetSpotifyAccessToken:async()=> 'token',ResolveAppleMusicId:async()=>undefined,
+    Abortable,CreateAbortScope,LyricsCacheExpiration:()=>{},Delay:async()=>{}},
+   '({load:LoadSongLyrics,state:()=>({SongLyrics,SongProviderLyrics,SongLyricsFromCache}),switch:()=>{Song={Type:"Local",Id:"songB"};LoadSongLyrics()}})');
+  return {...state,ready:ready.promise,deleted,requests,cached,transforms};
+ }
+ const blocked=setup([{provider:'qqmusic',lyricsType:'Syllable'}]);blocked.load();await blocked.ready;
+ assert.deepEqual(blocked.deleted,['raw:songA','transformed:songA']);assert.equal(blocked.state().SongLyricsFromCache,false);assert.equal(blocked.state().SongLyrics.RequestId,'new');assert.deepEqual(blocked.cached,[fresh]);assert.equal(blocked.transforms.length,1);
+ for(const rules of [[],[{provider:'qqmusic',lyricsType:'Line'}],[{provider:'netease',lyricsType:'Syllable'}]]){
+  const retained=setup(rules);retained.load();await retained.ready;assert.deepEqual(retained.deleted,[]);assert.equal(retained.requests.length,1);assert.equal(retained.transforms.length,0);assert.equal(retained.state().SongLyricsFromCache,true);
+ }
+ const late=deferred(),stale=setup(late.promise);stale.load();await new Promise(resolve=>setImmediate(resolve));stale.switch();late.resolve([{provider:'qqmusic',lyricsType:'Syllable'}]);await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(stale.state().SongProviderLyrics,undefined);assert.deepEqual(stale.deleted,[]);
 });

@@ -2,11 +2,13 @@ export const adminHtml = `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>歌词反馈与诊断</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#101416;color:#e7eeeb;font:15px/1.6 system-ui,sans-serif}main{max-width:1280px;margin:auto;padding:28px}h1{font-size:26px;margin:0}header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:24px}button,input,select,textarea{font:inherit;color:inherit;background:#202a27;border:1px solid #41534b;border-radius:8px;padding:9px 12px}button{cursor:pointer}button:hover{border-color:#75caa1}button:disabled{opacity:.5;cursor:default}button.primary{background:#75caa1;color:#10271b;font-weight:650}form{display:flex;flex-wrap:wrap;align-items:end;gap:12px}label{display:grid;gap:4px;font-size:13px;color:#b3c7bd}input,select{max-width:100%;min-width:140px}textarea{width:100%;min-height:90px}#login{max-width:400px;padding:24px;border:1px solid #35463d;border-radius:14px}#login label,#login input{width:100%}.muted{color:#a4b5ac}nav{display:flex;gap:8px;margin-bottom:20px}#filters{padding:18px;background:#18201d;border-radius:12px;margin-bottom:20px}#message{min-height:26px;color:#ffcc9a;overflow-wrap:anywhere}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;text-align:left}th,td{border-bottom:1px solid #2c3c34;padding:12px;vertical-align:top}th{color:#a4b5ac;font-size:12px}td button{padding:4px 10px}#next{margin-top:16px}dialog{width:min(960px,calc(100% - 24px));max-height:90vh;background:#141d18;color:inherit;border:1px solid #41534b;border-radius:16px;padding:24px}dialog::backdrop{background:#000a}dialog header{position:sticky;top:-24px;background:#141d18;padding:12px 0;z-index:1}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0b120e;border-radius:8px;padding:16px;max-height:50vh;overflow:auto;font-size:12px}details{margin:16px 0}summary{cursor:pointer;font-weight:600}#metadata p{margin:6px 0;overflow-wrap:anywhere}#edit{border-top:1px solid #35463d;padding-top:16px}#edit label:last-of-type{flex:1;min-width:200px}[hidden]{display:none!important}@media(max-width:600px){main{padding:16px}h1{font-size:20px}#filters label{width:100%}#filters input,#filters select{width:100%}header{align-items:start}dialog{padding:16px}dialog header{top:-16px}th,td{padding:8px}}
+#blockEdit label:first-child{flex:1;min-width:260px}#blockSpotifyId{width:100%}@media(max-width:600px){#blockEdit label,#blockFilters label{width:100%;min-width:0}#blockEdit input,#blockEdit select,#blockFilters input,#blockFilters select{width:100%}}
 </style></head><body><main>
 <header><div><h1>歌词反馈与诊断</h1><div class="muted">查看用户反馈，追踪歌词来源与请求过程</div></div><button id="logout" hidden>退出</button></header>
 <p id="message" role="status" aria-live="polite"></p>
 <form id="login"><label>管理密码<input id="password" type="password" autocomplete="current-password" required maxlength="1024"></label><button class="primary">登录</button></form>
-<section id="workspace" hidden><nav><button id="reports" class="primary">反馈</button><button id="requests">请求日志</button></nav>
+<section id="workspace" hidden><nav><button id="reports" class="primary">反馈</button><button id="requests">请求日志</button><button id="source-blocks">来源屏蔽</button></nav>
+<div id="records">
 <form id="filters">
 <label>歌曲 / 歌手<input name="q" placeholder="搜索歌曲或歌手"></label><label>Spotify ID<input name="spotifyId"></label>
 <label>来源<select name="source"><option value="">全部</option><option>qqmusic</option><option>kugou</option><option>netease</option><option>musixmatch</option><option>applemusic</option><option>spotify</option><option>deezer</option><option>youtube</option><option>genius</option><option>lrclib</option><option>unknown</option></select></label>
@@ -15,28 +17,92 @@ export const adminHtml = `<!doctype html>
 <label data-report>处理状态<select name="status"><option value="">全部</option><option value="pending">待处理</option><option value="in_progress">处理中</option><option value="resolved">已解决</option><option value="ignored">已忽略</option></select></label>
 <label data-request hidden>请求结果<select name="outcome"><option value="">全部</option><option value="success">成功</option><option value="none">无歌词</option><option value="failed">失败</option><option value="cancelled">取消</option></select></label>
 <label>开始时间<input name="from" type="datetime-local"></label><label>结束时间<input name="to" type="datetime-local"></label><button class="primary">查询</button><button type="reset">重置</button></form>
-<div class="table-wrap"><table><thead><tr><th>时间</th><th>歌曲 / 歌手</th><th>Spotify ID</th><th>来源</th><th>类型 / 结果</th><th>状态</th><th>详情</th></tr></thead><tbody id="rows"></tbody></table></div><button id="next" hidden>下一页</button></section>
+<div class="table-wrap"><table><thead><tr><th>时间</th><th>歌曲 / 歌手</th><th>Spotify ID</th><th>来源</th><th>类型 / 结果</th><th>状态</th><th>详情</th></tr></thead><tbody id="rows"></tbody></table></div><button id="next" hidden>下一页</button></div>
+<section id="blocksWorkspace" hidden>
+<p class="muted">规则覆盖同平台的直连和代理，仅屏蔽指定歌词类型。恢复来源后，用户现有歌词缓存等待正常过期。</p>
+<form id="blockFilters"><label>Spotify ID<input name="spotifyId" maxlength="100"></label><label>来源<select name="source" id="blockSourceFilter"></select></label><label>歌词类型<select name="lyricsType"><option value="">全部</option><option value="Syllable">逐字</option><option value="Line">逐行</option><option value="Static">纯文本</option></select></label><label>状态<select name="enabled"><option value="true">屏蔽中</option><option value="false">已恢复</option><option value="">全部</option></select></label><button class="primary">查询</button><button type="reset">重置</button><button type="button" id="newBlock">添加规则</button></form>
+<div class="table-wrap"><table><thead><tr><th>更新时间</th><th>Spotify ID</th><th>来源</th><th>歌词类型</th><th>状态</th><th>原因</th><th>操作</th></tr></thead><tbody id="blockRows"></tbody></table></div><button id="blockNext" hidden>下一页</button></section></section>
 <dialog id="detail"><header><h2 id="detailTitle">详情</h2><div><button id="export">导出 JSON</button> <button id="close">关闭</button></div></header><div id="metadata"></div>
 <details open><summary>来源与关联诊断</summary><pre id="diagnostics"></pre></details><details id="snapshots"><summary>原始歌词 / 显示歌词快照</summary><pre id="original"></pre><pre id="displayed"></pre></details><details id="historySection"><summary>处理历史</summary><pre id="history"></pre></details>
-<form id="edit"><label>处理状态<select id="editStatus"><option value="pending">待处理</option><option value="in_progress">处理中</option><option value="resolved">已解决</option><option value="ignored">已忽略</option></select></label><label>内部备注<textarea id="note" maxlength="2000" placeholder="记录本次处理结果"></textarea></label><button class="primary">保存</button><p id="editMessage" role="status"></p></form></dialog>
+<form id="edit"><label>处理状态<select id="editStatus"><option value="pending">待处理</option><option value="in_progress">处理中</option><option value="resolved">已解决</option><option value="ignored">已忽略</option></select></label><label>内部备注<textarea id="note" maxlength="2000" placeholder="记录本次处理结果"></textarea></label><button class="primary">保存</button><p id="editMessage" role="status"></p></form><p id="blockShortcut"><button id="blockFromReport">屏蔽此来源的此类歌词</button> <span id="blockScope" class="muted"></span></p></dialog>
+<dialog id="blockDetail"><header><h2>来源屏蔽规则</h2><button id="blockClose">关闭</button></header><p class="muted">仅影响下面这首歌曲、这个平台和这种歌词类型，覆盖直连与代理。用户下次加载歌曲时检查规则。</p>
+<form id="blockEdit"><label>Spotify ID<input id="blockSpotifyId" required maxlength="100" pattern="[a-zA-Z0-9]+"></label><label>来源<select id="blockProvider" required></select></label><label>歌词类型<select id="blockType"><option value="Syllable">逐字</option><option value="Line">逐行</option><option value="Static">纯文本</option></select></label><label>状态<select id="blockEnabled"><option value="true">屏蔽中</option><option value="false">恢复来源</option></select></label><label style="width:100%">原因<textarea id="blockReason" maxlength="2000" placeholder="例如：逐字时间轴不同步"></textarea></label><button class="primary" id="blockSave">保存规则</button><p id="blockEditMessage" role="status"></p></form><details><summary>操作历史</summary><pre id="blockHistory"></pre></details></dialog>
 </main><script>
 const $=id=>document.getElementById(id);let view='reports',cursor=null,current=null,revision=0,detailRevision=0;
 const statusNames={pending:'待处理',in_progress:'处理中',resolved:'已解决',ignored:'已忽略'};
 const categoryNames={lyrics:'歌词错误',timing:'时间不同步',version:'版本错配',display:'显示问题',other:'其他'};
+const typeNames={Syllable:'逐字',Line:'逐行',Static:'纯文本'};
+const providers=['qqmusic','kugou','netease','musixmatch','applemusic','spotify','deezer','youtube','genius','lrclib'];
+let blockCurrent=null,blockCursor=null,blockRevision=0;
+for(const [id,all] of [['blockSourceFilter',true],['blockProvider',false]]){
+  if(all){const option=document.createElement('option');option.value='';option.textContent='全部';$(id).append(option)}
+  for(const provider of providers){const option=document.createElement('option');option.value=option.textContent=provider;$(id).append(option)}
+}
 function message(value){$('message').textContent=value}
 function signedIn(value){$('workspace').hidden=!value;$('logout').hidden=!value;$('login').hidden=value}
-async function api(path,options={}){const response=await fetch('/admin/api/'+path,{...options,headers:{'Content-Type':'application/json',...options.headers}});const data=await response.json();if(!response.ok){if(response.status===401){signedIn(false);$('detail').close()}throw Error(data.error||'请求失败')}return data}
+async function api(path,options={}){const response=await fetch('/admin/api/'+path,{...options,headers:{'Content-Type':'application/json',...options.headers}});const data=await response.json();if(!response.ok){if(response.status===401){signedIn(false);$('detail').close();$('blockDetail').close()}throw Error(data.error||'请求失败')}return data}
 function run(operation){return Promise.resolve().then(operation).catch(error=>message(error.message))}
 function cell(row,value){const td=document.createElement('td');td.textContent=value??'';row.append(td);return td}
-async function load(append=false){const ticket=++revision;message('正在加载…');$('next').disabled=true;const params=new URLSearchParams();for(const [key,value] of new FormData($('filters'))){if(value&&!(view==='requests'&&['category','status'].includes(key))&&!(view==='reports'&&key==='outcome'))params.set(key,['from','to'].includes(key)?new Date(value).toISOString():value)}if(append&&cursor)params.set('cursor',cursor);const data=await api(view+'?'+params);if(ticket!==revision)return;signedIn(true);if(!append)$('rows').replaceChildren();for(const item of data.items){const row=document.createElement('tr');cell(row,new Date(item.created_at).toLocaleString());cell(row,item.song+' / '+item.artists);cell(row,item.spotify_id);cell(row,item.provider);cell(row,categoryNames[item.category]||item.outcome);cell(row,statusNames[item.status]||'—');const button=document.createElement('button');button.textContent='查看';button.onclick=()=>run(()=>openDetail(item.id));cell(row,'').append(button);$('rows').append(row)}cursor=data.nextCursor;$('next').hidden=!cursor;$('next').disabled=false;message(data.items.length?'':'没有符合条件的记录。')}
+async function load(append=false){if(view==='source-blocks')return loadBlocks(append);const ticket=++revision;message('正在加载…');$('next').disabled=true;const params=new URLSearchParams();for(const [key,value] of new FormData($('filters'))){if(value&&!(view==='requests'&&['category','status'].includes(key))&&!(view==='reports'&&key==='outcome'))params.set(key,['from','to'].includes(key)?new Date(value).toISOString():value)}if(append&&cursor)params.set('cursor',cursor);const data=await api(view+'?'+params);if(ticket!==revision)return;signedIn(true);if(!append)$('rows').replaceChildren();for(const item of data.items){const row=document.createElement('tr');cell(row,new Date(item.created_at).toLocaleString());cell(row,item.song+' / '+item.artists);cell(row,item.spotify_id);cell(row,item.provider);cell(row,categoryNames[item.category]||item.outcome);cell(row,statusNames[item.status]||'—');const button=document.createElement('button');button.textContent='查看';button.onclick=()=>run(()=>openDetail(item.id));cell(row,'').append(button);$('rows').append(row)}cursor=data.nextCursor;$('next').hidden=!cursor;$('next').disabled=false;message(data.items.length?'':'没有符合条件的记录。')}
 function field(label,value){const p=document.createElement('p');const strong=document.createElement('strong');strong.textContent=label+'：';p.append(strong,document.createTextNode(String(value??'—')));$('metadata').append(p)}
-function renderDetail(data){current=data;$('detailTitle').textContent=(view==='reports'?'反馈':'请求')+' · '+data.id;$('metadata').replaceChildren();field('歌曲',data.track.name+' / '+data.track.artists.join(', '));field('Spotify ID',data.track.id);field('时间',data.createdAt||data.startedAt);field('来源',JSON.stringify(data.source||{Provider:'unknown'}));if(view==='reports'){field('问题类型',categoryNames[data.category]);field('邮箱',data.email||'未提供');field('说明',data.description||'未提供');field('播放位置 / 偏移量',data.playbackPosition+'s / '+data.lyricsOffset+'s');field('扩展版本 / 缓存',data.extensionVersion+' / '+(data.fromCache?'是':'否'));field('歌词指纹',data.lyricsHash||'未知');field('日志状态',data.diagnosticsAvailable?'可用':'不可用或已过保留期');$('editStatus').value=data.status;$('original').textContent=JSON.stringify(data.original,null,2);$('displayed').textContent=JSON.stringify(data.displayed,null,2);$('history').textContent=JSON.stringify(data.history,null,2)}else{field('总耗时',data.durationMs+'ms');field('结果',data.outcome)}$('snapshots').hidden=$('historySection').hidden=$('edit').hidden=view!=='reports';$('diagnostics').textContent=JSON.stringify(view==='reports'?data.diagnostics:data,null,2);$('editMessage').textContent='';}
+function renderDetail(data){
+  current=data;$('detailTitle').textContent=(view==='reports'?'反馈':'请求')+' · '+data.id;$('metadata').replaceChildren();
+  field('歌曲',data.track.name+' / '+data.track.artists.join(', '));field('Spotify ID',data.track.id);field('时间',data.createdAt||data.startedAt);field('来源',JSON.stringify(data.source||{Provider:'unknown'}));
+  if(view==='reports'){
+    field('问题类型',categoryNames[data.category]);field('邮箱',data.email||'未提供');field('说明',data.description||'未提供');field('播放位置 / 偏移量',data.playbackPosition+'s / '+data.lyricsOffset+'s');field('扩展版本 / 缓存',data.extensionVersion+' / '+(data.fromCache?'是':'否'));field('歌词指纹',data.lyricsHash||'未知');field('日志状态',data.diagnosticsAvailable?'可用':'不可用或已过保留期');
+    $('editStatus').value=data.status;$('original').textContent=JSON.stringify(data.original,null,2);$('displayed').textContent=JSON.stringify(data.displayed,null,2);$('history').textContent=JSON.stringify(data.history,null,2);
+    const known=providers.includes(data.source?.Provider)&&Object.hasOwn(typeNames,data.original?.Type);
+    $('blockFromReport').disabled=!known;$('blockScope').textContent=known?data.track.id+' / '+data.source.Provider+' / '+typeNames[data.original.Type]:'来源未知，无法快捷屏蔽';
+  }else{field('总耗时',data.durationMs+'ms');field('结果',data.outcome)}
+  $('snapshots').hidden=$('historySection').hidden=$('edit').hidden=$('blockShortcut').hidden=view!=='reports';
+  $('diagnostics').textContent=JSON.stringify(view==='reports'?data.diagnostics:data,null,2);$('editMessage').textContent='';
+}
 async function openDetail(id){const ticket=++detailRevision;const data=await api(view+'/'+id);if(ticket!==detailRevision)return;renderDetail(data);$('note').value='';if(!$('detail').open)$('detail').showModal()}
 $('login').onsubmit=event=>{event.preventDefault();run(async()=>{const button=$('login').querySelector('button');button.disabled=true;try{await api('login',{method:'POST',body:JSON.stringify({password:$('password').value})});$('password').value='';await load()}finally{button.disabled=false}})};
-$('logout').onclick=()=>run(async()=>{await api('logout',{method:'POST',body:'{}'});revision++;signedIn(false);$('rows').replaceChildren();current=null;message('已退出')});
-for(const name of ['reports','requests'])$(name).onclick=()=>run(async()=>{view=name;cursor=null;detailRevision++;for(const id of ['reports','requests'])$(id).classList.toggle('primary',id===view);document.querySelectorAll('[data-report]').forEach(node=>node.hidden=view!=='reports');document.querySelectorAll('[data-request]').forEach(node=>node.hidden=view!=='requests');await load()});
+$('logout').onclick=()=>run(async()=>{await api('logout',{method:'POST',body:'{}'});revision++;detailRevision++;blockRevision++;signedIn(false);$('rows').replaceChildren();$('blockRows').replaceChildren();$('detail').close();$('blockDetail').close();current=blockCurrent=null;message('已退出')});
+for(const name of ['reports','requests','source-blocks'])$(name).onclick=()=>run(async()=>{view=name;cursor=blockCursor=null;detailRevision++;blockRevision++;for(const id of ['reports','requests','source-blocks'])$(id).classList.toggle('primary',id===view);$('records').hidden=view==='source-blocks';$('blocksWorkspace').hidden=view!=='source-blocks';document.querySelectorAll('[data-report]').forEach(node=>node.hidden=view!=='reports');document.querySelectorAll('[data-request]').forEach(node=>node.hidden=view!=='requests');await load()});
 $('filters').onsubmit=event=>{event.preventDefault();cursor=null;run(()=>load())};$('filters').onreset=()=>{cursor=null;queueMicrotask(()=>run(()=>load()))};$('next').onclick=()=>run(()=>load(true));$('close').onclick=()=>{$('detail').close();detailRevision++};$('detail').addEventListener('close',()=>detailRevision++);
 $('edit').onsubmit=event=>{event.preventDefault();run(async()=>{const button=$('edit').querySelector('button');button.disabled=true;const id=current.id;try{const data=await api('reports/'+id,{method:'PATCH',body:JSON.stringify({status:$('editStatus').value,note:$('note').value})});if(current.id===id){renderDetail(data);$('note').value='';$('editMessage').textContent='已保存'}cursor=null;await load()}catch(error){$('editMessage').textContent=error.message}finally{button.disabled=false}})};
 $('export').onclick=()=>{if(!current)return;const url=URL.createObjectURL(new Blob([JSON.stringify(current,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=view+'-'+current.id+'.json';link.click();URL.revokeObjectURL(url)};
+async function loadBlocks(append=false){
+  const ticket=++revision;message('正在加载…');$('blockNext').disabled=true;
+  const params=new URLSearchParams();for(const [key,value] of new FormData($('blockFilters')))if(value)params.set(key,value);
+  if(append&&blockCursor)params.set('cursor',blockCursor);
+  const data=await api('source-blocks?'+params);if(ticket!==revision)return;signedIn(true);
+  if(!append)$('blockRows').replaceChildren();
+  for(const item of data.items){
+    const row=document.createElement('tr');cell(row,new Date(item.updatedAt).toLocaleString());cell(row,item.spotifyId);cell(row,item.provider);cell(row,typeNames[item.lyricsType]);cell(row,item.enabled?'屏蔽中':'已恢复');cell(row,item.reason);
+    const button=document.createElement('button');button.textContent='查看 / 修改';button.onclick=()=>run(()=>openBlock(item.id));cell(row,'').append(button);$('blockRows').append(row);
+  }
+  blockCursor=data.nextCursor;$('blockNext').hidden=!blockCursor;$('blockNext').disabled=false;message(data.items.length?'':'没有符合条件的规则。');
+}
+function fillBlock(data={},locked=false,reportId){
+  blockCurrent={...data,linkedReportId:reportId};$('blockSpotifyId').value=data.spotifyId||'';$('blockSpotifyId').readOnly=locked;
+  $('blockProvider').value=data.provider||'qqmusic';$('blockType').value=data.lyricsType||'Syllable';$('blockProvider').disabled=$('blockType').disabled=locked;
+  $('blockEnabled').value=data.enabled===false?'false':'true';$('blockReason').value=data.reason||'';$('blockHistory').textContent=JSON.stringify(data.history||[],null,2);$('blockEditMessage').textContent='';
+  if(!$('blockDetail').open)$('blockDetail').showModal();
+}
+async function openBlock(id){const ticket=++blockRevision;const data=await api('source-blocks/'+id);if(ticket===blockRevision)fillBlock(data,true)}
+$('newBlock').onclick=()=>{blockRevision++;fillBlock()};
+$('blockClose').onclick=()=>{$('blockDetail').close();blockRevision++};$('blockDetail').addEventListener('close',()=>blockRevision++);
+$('blockFilters').onsubmit=event=>{event.preventDefault();blockCursor=null;run(()=>loadBlocks())};
+$('blockFilters').onreset=()=>{blockCursor=null;queueMicrotask(()=>run(()=>loadBlocks()))};$('blockNext').onclick=()=>run(()=>loadBlocks(true));
+$('blockFromReport').onclick=()=>run(async()=>{
+  const report=current;if(!report||!providers.includes(report.source?.Provider)||!Object.hasOwn(typeNames,report.original?.Type))return;
+  const ticket=++blockRevision;const seed={spotifyId:report.track.id,provider:report.source.Provider,lyricsType:report.original.Type,reason:report.description||categoryNames[report.category],enabled:true};
+  const params=new URLSearchParams({spotifyId:seed.spotifyId,source:seed.provider,lyricsType:seed.lyricsType});
+  const list=await api('source-blocks?'+params);const data=list.items.length?await api('source-blocks/'+list.items[0].id):seed;
+  if(ticket===blockRevision)fillBlock({...data,enabled:true},true,report.id);
+});
+$('blockEdit').onsubmit=event=>{
+  event.preventDefault();run(async()=>{
+    const ticket=blockRevision;$('blockSave').disabled=true;
+    const input={spotifyId:$('blockSpotifyId').value,provider:$('blockProvider').value,lyricsType:$('blockType').value,enabled:$('blockEnabled').value==='true',reason:$('blockReason').value};
+    if(blockCurrent?.linkedReportId)input.reportId=blockCurrent.linkedReportId;
+    try{const data=await api('source-blocks',{method:'PUT',body:JSON.stringify(input)});if(ticket===blockRevision){fillBlock(data,true);$('blockEditMessage').textContent='已保存规则'}if(view==='source-blocks'){blockCursor=null;await loadBlocks()}}
+    catch(error){if(ticket===blockRevision)$('blockEditMessage').textContent=error.message}
+    finally{$('blockSave').disabled=false}
+  });
+};
 run(()=>load());
 </script></body></html>`;

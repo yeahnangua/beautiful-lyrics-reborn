@@ -137,6 +137,7 @@ type ExpireStoreInterface<ItemType> = {
 	GetItem: (itemName: string) => Promise<ItemType | undefined>;
 	SetItem: (itemName: string, content: ItemType, expirationOverride?: ExpirationSettings) => Promise<ItemType>;
 	Clear: () => Promise<boolean>;
+	DeleteItem: (itemName: string) => Promise<boolean>;
 }
 
 const RetrievedExpireStores: Set<string> = new Set()
@@ -154,6 +155,7 @@ export const GetExpireStore = <ItemType>(
 	return Object.freeze(
 		{
 			Clear: () => caches.delete(storeName),
+			DeleteItem: (itemName: string) => caches.open(storeName).then(cache => cache.delete(`/${itemName}`)),
 			GetItem: (itemName: string) => (
 				(IsDevelopment && forceNewData) ? Promise.resolve(undefined)
 				: (

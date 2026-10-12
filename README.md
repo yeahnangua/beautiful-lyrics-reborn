@@ -21,6 +21,7 @@ https://lyrics.txw.qzz.io
 - Karaoke, line-synced, and static lyric rendering.
 - Fullscreen and page lyric views.
 - Dynamic cover-art based backgrounds.
+- Folia fullscreen with 13 switchable lyric visualizers, five backgrounds, a floating playback capsule, and saved font/display preferences. Subtitles are hidden by default.
 - Reborn lyrics provider flow:
   1. The first available syllable lyrics from direct QQ Music QRC, KuGou KRC, NetEase YRC,
      plus Lyrically/Paxsenix Apple Music, Kugou,
@@ -43,6 +44,18 @@ leaves the other providers available. Upstream availability and rate limits can
 vary by server IP; no user credentials are bundled with these providers.
 
 ## Local Extension Install
+
+The fullscreen integration requires Node.js 24+ and Deno 2. Install its build dependencies once:
+
+```bash
+cd Extension/Folia
+npm ci
+```
+
+To build an installable file without changing Spotify, run `deno task offline` in
+`Extension/`. The result is `Extension/Builds/Offline/beautiful-lyrics-reborn.mjs`.
+See [the Folia integration guide](Extension/Folia/README.md) for controls, build
+verification, and the Spotify analysis fallback.
 
 ```bash
 cd Extension
@@ -91,6 +104,11 @@ attributed to its original author.
 New reborn changes, including the Worker server in `Server/`, are released
 under the GNU Affero General Public License v3.0 or later. See `LICENSE` and
 `NOTICE.md`.
+
+The fullscreen visualizers are adapted from Folia by chthollyphile and its
+contributors, under AGPL-3.0. The upstream revision, preserved license and
+integration boundaries are documented in `Extension/Folia/README.md` and
+`Extension/Folia/vendor/provenance.json`.
 
 The NetEase provider adaptation credits Spicetify's
 [lyrics-plus](https://github.com/spicetify/cli/tree/main/CustomApps/lyrics-plus).

@@ -1,0 +1,60 @@
+@import "tailwindcss";
+@source "../vendor/src";
+
+/* Tailwind's reset and utilities stay entirely inside the Folia Shadow DOM. */
+:host { all: initial; display: block; position: fixed; inset: 0; z-index: 1000; color: #f4f4f5; background: #09090b; font: 16px/1.5 Inter, system-ui, sans-serif; color-scheme: dark; }
+#folia-root, .folia-app, .folia-visual-surface { width: 100%; height: 100%; }
+.folia-app { position: relative; overflow: hidden; --bg-color: #09090b; --text-primary: #f4f4f5; --text-secondary: #71717a; }
+.folia-visual-surface { position: absolute; inset: 0; }
+.folia-app button, .folia-app input, .folia-app select { font: inherit; }
+.folia-app button { cursor: pointer; }
+.folia-app button:disabled { opacity: .35; cursor: default; }
+.folia-app button:focus-visible, .folia-app input:focus-visible, .folia-app select:focus-visible { outline: 2px solid #a1a1aa; outline-offset: 3px; }
+.folia-top-actions { position: absolute; top: 20px; right: 24px; z-index: 80; display: flex; gap: 8px; direction: ltr; }
+.folia-top-actions button { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 100%; background: #09090b70; backdrop-filter: blur(16px); }
+.folia-top-actions button:hover { background: #ffffff20; }
+.folia-controls { position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 60; padding: 12px 18px; border-radius: 30px; border: 1px solid #ffffff18; background: #09090b90; box-shadow: 0 12px 48px #0004; backdrop-filter: blur(24px); direction: ltr; }
+.folia-track { display: flex; align-items: center; gap: 12px; }
+.folia-track img { width: 36px; height: 36px; object-fit: cover; border-radius: 8px; }
+.folia-track > div { flex: 1; min-width: 0; }
+.folia-track strong, .folia-track span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.folia-track span { color: #a1a1aa; font-size: 11px; }
+.folia-track button, .folia-transport button { display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0; border-radius: 50%; }
+.folia-controls button:hover { background: #ffffff18; }
+.folia-controls button.active { color: #bef264; }
+.folia-expanded { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows .22s, opacity .2s; }
+.folia-controls[data-expanded="true"] .folia-expanded { grid-template-rows: 1fr; opacity: 1; }
+.folia-transport { display: flex; align-items: center; justify-content: center; overflow: hidden; gap: 8px; min-height: 0; }
+.folia-controls[data-expanded="true"] .folia-transport { padding-top: 8px; }
+.folia-volume { display: flex; align-items: center; gap: 6px; }
+.folia-volume input { width: 72px; }
+.folia-progress { display: flex; align-items: center; gap: 12px; font-size: 10px; color: #a1a1aa; padding-top: 8px; }
+.folia-progress input { flex: 1; width: 0; }
+.folia-app input[type="range"] { height: 14px; accent-color: #e4e4e7; cursor: pointer; }
+.folia-panel { position: absolute; right: 20px; top: 76px; bottom: 180px; width: min(360px, calc(100vw - 40px)); z-index: 90; padding: 24px; overflow: auto; border-radius: 24px; background: #18181bf5; box-shadow: 0 16px 80px #0007; border: 1px solid #ffffff18; font-size: 14px; backdrop-filter: blur(24px); }
+.folia-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.folia-panel h2 { font-size: 18px; font-weight: 600; }
+.folia-panel-header button { padding: 6px; }
+.folia-panel > label { display: block; margin-top: 18px; }
+.folia-panel label select, .folia-panel label input[type="range"] { display: block; width: 100%; margin-top: 8px; }
+.folia-panel select, .folia-panel input[type="search"], .folia-panel input[type="text"] { width: 100%; padding: 9px 12px; border-radius: 10px; border: 1px solid #ffffff20; background: #27272a; }
+.folia-panel .folia-checkbox { display: flex; align-items: center; justify-content: space-between; }
+.folia-panel output { float: right; color: #a1a1aa; }
+.folia-row { display: flex; gap: 8px; margin: 12px 0; }
+.folia-row button { padding: 8px 12px; border-radius: 10px; background: #ffffff12; white-space: nowrap; }
+.folia-row input { min-width: 0; }
+.folia-analysis { color: #a1a1aa; font-size: 12px; margin-top: 24px; }
+.folia-breadcrumb { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.folia-breadcrumb button { text-decoration: underline; }
+.folia-library-list { display: flex; flex-direction: column; gap: 4px; margin-top: 16px; }
+.folia-playlist-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 6px; border-radius: 10px; text-align: start; }
+.folia-playlist-row:hover { background: #ffffff12; }
+.folia-playlist-row img { width: 36px; height: 36px; object-fit: cover; border-radius: 6px; }
+.folia-playlist-row span { flex: 1; }
+.folia-playlist-row small { color: #a1a1aa; }
+.folia-empty { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 24px; color: #e4e4e7; pointer-events: none; }
+.folia-static { position: absolute; inset: 60px 10vw 150px; padding: 24px; overflow: auto; text-align: center; background: #09090b60; border-radius: 24px; }
+.folia-static p { margin: 24px 0; white-space: pre-wrap; }
+.folia-static small { font-size: 12px; color: #a1a1aa; }
+.folia-failure { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); z-index: 85; padding: 10px 18px; border-radius: 14px; background: #18181bcc; font-size: 12px; }
+@media (max-width: 700px) { .folia-transport { flex-wrap: wrap; gap: 4px; } .folia-panel { bottom: 210px; padding: 18px; } .folia-controls { bottom: 16px; } .folia-volume input { width: 54px; } }

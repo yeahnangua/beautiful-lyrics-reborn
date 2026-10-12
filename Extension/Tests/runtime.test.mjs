@@ -13,7 +13,7 @@ const deferred = () => { let resolve, reject; const promise = new Promise((a,b) 
 const token = () => ({accessToken:'valid',expiresAtTime:Date.now()+60000,tokenType:'Bearer'});
 const fast = {timeoutMs:10,retryDelayMs:1};
 const read = path => readFile(new URL(path,import.meta.url),'utf8');
-const evaluate = (source, mocks, result) => new Function(...Object.keys(mocks), stripTypeScriptTypes(source).replace(/^import[\s\S]*?from\s+["'][^"']+["'];?\s*$/gm,'').replace(/\bexport\s+/g,'') + `\nreturn ${result};`)(...Object.values(mocks));
+const evaluate = (source, mocks, result) => new Function(...Object.keys(mocks), stripTypeScriptTypes(source, { mode: "transform" }).replace(/^import[\s\S]*?from\s+["'][^"']+["'];?\s*$/gm,'').replace(/\bexport\s+/g,'') + `\nreturn ${result};`)(...Object.values(mocks));
 
 test('token shares in-flight work, retries once, and reuses valid cache', async () => {
  let calls=0; const ready=deferred();
@@ -115,24 +115,28 @@ test('permanent authentication errors do not retry',async()=>{
  await assert.rejects(get(),/forbidden/);assert.equal(calls,1);
 });
 
-test('actual playlist renderer ignores stale lists/details, retries failures and captures clicked track',async()=>{
- const source=await read('../Source/LyricViews/Page/Fullscreen.ts');
- const start=source.indexOf('const RenderFolderItems =');const end=source.indexOf('// Store branch state here',start);
- const code='let currentRenderedTextFilter;'+source.slice(start,end);
- const revision=new Revision(), pending=[],status=[],buttons=[],added=[],nodes=[];const Song={Uri:'track:first'};
- class Node {children=new Map();classList={toggle(){}};style={};textContent='';querySelector(key){if(!this.children.has(key))this.children.set(key,new Node());return this.children.get(key)}addEventListener(_,fn){this.click=fn}prepend(){}remove(){}}
- const grid={items:[],appendChild(item){this.items.push(item)}};
- const renderMaid={Give:x=>x,Clean(){},CleanUp(){grid.items=[]}};
- class Button{Clicked={Connect:fn=>this.click=fn};constructor(){buttons.push(this)}}
- const render=evaluate(code,{renderRevision:revision,renderMaid,grid,Song,isAddToPlaylistCoverOpen:true,LoadFolderItems:()=>{const p=deferred();pending.push(p);return p.promise},GetPlaylistContents:()=>{const p=deferred();status.push(p);return p.promise},CreateElement:()=>{const node=new Node();nodes.push(node);return node},FolderGridItemTemplate:'',PlaylistGridItemTemplate:'',TextScroller:class{},Button,document:{createElement:()=>new Node()},pathChangeRequested:{Fire(){}},RunAnimation(){},AddedAnimation:{},RemovedAnimation:{},AddToPlaylist:(uri,tracks)=>{added.push(tracks);return Promise.resolve()},RemoveFromPlaylist:()=>{throw Error('unexpected removal')},LoadPlaylistDetails:()=>Promise.resolve({images:[{url:'cover'}],name:'name',collaborators:{items:[]}}),Defer:fn=>fn,console:{warn(){}}},'RenderFolderItems');
- const flush=()=>new Promise(r=>setImmediate(r));
- render({});render({});pending[1].resolve([{Type:'Folder',Name:'new'}]);await flush();assert.equal(grid.items.length,1);const current=grid.items[0];pending[0].resolve([{Type:'Folder',Name:'old'}]);await flush();assert.equal(grid.items[0],current);
- render({});revision.Invalidate();pending[2].resolve([{Type:'Folder',Name:'closed'}]);await flush();assert.equal(grid.items.length,0);
- render({});pending[3].reject(Error('offline'));await flush();assert.match(grid.items[0].textContent,/retry/);grid.items[0].click();pending[4].resolve([]);await flush();assert.equal(grid.items.length,0);
- const details=deferred();render({});pending[5].resolve([{Type:'Playlist',Uri:'playlist',LoadedDetails:details.promise}]);await flush();status[0].resolve({Items:[]});await flush();const row=nodes.at(-1);const button=buttons.at(-1);
- button.click();Song.Uri='track:second';status[1].resolve({Items:[]});await flush();assert.deepEqual(added,[]);
- revision.Invalidate();details.resolve({images:[{url:'cover'}],name:'late',collaborators:{items:[]}});await flush();assert.equal(row.querySelector('.Details .Name').querySelector('span').textContent,'');
- revision.Destroy();
+test('playlist bridge ignores stale track mutations, bounds metadata and cancels closed views', async () => {
+ const source = await read('../Source/LyricViews/Page/PlaylistBridge.ts');
+ const Bridge = evaluate(source, { Abortable, CreateAbortScope }, 'PlaylistBridge');
+ let track = 'track:first'; const pending = [], added = [], details = [];
+ const bridge = new Bridge({
+   list: async () => [{Type:'Folder',Uri:'folder',Name:'Folder'}, {Type:'Playlist',Uri:'read-only',CanAddTo:false}, {Type:'Playlist',Uri:'editable',CanAddTo:true}],
+   details: () => { const p=deferred(); details.push(p); return p.promise; },
+   contents: () => { const p=deferred(); pending.push(p); return p.promise; },
+   add: async (_, tracks) => { added.push(tracks); }, create: async () => {},
+ }, () => track);
+ assert.equal((await bridge.List('', '')).length, 2);
+ const stale = bridge.Add('playlist', track); await Promise.resolve(); track = 'track:second'; pending.shift().resolve({Items:[]});
+ await assert.rejects(stale, /Track changed/); assert.deepEqual(added, []);
+ const current = bridge.Add('playlist', track); await Promise.resolve(); pending.shift().resolve({Items:[]}); await current;
+ assert.deepEqual(added, [['track:second']]);
+ const duplicate = bridge.Add('playlist', track); await Promise.resolve(); pending.shift().resolve({Items:[{uri:track}]}); await duplicate;
+ assert.equal(added.length, 1);
+ const queued = Array.from({length:9},(_,i)=>bridge.Details('playlist:'+i));
+ await Promise.resolve(); assert.equal(details.length, 6);
+ const settled = Promise.allSettled(queued); bridge.Destroy();
+ assert.ok((await settled).every(result=>result.status==='rejected'));
+ await assert.rejects(bridge.Add('playlist', track));
 });
 
 test('cache template migration fills missing view settings and preserves stored offsets',async()=>{

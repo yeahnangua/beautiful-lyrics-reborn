@@ -42,6 +42,11 @@ type BundleConfiguration = {
 	VersionIdentifier?: string;
 }
 export default async (bundleConfiguration: BundleConfiguration = {}): Promise<unknown> => {
+  // Compile Folia's TSX, image globs and isolated Tailwind before esbuild embeds it.
+  const foliaBuild = new Deno.Command("node", {
+    args: [resolve(Deno.cwd(), "Folia/build.mjs")], stdout: "inherit", stderr: "inherit",
+  }).spawn()
+  if (!(await foliaBuild.status).success) throw new Error("Folia build failed. Run npm ci in Extension/Folia first.")
 	// Determine any absolute configuration values
 	const bundleType = (
 		(bundleConfiguration.Type === undefined) ? "Release"
@@ -151,7 +156,7 @@ export default async (bundleConfiguration: BundleConfiguration = {}): Promise<un
 		metafile: true,
 		sourcemap: buildDirectory === undefined ? false : "linked",
 		minify: applyOptimizations,
-		legalComments: "none",
+		legalComments: "inline",
 		write: false
 	}), styles)
 	if (buildDirectory === undefined) {

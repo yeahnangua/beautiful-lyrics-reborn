@@ -1,0 +1,41 @@
+{
+  "name": "beautiful-lyrics-folia",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "vite --host 127.0.0.1",
+    "typecheck": "tsc --noEmit",
+    "test:ui": "playwright test"
+  },
+  "dependencies": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "framer-motion": "13.4.3",
+    "lucide-react": "1.48.0",
+    "pixi.js": "8.21.0",
+    "three": "0.185.1",
+    "@react-three/fiber": "9.8.1",
+    "@paper-design/shaders": "0.0.80",
+    "@paper-design/shaders-react": "0.0.80",
+    "@chenglou/pretext": "0.0.9",
+    "twgl.js": "7.0.0",
+    "i18next": "26.4.2",
+    "react-i18next": "17.0.15"
+  },
+  "devDependencies": {
+    "vite": "8.3.1",
+    "@tailwindcss/postcss": "4.3.3",
+    "tailwindcss": "4.3.3",
+    "postcss": "8.5.28",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/three": "0.185.4",
+    "@types/node": "26.6.2",
+    "@playwright/test": "1.63.0",
+    "typescript": "5.9.3"
+  }
+}

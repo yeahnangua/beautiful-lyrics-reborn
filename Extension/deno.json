@@ -3,6 +3,7 @@
 
 	"tasks": {
 		"test": "deno run --allow-read --allow-run --allow-net --allow-env --allow-write ./Tasks/Test.ts",
+		"offline": "deno run --allow-read --allow-run --allow-net --allow-env --allow-write ./Tasks/BuildOffline.ts",
 		"release": "deno run --allow-read --allow-run --allow-net --allow-env --allow-write ./Tasks/BuildRelease.ts"
 	},
 

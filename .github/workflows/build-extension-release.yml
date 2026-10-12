@@ -41,6 +41,17 @@ jobs:
           deno-version: v2.x
           cache: true
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: Extension/Folia/package-lock.json
+
+      - name: Install Folia build dependencies
+        working-directory: Extension/Folia
+        run: npm ci
+
       - name: Stub Spicetify for CI build
         run: |
           mkdir -p "$RUNNER_TEMP/bin"
@@ -61,11 +72,6 @@ jobs:
         working-directory: Extension
         run: deno task release
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
       - name: Remove old release bundles
         run: node Extension/Tasks/PruneRelease.mjs
 
@@ -75,6 +81,13 @@ jobs:
 
       - name: Test extension runtime and loader
         run: node --test Extension/Tests/*.test.mjs
+
+      - name: Typecheck and test Folia visualizers
+        working-directory: Extension/Folia
+        run: |
+          npm run typecheck
+          npx playwright install --with-deps chromium
+          npm run test:ui
 
       - name: Test Worker
         working-directory: Server

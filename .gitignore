@@ -161,3 +161,9 @@ deno.lock
 Server/.dev.vars
 Server/.dev.vars.*
 Server/wrangler.feedback.*.toml
+
+# Folia intermediate and browser verification outputs
+Extension/Folia/dist/
+Extension/Folia/test-results/
+Extension/Folia/playwright-report/
+Extension/Builds/Offline/

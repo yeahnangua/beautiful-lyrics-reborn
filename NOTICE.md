@@ -15,6 +15,22 @@ to make the licensing boundary explicit.
 
 Third-party dependencies retain their own licenses.
 
+Folia fullscreen visualizers
+---------------------------
+
+The full-screen visualizer layer in Extension/Folia/vendor adapts Folia by
+chthollyphile and the Folia contributors:
+
+https://github.com/chthollyphile/folia-major
+Upstream revision: 43605cd8e562b7aa0e5897478856ce3604a054a1 (0.7.18).
+
+Folia's AGPL-3.0 license is preserved in Extension/Folia/vendor/LICENSE.
+The copied file inventory and application-boundary adaptations are documented
+in Extension/Folia/vendor/provenance.json and Extension/Folia/README.md.
+Original avatar and emoji resource notices are preserved alongside those assets.
+Bundled package license notices are collected during the Folia build and
+embedded in the extension payload.
+
 Spicetify lyrics-plus provider adaptations
 -----------------------------------------
 

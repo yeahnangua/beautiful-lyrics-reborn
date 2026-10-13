@@ -45,20 +45,38 @@ a pointer that advertises an asset from an unfinished upload.
 
 ## Runtime behavior
 
-The loader fetches `/extension/latest.json` on startup with `cache: "no-store"`.
+The loader fetches `https://lyrics.txw.qzz.io/extension/latest.json` on startup
+with `cache: "no-store"`. Version checks always use this Worker origin.
 The Worker reads the pointer from its current asset binding (not GitHub or jsDelivr)
 and returns `Cache-Control: no-store` and `CDN-Cache-Control: no-store`. Do not add a
 Cloudflare cache rule that overrides these headers on `/extension/latest.json`.
 Hashed payloads receive a one-year immutable cache policy and CORS headers.
+
+For each release, the loader starts two payload downloads together:
+`https://lyrics.txw.qzz.io/extension/` and
+`https://lyrics.20050129.xyz/extension/`. The first complete payload whose full
+SHA-256 matches the selected release wins, and the other request is aborted.
+Each attempt has a 60-second deadline covering the response body and verification.
+Only when both routes fail does the loader try the same hash on jsDelivr, then
+the previous successful release and the embedded fallback.
+
+The domestic domain uses Alibaba Cloud acceleration with `lyrics.txw.qzz.io`
+as its origin. Configure HTTPS origin fetch with both Host and SNI set to
+`lyrics.txw.qzz.io`, and a valid certificate for `lyrics.20050129.xyz` on the
+Alibaba edge. Hashed payloads should keep their one-year immutable cache policy
+and `Access-Control-Allow-Origin: *`; `latest.json` must remain uncached.
+Disable content transformations that would change the payload's SHA-256.
+DNS must point the download domain to the acceleration service's assigned CNAME;
+an ordinary CNAME directly to the Worker alone does not add Alibaba acceleration.
+This uses the existing Worker assets, without R2 uploads or extra release steps.
 
 The loader verifies payload bytes before importing a JavaScript Blob. Keep Spotify's
 normal Blob module support available; this must be smoke-tested in supported Spotify
 clients. It never evaluates a second payload after module evaluation has started.
 A global guard also prevents two copies of the loader starting simultaneously.
 
-If a download fails, the loader tries the same hash on jsDelivr, then the previous
-successful release and the embedded fallback. Cached metadata cannot change the
-payload origin or bypass the SHA-256 check. Fallbacks still require reachable or
+Cached metadata cannot change the payload origins or bypass the SHA-256 check.
+Fallbacks still require reachable or
 browser-cached payload bytes; this is not an offline installation.
 
 Every five minutes it checks for a changed hash (including a rollback), and shows
@@ -77,6 +95,10 @@ reload, or manual installation of the stable loader from a verified GitHub commi
 Uninstall the Marketplace copy before enabling a manual copy to avoid duplicates.
 The former offline bundle has no loader guard, so do not leave both installed.
 Subsequent payload releases do not require another Marketplace reinstall.
+
+Users who already have an older loader must also refresh or reinstall the stable
+Marketplace entry once to enable the domestic download race. Payload updates do
+not replace an installed loader.
 
 ## Verify and roll back
 

@@ -127,11 +127,13 @@ creates a SHA-256-named payload, `latest.json`, and the loader. The manifest ent
 path stays unchanged so Marketplace continues to recognize existing installs.
 
 The loader checks `https://lyrics.txw.qzz.io/extension/latest.json` at startup
-without caching, verifies the downloaded payload's full SHA-256, and checks for
-updates every five minutes. It prompts for a Spotify reload instead of executing
-two releases in the same session. If the latest release cannot be fetched, it
-tries the last successfully loaded release and the loader's embedded release,
-with jsDelivr as a secondary download source. This is a network fallback, not a
+without caching and checks for updates every five minutes. It downloads each
+payload concurrently from the Worker and `https://lyrics.20050129.xyz/extension/`,
+uses the first complete download that passes the full SHA-256 check, and cancels
+the other request. If both routes fail, it tries jsDelivr, then the last successfully
+loaded release and the loader's embedded release. It prompts for a Spotify reload
+instead of executing two releases in the same session. Existing installs need to
+refresh the loader once to enable the domestic route. This is a network fallback, not a
 guarantee of offline operation. Local development installs remain offline bundles.
 
 Publishing also requires deploying the Worker and its release assets together.

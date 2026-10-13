@@ -3,6 +3,17 @@ import assert from "node:assert/strict";
 import { createHash, webcrypto } from "node:crypto";
 import { startReleaseLoader } from "../Spices/AutoUpdate/ReleaseLoader.mjs";
 
+const worker = "https://lyrics.txw.qzz.io/extension/";
+const domestic = "https://lyrics.20050129.xyz/extension/";
+const cdn = "https://cdn.jsdelivr.net/gh/yeahnangua/beautiful-lyrics-reborn@main/Extension/Builds/Release/";
+const deferred = () => {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  return { promise, resolve };
+};
+const nextTurn = () => new Promise(resolve => setImmediate(resolve));
+const bytes = code => new TextEncoder().encode(code).buffer;
+
 function release(code) {
   const sha256 = createHash("sha256").update(code).digest("hex");
   return { schema: 1, version: "5.2.1", sha256, file: `beautiful-lyrics-reborn.${sha256.slice(0, 16)}.mjs` };
@@ -43,6 +54,7 @@ test("loads latest once and keeps one update notice visible until its close butt
   assert.equal(f.imports.length, 1);
   assert.equal(f.runtime.__beautifulLyricsRebornLoader.build, f.fresh.sha256);
   assert.equal(f.calls[0].options.cache, "no-store");
+  assert.deepEqual(f.calls.filter(call => call.url.endsWith("latest.json")).map(call => call.url), [`${worker}latest.json`]);
   f.runtime.fetch = async () => Response.json(f.old); // Rollback is also an update.
   await f.tick(); await f.tick();
   assert.equal(f.notifications.length, 1);
@@ -88,12 +100,103 @@ test("rejects corrupt payloads and falls back before evaluating any code", async
   assert.deepEqual(f.imports, ["export default 'old';"]);
   assert.equal(f.runtime.__beautifulLyricsRebornLoader.build, f.old.sha256);
 });
-test("uses CDN if Worker bundle is unavailable", async () => {
+test("uses jsDelivr only after both program routes fail", async () => {
   const f = fixture();
-  const fetcher = f.runtime.fetch;
-  f.runtime.fetch = async (url, options) => url.startsWith("https://lyrics.") && url.endsWith(".mjs") ? new Response("Unavailable", { status: 503 }) : fetcher(url, options);
+  const fetcher = f.runtime.fetch, payloadRequests = [];
+  f.runtime.fetch = async (url, options) => {
+    if (url.endsWith(".mjs")) payloadRequests.push(url);
+    return url.startsWith("https://lyrics.") && url.endsWith(".mjs") ? new Response("Unavailable", { status: 503 }) : fetcher(url, options);
+  };
   await startReleaseLoader(f.old, f.runtime);
   assert.equal(f.runtime.__beautifulLyricsRebornLoader.build, f.fresh.sha256);
+  assert.deepEqual(payloadRequests, [worker + f.fresh.file, domestic + f.fresh.file, cdn + f.fresh.file]);
+});
+
+for (const winningOrigin of [worker, domestic]) {
+  test(`races both routes and cancels the stalled body when ${winningOrigin} wins`, async () => {
+    const f = fixture(), fetcher = f.runtime.fetch;
+    const pending = new Map([worker, domestic].map(origin => [origin, { body: deferred() }]));
+    f.runtime.fetch = async (url, options) => {
+      if (url.endsWith("latest.json")) return fetcher(url, options);
+      const origin = [worker, domestic].find(value => url.startsWith(value));
+      assert.ok(origin, "jsDelivr must not be requested when a route succeeds");
+      const request = pending.get(origin);
+      request.signal = options.signal;
+      return { ok: true, arrayBuffer: () => request.body.promise };
+    };
+    const loading = startReleaseLoader(f.old, f.runtime);
+    await nextTurn();
+    for (const request of pending.values()) assert.equal(request.signal.aborted, false);
+    pending.get(winningOrigin).body.resolve(bytes("export default 'new';"));
+    await loading;
+    assert.deepEqual(f.imports, ["export default 'new';"]);
+    assert.equal(pending.get(winningOrigin).signal.aborted, false);
+    const losingOrigin = winningOrigin === worker ? domestic : worker;
+    assert.equal(pending.get(losingOrigin).signal.aborted, true);
+    pending.get(losingOrigin).body.resolve(bytes("late response"));
+    await nextTurn();
+    assert.equal(f.imports.length, 1);
+  });
+}
+
+test("a fast corrupt response does not beat the other route's valid payload", async () => {
+  const f = fixture(), fetcher = f.runtime.fetch, valid = deferred();
+  f.runtime.fetch = async (url, options) => {
+    if (url === worker + f.fresh.file) return new Response("corrupt");
+    if (url === domestic + f.fresh.file) return { ok: true, arrayBuffer: () => valid.promise };
+    assert.ok(!url.startsWith(cdn), "fallback must wait for both routes to fail");
+    return fetcher(url, options);
+  };
+  const loading = startReleaseLoader(f.old, f.runtime);
+  await nextTurn();
+  assert.equal(f.imports.length, 0);
+  valid.resolve(bytes("export default 'new';"));
+  await loading;
+  assert.deepEqual(f.imports, ["export default 'new';"]);
+});
+
+test("the winner must complete checksum verification, and late verification cannot execute again", async () => {
+  const f = fixture(), digest = deferred();
+  let verifications = 0;
+  f.runtime.crypto = { subtle: { digest: (...args) => ++verifications === 1 ? digest.promise : webcrypto.subtle.digest(...args) } };
+  await startReleaseLoader(f.old, f.runtime);
+  assert.equal(verifications, 2);
+  assert.deepEqual(f.imports, ["export default 'new';"]);
+  digest.resolve(await webcrypto.subtle.digest("SHA-256", bytes("export default 'new';")));
+  await nextTurn();
+  assert.equal(f.imports.length, 1);
+});
+
+test("both stalled bodies time out before jsDelivr runs, and all timers are cleared", async () => {
+  const f = fixture(), fetcher = f.runtime.fetch, timers = [], signals = [];
+  f.runtime.setTimeout = (callback, duration) => {
+    const timer = { callback, duration, cleared: false };
+    timers.push(timer);
+    return timer;
+  };
+  f.runtime.clearTimeout = timer => { timer.cleared = true; };
+  f.runtime.fetch = async (url, options) => {
+    if (url.endsWith(".mjs") && !url.startsWith(cdn)) {
+      signals.push(options.signal);
+      return { ok: true, arrayBuffer: () => new Promise(() => {}) };
+    }
+    return fetcher(url, options);
+  };
+  const loading = startReleaseLoader(f.old, f.runtime);
+  await nextTurn();
+  assert.equal(timers.length, 2);
+  assert.ok(timers.every(timer => timer.duration === 60000));
+  timers[0].callback();
+  await nextTurn();
+  assert.equal(f.imports.length, 0);
+  assert.equal(timers.length, 2);
+  timers[1].callback();
+  await loading;
+  assert.deepEqual(f.imports, ["export default 'new';"]);
+  assert.ok(signals.every(signal => signal.aborted && signal.reason.name === "TimeoutError"));
+  assert.equal(timers.length, 3);
+  assert.equal(timers[2].duration, 60000);
+  assert.ok(timers.every(timer => timer.cleared));
 });
 test("never executes a fallback after a module partially evaluates and throws", async () => {
   const f = fixture(); let evaluations = 0;

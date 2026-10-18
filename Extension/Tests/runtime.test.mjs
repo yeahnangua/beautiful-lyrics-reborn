@@ -180,7 +180,7 @@ test('feedback captures the current song and lyrics before a song change',async(
 test('actual lyric loader regenerates mismatched transformed caches and never publishes after switching songs', async()=>{
  const source=await read('../Spices/Spicetify/Services/Player/mod.ts');
  const loader=lyricsLoader(source);
- assert.match(source,/"Player_ProviderLyrics", 9/);assert.match(source,/"Player_TransformedLyrics", 9/);
+ assert.match(source,/"Player_ProviderLyrics", 10/);assert.match(source,/"Player_TransformedLyrics", 10/);
  const raw={Type:'Static',Lines:[{Text:'correct'}],RequestId:'A',LyricsHash:'a',Source:{Provider:'spotify',Transport:'direct'}};
  const wrong={...raw,RequestId:'B',Lines:[{Text:'wrong'}]};
  let transforms=0;

@@ -2,7 +2,8 @@
 // Copyright © 2026 f1nniboy. See NOTICE.md and LICENSES/lrcmux-MIT.txt.
 // Changed 2026-09-19: Web Streams decoding and Beautiful Lyrics timing objects.
 import { decodeHtmlEntities } from "./entities";
-import type { SyllableMetadata, SyllableSyncedLyrics, SyllableVocalSet } from "../types";
+import type { SyllableSyncedLyrics, SyllableVocalSet } from "../types";
+import { convertKaraokeWords } from "./karaoke-words";
 
 const krcKey = [64, 71, 97, 119, 94, 50, 116, 71, 81, 54, 49, 45, 206, 210, 110, 105];
 const maxKrcBytes = 1024 * 1024;
@@ -66,23 +67,12 @@ export function convertKrcToSyllableLyrics(krc: string | undefined): SyllableSyn
         start: lineStart + Number(word[1]),
         end: lineStart + Number(word[1]) + Number(word[2])
       }))
-      .filter((word) => Number.isSafeInteger(word.start) && Number.isSafeInteger(word.end) && word.end > word.start);
-    const syllables: SyllableMetadata[] = [];
-    for (let index = 0; index < words.length; index += 1) {
-      const word = words[index]!;
-      const next = words[index + 1];
-      const text = word.text.trim();
-      if (!text) {
-        continue;
-      }
-      const end = next !== undefined && next.start > word.start ? Math.min(word.end, next.start) : word.end;
-      syllables.push({
-        Text: text,
-        StartTime: word.start / 1000,
-        EndTime: end / 1000,
-        IsPartOfWord: next !== undefined && !/\s$/.test(word.text) && !/^\s/.test(next.text)
-      });
-    }
+      .filter((word) => Number.isSafeInteger(word.start) && Number.isSafeInteger(word.end) && word.end >= word.start);
+    const syllables = convertKaraokeWords(words.map((word) => ({
+      Text: word.text,
+      StartTime: word.start / 1000,
+      EndTime: word.end / 1000
+    })));
     const first = syllables[0];
     const last = syllables[syllables.length - 1];
     if (first === undefined || last === undefined) {

@@ -1,5 +1,6 @@
-import type { SyllableMetadata, SyllableSyncedLyrics, SyllableVocalSet } from "../types";
+import type { SyllableSyncedLyrics, SyllableVocalSet } from "../types";
 import { decodeHtmlEntities } from "./entities";
+import { convertKaraokeWords } from "./karaoke-words";
 
 type KaraokeWord = {
   text: string;
@@ -12,7 +13,7 @@ type KaraokeLine = {
 };
 
 const yrcLinePattern = /^\[(\d+),(\d+)\](.*)$/;
-const yrcWordPattern = /\((\d+),(\d+)(?:,\d+)?\)([^(]+)/g;
+const yrcWordPattern = /\((\d+),(\d+)(?:,\d+)?\)(.*?)(?=\(\d+,\d+(?:,\d+)?\)|$)/g;
 const qrcLyricContentPattern = /\bLyricContent\s*=\s*"([^"]*)"/i;
 const qrcLinePattern = /^\[\s*(\d+)\s*,\s*(\d+)\s*\](.*)$/;
 const qrcWordTimingPattern = /\(\s*(\d+)\s*,\s*(\d+)\s*\)/;
@@ -21,42 +22,15 @@ function millisecondsToSeconds(value: number): number {
   return value / 1000;
 }
 
-function getWordEndMs(words: KaraokeWord[], index: number): number {
-  const word = words[index];
-  if (word === undefined) {
-    return 0;
-  }
-
-  const rawEndMs = word.startMs + word.durationMs;
-  const nextWord = words[index + 1];
-  if (nextWord === undefined || nextWord.startMs <= word.startMs) {
-    return rawEndMs;
-  }
-
-  return Math.min(rawEndMs, nextWord.startMs);
-}
-
 function convertKaraokeLines(lines: KaraokeLine[]): SyllableSyncedLyrics | undefined {
   const content: SyllableVocalSet[] = [];
 
   for (const line of lines) {
-    const timedWords = line.words.filter((word) => word.text.length > 0 && word.durationMs > 0);
-    if (timedWords.length === 0) {
-      continue;
-    }
-
-    const syllables: SyllableMetadata[] = timedWords
-      .map((word, index) => ({
-        Text: word.text,
-        StartTime: millisecondsToSeconds(word.startMs),
-        EndTime: millisecondsToSeconds(getWordEndMs(timedWords, index)),
-        IsPartOfWord: true
-      }))
-      .filter((syllable) => syllable.EndTime > syllable.StartTime)
-      .map((syllable, index, syllables) => ({
-        ...syllable,
-        IsPartOfWord: index < syllables.length - 1
-      }));
+    const syllables = convertKaraokeWords(line.words.map((word) => ({
+      Text: word.text,
+      StartTime: millisecondsToSeconds(word.startMs),
+      EndTime: millisecondsToSeconds(word.startMs + word.durationMs)
+    })));
 
     const firstSyllable = syllables[0];
     const lastSyllable = syllables[syllables.length - 1];

@@ -400,7 +400,8 @@ describe("karaoke lyric conversion", () => {
       throw new Error("expected first YRC entry to be a vocal line");
     }
 
-    expect(firstLine.Lead.Syllables.map((syllable) => syllable.Text).join("")).toBe("Hello world");
+    expect(firstLine.Lead.Syllables.map((syllable) => syllable.Text)).toEqual(["Hello", "world"]);
+    expect(firstLine.Lead.Syllables.map((syllable) => syllable.IsPartOfWord)).toEqual([false, false]);
   });
 
   it("converts QQ QRC XML karaoke words to Beautiful Lyrics Syllable output", () => {
@@ -447,7 +448,8 @@ describe("karaoke lyric conversion", () => {
       throw new Error("expected first QRC entry to be a vocal line");
     }
 
-    expect(firstLine.Lead.Syllables.map((syllable) => syllable.Text).join("")).toBe("Hello world");
+    expect(firstLine.Lead.Syllables.map((syllable) => syllable.Text)).toEqual(["Hello", "world"]);
+    expect(firstLine.Lead.Syllables.map((syllable) => syllable.IsPartOfWord)).toEqual([false, false]);
   });
 
   it("trims overlapping QQ QRC word durations", () => {

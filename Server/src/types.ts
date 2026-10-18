@@ -42,6 +42,7 @@ export type LineSyncedLyrics = LyricsProvenance & TimeMetadata & {
 
 export type SyllableMetadata = TimeMetadata &
   TextMetadata & {
+    // True when this syllable joins the next one without an intervening space.
     IsPartOfWord: boolean;
   };
 

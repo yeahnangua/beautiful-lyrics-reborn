@@ -336,8 +336,9 @@ const LoadSongDetails = () => {
 }
 
 // Handle our Lyrics
+// Version 10 discards karaoke lyrics cached before zero-duration separators were preserved.
 const ProviderLyricsStore = GetExpireStore<ProviderLyrics | false>(
-	"Player_ProviderLyrics", 9,
+	"Player_ProviderLyrics", 10,
 	{
 		Duration: 2,
 		Unit: "Days"
@@ -345,7 +346,7 @@ const ProviderLyricsStore = GetExpireStore<ProviderLyrics | false>(
 	true
 )
 const TransformedLyricsStore = GetExpireStore<TransformedLyrics | false>(
-	"Player_TransformedLyrics", 9,
+	"Player_TransformedLyrics", 10,
 	{
 		Duration: 2,
 		Unit: "Days"

@@ -55,6 +55,7 @@ export type LineSyncedLyrics = LyricsProvenance & (
 export type SyllableMetadata = (
 	VocalMetadata
 	& {
+		// True when this syllable joins the next one without an intervening space.
 		IsPartOfWord: boolean;
 	}
 )

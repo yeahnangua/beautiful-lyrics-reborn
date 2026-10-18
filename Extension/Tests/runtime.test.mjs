@@ -14,6 +14,7 @@ const token = () => ({accessToken:'valid',expiresAtTime:Date.now()+60000,tokenTy
 const fast = {timeoutMs:10,retryDelayMs:1};
 const read = path => readFile(new URL(path,import.meta.url),'utf8');
 const evaluate = (source, mocks, result) => new Function(...Object.keys(mocks), stripTypeScriptTypes(source, { mode: "transform" }).replace(/^import[\s\S]*?from\s+["'][^"']+["'];?\s*$/gm,'').replace(/\bexport\s+/g,'') + `\nreturn ${result};`)(...Object.values(mocks));
+const lyricsLoader = source => source.slice(source.indexOf('let lyricsController:'),source.indexOf('export const RetrySongLyricsIfMissing'));
 
 test('token shares in-flight work, retries once, and reuses valid cache', async () => {
  let calls=0; const ready=deferred();
@@ -178,15 +179,15 @@ test('feedback captures the current song and lyrics before a song change',async(
 
 test('actual lyric loader regenerates mismatched transformed caches and never publishes after switching songs', async()=>{
  const source=await read('../Spices/Spicetify/Services/Player/mod.ts');
- const loader=source.slice(source.indexOf('const LoadSongLyrics = () =>'),source.indexOf('export const RetrySongLyricsIfMissing'));
+ const loader=lyricsLoader(source);
  assert.match(source,/"Player_ProviderLyrics", 9/);assert.match(source,/"Player_TransformedLyrics", 9/);
  const raw={Type:'Static',Lines:[{Text:'correct'}],RequestId:'A',LyricsHash:'a',Source:{Provider:'spotify',Transport:'direct'}};
  const wrong={...raw,RequestId:'B',Lines:[{Text:'wrong'}]};
  let transforms=0;
  function setup(providerPromise){
   const ready=deferred();
-  const state=evaluate('let Song=initialSong,SongLyrics,SongProviderLyrics,SongLyricsFromCache=false,HaveSongLyricsLoaded=false,lyricsController;'+loader,
-   {initialSong:{Type:'Streamed',Id:'songA'},ProviderLyricsStore:{GetItem:()=>providerPromise},TransformedLyricsStore:{GetItem:async()=>wrong,SetItem:async()=>{}},
+  const state=evaluate('let Song=initialSong,SongLyrics,SongProviderLyrics,SongLyricsFromCache=false,HaveSongLyricsLoaded=false;'+loader,
+   {initialSong:{Type:'Streamed',Id:'songA'},PlayerMaid:{Give(){}},SpotifyPlayer:{data:{nextItems:[]}},ProviderLyricsStore:{GetItem:()=>providerPromise},TransformedLyricsStore:{GetItem:async()=>wrong,SetItem:async()=>{}},
     BuildLyricsRequestURL:()=> 'https://example.test/lyrics/songA',TransformProviderLyrics:async value=>{transforms++;return {...structuredClone(value),Language:'eng'}},SongLyricsLoadedSignal:{Fire:()=>ready.resolve()},
     GetSpotifyAccessToken:()=>{throw Error('cache must not fetch')},ResolveAppleMusicId:()=>{},ShouldRefreshCachedLyrics:async()=>false,Abortable,CreateAbortScope,LyricsCacheExpiration:()=>{},Delay:()=>{}},
    '({load:LoadSongLyrics,state:()=>({SongLyrics,SongProviderLyrics,SongLyricsFromCache,HaveSongLyricsLoaded}),switch:()=>{Song={Type:"Streamed",Id:"songB"}}})');
@@ -196,6 +197,87 @@ test('actual lyric loader regenerates mismatched transformed caches and never pu
  assert.equal(transforms,1);assert.equal(loaded.state().SongLyrics.RequestId,'A');assert.equal(loaded.state().SongLyrics.Lines[0].Text,'correct');assert.deepEqual(loaded.state().SongProviderLyrics,raw);assert.equal(loaded.state().SongLyricsFromCache,true);
  const pending=deferred(),stale=setup(pending.promise);stale.load();stale.switch();pending.resolve(raw);await new Promise(resolve=>setImmediate(resolve));
  assert.equal(stale.state().SongLyrics,undefined);assert.equal(stale.state().SongProviderLyrics,undefined);
+});
+
+const flushLyrics = () => new Promise(resolve => setImmediate(resolve));
+const prefetchLyrics = id => ({Type:'Static',Lines:[{Text:id}],RequestId:id,LyricsHash:id});
+async function setupLyricsPrefetch({queue=['B','C'],cache=new Map(),readCache=id=>Promise.resolve(cache.get(id))}={}) {
+ const code=lyricsLoader(await read('../Spices/Spicetify/Services/Player/mod.ts'));
+ const requests=[],published=[],cached=[],cleanup=[];
+ const track=id=>({type:'track',isLocal:false,uri:'spotify:track:'+id,name:id,duration:{milliseconds:180000}});
+ const player={data:{nextItems:queue.map(track)}};
+ const state=evaluate('let Song={Type:"Streamed",Id:"A",Duration:180},SongLyrics,SongProviderLyrics,SongLyricsFromCache=false,HaveSongLyricsLoaded=false;'+code,
+  {PlayerMaid:{Give:fn=>cleanup.push(fn)},SpotifyPlayer:player,SpotifyURI:{from:uri=>({id:uri.split(':').at(-1)})},track,
+   ProviderLyricsStore:{GetItem:readCache,SetItem:async(id,value)=>{cached.push(id);cache.set(id,value)}},
+   TransformedLyricsStore:{GetItem:async()=>undefined,SetItem:async()=>{}},
+   BuildLyricsRequestURL:id=>'https://example.test/lyrics/'+id,TransformProviderLyrics:async value=>({...value,Language:'eng'}),
+   SongLyricsLoadedSignal:{Fire:()=>published.push(state.state())},ShouldRefreshCachedLyrics:async()=>false,
+   SpotifyPlatform:{PlatformData:{app_platform:'test'},version:'test'},GetSpotifyAccessToken:async()=> 'token',ResolveAppleMusicId:async()=>undefined,
+   fetch:(url,{signal})=>{const pending=deferred();requests.push({id:new URL(url).pathname.split('/').at(-1),signal,resolve:value=>pending.resolve(Response.json(value)),reject:pending.reject});return pending.promise;},
+   Abortable,CreateAbortScope,LyricsCacheExpiration:()=>{},Delay:async()=>{}},
+  '({prefetch:PrefetchUpcomingLyrics,load:(id,queue)=>{Song=id===undefined?undefined:{Type:"Streamed",Id:id,Duration:180};SpotifyPlayer.data={nextItems:queue.map(track)};LoadSongLyrics()},state:()=>({SongLyrics,SongProviderLyrics,SongLyricsFromCache,HaveSongLyricsLoaded})})');
+ return {...state,player,requests,published,cached,destroy:()=>cleanup.forEach(fn=>fn())};
+}
+
+test('switching to a pending prefetch reuses it and preserves overlapping upcoming requests',async()=>{
+ const app=await setupLyricsPrefetch();
+ try {
+  app.prefetch();await flushLyrics();assert.deepEqual(app.requests.map(x=>x.id),['B','C']);
+  app.load('B',['C','D']);await flushLyrics();
+  assert.deepEqual(app.requests.map(x=>x.id),['B','C','D']);
+  assert.ok(app.requests.every(x=>!x.signal.aborted));
+  app.prefetch();await flushLyrics();assert.equal(app.requests.length,3);
+  app.requests[0].resolve(prefetchLyrics('B'));await flushLyrics();
+  assert.deepEqual(app.cached,['B']);assert.equal(app.published.length,1);
+  assert.equal(app.state().SongLyrics.RequestId,'B');assert.equal(app.state().SongLyricsFromCache,false);
+ } finally { app.destroy(); }
+});
+
+test('rapid switching cancels obsolete requests, ignores late replies, and teardown cancels all remaining work',async()=>{
+ const app=await setupLyricsPrefetch();
+ try {
+  app.prefetch();await flushLyrics();app.load('B',['C','D']);await flushLyrics();
+  app.load('X',['C','E']);await flushLyrics();
+  const b=app.requests.find(x=>x.id==='B');assert.equal(b.signal.aborted,true);
+  assert.equal(app.requests.filter(x=>x.id==='C').length,1);
+  assert.equal(app.requests.find(x=>x.id==='C').signal.aborted,false);
+  assert.equal(app.requests.find(x=>x.id==='D').signal.aborted,true);
+  b.resolve(prefetchLyrics('B'));await flushLyrics();
+  assert.deepEqual(app.cached,[]);assert.deepEqual(app.published,[]);
+  app.destroy();await flushLyrics();assert.ok(app.requests.every(x=>x.signal.aborted));
+  for(const request of app.requests)request.resolve(prefetchLyrics(request.id));
+  await flushLyrics();assert.deepEqual(app.cached,[]);assert.deepEqual(app.published,[]);
+ } finally { app.destroy(); }
+});
+
+test('foreground retries failed or empty prefetches instead of failing the lyric load',async()=>{
+ for(const fail of [request=>request.reject(Error('offline')),request=>request.resolve(false)]) {
+  const app=await setupLyricsPrefetch({queue:['B']});
+  try {
+   app.prefetch();await flushLyrics();app.load('B',[]);await flushLyrics();
+   assert.equal(app.requests.length,1);fail(app.requests[0]);await flushLyrics();
+   assert.equal(app.requests.length,2);app.requests[1].resolve(prefetchLyrics('recovered'));await flushLyrics();
+   assert.equal(app.state().SongLyrics.RequestId,'recovered');assert.equal(app.published.length,1);
+  } finally { app.destroy(); }
+ }
+});
+
+test('pending cache reads deduplicate repeated queue items and can be promoted or cancelled before fetching',async()=>{
+ const gate=deferred(),reads=[];
+ const app=await setupLyricsPrefetch({queue:['B','B'],readCache:id=>{reads.push(id);return gate.promise}});
+ try {
+  app.prefetch();app.prefetch();assert.deepEqual(reads,['B']);
+  app.load('B',[]);await flushLyrics();gate.resolve(undefined);await flushLyrics();
+  assert.deepEqual(app.requests.map(x=>x.id),['B']);
+  app.requests[0].resolve(prefetchLyrics('B'));await flushLyrics();assert.equal(app.published.length,1);
+ } finally { app.destroy(); }
+ const cancelled=deferred(),stopped=await setupLyricsPrefetch({queue:['B'],readCache:()=>cancelled.promise});
+ stopped.prefetch();stopped.destroy();cancelled.resolve(undefined);await flushLyrics();assert.deepEqual(stopped.requests,[]);
+ const cached=await setupLyricsPrefetch({queue:['B'],cache:new Map([['B',prefetchLyrics('B')]])});
+ try {
+  cached.prefetch();await flushLyrics();cached.load('B',[]);await flushLyrics();
+  assert.deepEqual(cached.requests,[]);assert.equal(cached.state().SongLyricsFromCache,true);
+ } finally { cached.destroy(); }
 });
 
 test('source policy matches platform and actual type across transports and refreshes unknown provenance',async()=>{
@@ -228,7 +310,7 @@ test('actual policy query handles errors, validates payloads, and bounds stalled
 
 test('actual loader removes only blocked track caches, retains unaffected/restored caches, and ignores late policy replies',async()=>{
  const code=await read('../Spices/Spicetify/Services/Player/mod.ts');
- const loader=code.slice(code.indexOf('const LoadSongLyrics = () =>'),code.indexOf('export const RetrySongLyricsIfMissing'));
+ const loader=lyricsLoader(code);
  const policyCode=await read('../Spices/Spicetify/Services/Player/LyricsPolicy.ts');
  const raw={Type:'Syllable',StartTime:0,EndTime:1,Content:[],Source:{Provider:'qqmusic',Transport:'direct'},RequestId:'old',LyricsHash:'oldhash'};
  const fresh={Type:'Line',StartTime:0,EndTime:1,Content:[],Source:{Provider:'netease',Transport:'lyrically'},RequestId:'new',LyricsHash:'newhash'};
@@ -240,8 +322,8 @@ test('actual loader removes only blocked track caches, retains unaffected/restor
    assert.equal(options.headers.Authorization,'Bearer token');return Response.json(fresh);
   };
   const shouldRefresh=evaluate(policyCode,{fetch,Abortable,CreateAbortScope},'ShouldRefreshCachedLyrics');
-  const state=evaluate('let Song=initialSong,SongLyrics,SongProviderLyrics,SongLyricsFromCache=false,HaveSongLyricsLoaded=false,lyricsController;'+loader,
-   {initialSong:{Type:'Streamed',Id:'songA'},ShouldRefreshCachedLyrics:shouldRefresh,fetch,
+  const state=evaluate('let Song=initialSong,SongLyrics,SongProviderLyrics,SongLyricsFromCache=false,HaveSongLyricsLoaded=false;'+loader,
+   {initialSong:{Type:'Streamed',Id:'songA'},PlayerMaid:{Give(){}},SpotifyPlayer:{data:{nextItems:[]}},ShouldRefreshCachedLyrics:shouldRefresh,fetch,
     ProviderLyricsStore:{GetItem:async()=>structuredClone(raw),DeleteItem:async id=>{deleted.push('raw:'+id)},SetItem:async(id,value)=>{cached.push(value)}},
     TransformedLyricsStore:{GetItem:async()=>({...raw,Language:'eng'}),DeleteItem:async id=>{deleted.push('transformed:'+id)},SetItem:async()=>{}},
     BuildLyricsRequestURL:()=> 'https://lyrics.txw.qzz.io/lyrics/songA',TransformProviderLyrics:async value=>{transforms.push(value);return {...structuredClone(value),Language:'eng'}},SongLyricsLoadedSignal:{Fire:()=>ready.resolve()},

@@ -311,6 +311,11 @@
 	display: inline-block;
 	max-width: 100%;
 	white-space: pre-wrap;
+
+	/* The clipped gradient needs room for descenders outside the line box.
+	   Cancel the extra padding so lyric spacing and the scale origin stay put. */
+	padding-block: calc(0.2em + 0.5px);
+	margin-block: calc(-0.2em - 0.5px);
 }
 
 .Vocals:has(.Line),

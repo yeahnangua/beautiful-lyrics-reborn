@@ -129,4 +129,4 @@ export async function startReleaseLoader(fallback, runtime = globalThis) {
   }
 }
 
-await startReleaseLoader({"schema":1,"version":"5.2.3","sha256":"de5a1ca51f9196ed91b7340486fbaefa2b85449d863a98934fddc66a201bbee4","file":"beautiful-lyrics-reborn.de5a1ca51f9196ed.mjs","fullscreen":{"api":1,"sha256":"a44bd16819ed6e6919cdd40719ba74cc68a9a2a8ca96c66774b9bafdf204c704","file":"beautiful-lyrics-reborn-fullscreen.a44bd16819ed6e69.mjs"}});
+await startReleaseLoader({"schema":1,"version":"5.2.3","sha256":"626874f57f7f6aeba69936b6202494fd030159eded0353f6887926fd9da3e860","file":"beautiful-lyrics-reborn.626874f57f7f6aeb.mjs","fullscreen":{"api":1,"sha256":"4ef07e067d5cffeb6e80b67bee24ac47e7e2974cc62d000d553bb42391c18283","file":"beautiful-lyrics-reborn-fullscreen.4ef07e067d5cffeb.mjs"}});

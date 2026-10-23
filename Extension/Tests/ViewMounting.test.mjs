@@ -32,7 +32,7 @@ async function withViews(run) {
     },
   };
   class Button {
-    element = { style: {}, setAttribute() {} };
+    element = { style: {}, setAttribute() {}, classList: { add() {} } };
     constructor(label, icon, onClick) { this.onClick = onClick; buttons.push(this); }
     register() {} deregister() {}
   }
@@ -44,6 +44,7 @@ async function withViews(run) {
   }
   class Fullscreen extends Page {}
   const mocks = {
+    BindPlaybarElements: () => ({ Update() {}, Destroy() {} }), FindNowPlayingAnchor: () => null,
     MeasureLyricsDisplay:()=>()=>{},CancelLyricsDisplay(){},
     Maid, GlobalMaid: maid, OnSpotifyReady: Promise.resolve(),
     Defer: fn => { frames.set(++nextFrame, fn); return [2, nextFrame]; }, Timeout: () => () => {},
@@ -53,8 +54,6 @@ async function withViews(run) {
     checkKey: () => false, Icons: {}, ContainedPageView: Page, FullscreenPageView: Fullscreen,
     document: { querySelector: selector => nodes.get(selector) ?? null },
   };
-  // Prevent the unrelated playbar-removal stage from polling in this fixture.
-  nodes.set(".main-nowPlayingBar-extraControls", { children: [] });
   try {
     new Function(...Object.keys(mocks), source)(...Object.values(mocks));
     for (let tick = 0; tick < 8; tick++) await Promise.resolve();

@@ -32,6 +32,7 @@ import FullscreenPageView from "./Page/Fullscreen.ts"
 import { CreateElement, ApplyDynamicBackground } from "./Shared.ts"
 import Icons from "./Icons.ts"
 import { MeasureLyricsDisplay, CancelLyricsDisplay } from "../Modules/Metrics.ts"
+import { BindPlaybarElements, FindNowPlayingAnchor } from "./DOM.ts"
 
 // Create our maid
 const ViewMaid = GlobalMaid.Give(new Maid())
@@ -45,9 +46,8 @@ const MainView = ":is(#main-view, .Root__main-view)"
 const CurrentMainPage = `${MainView} .main-view-container div[data-overlayscrollbars-viewport]`
 const LegacyMainPage = `${MainView} .main-view-container .os-host`
 const NativeMainPage = `${MainView} .main-view-container__scroll-node`
-const RightSidebar = ".Root__right-sidebar"
-const ContentsContainer = "aside, section.main-buddyFeed-container"
-const CardInsertAnchor = ".main-nowPlayingView-nowPlayingWidget, canvas"
+const RightSidebar = ":is(.Root__right-sidebar, #Desktop_PanelContainer_Id)"
+const ContentsContainer = "[data-npv-root], aside, section.main-buddyFeed-container"
 const SpotifyCardViewQuery = ".main-nowPlayingView-section:not(:is(#BeautifulLyrics-CardView)):has(.main-nowPlayingView-lyricsTitle)"
 
 // Store our internal utilities
@@ -78,18 +78,6 @@ OnSpotifyReady
 				false, false
 			)
 			ViewMaid.Give(() => lyricsButton.deregister())
-
-			{
-				const CheckForSongExistence = () => {
-					if (Song === undefined) {
-						lyricsButton.deregister()
-					} else {
-						lyricsButton.register()
-					}
-				}
-				ViewMaid.Give(SongChanged.Connect(CheckForSongExistence))
-				ViewMaid.Give(Timeout(1, CheckForSongExistence))
-			}
 
 			lyricsButton.element.id = "BeautifulLyricsPageButton"
 			SetPlaybarPageIconActiveState = (isActive: boolean) => {
@@ -123,6 +111,13 @@ OnSpotifyReady
 			fullscreenButton.element.style.order = "100000"
 			fullscreenButton.element.id = "BeautifulLyricsFullscreenButton"
 		}
+		for (const button of [lyricsButton, fullscreenButton]) {
+			button.element.classList.add("BeautifulLyrics-PlaybarButton")
+			button.element.setAttribute("aria-label", button.label)
+		}
+		const playbarElements = ViewMaid.Give(BindPlaybarElements(
+			[lyricsButton.element, fullscreenButton.element], () => Song !== undefined
+		))
 
 		// Handle removing our buttons if we DON'T have a song
 		{
@@ -134,6 +129,7 @@ OnSpotifyReady
 					lyricsButton.register()
 					fullscreenButton.register()
 				}
+				playbarElements.Update()
 			}
 			ViewMaid.Give(SongChanged.Connect(CheckForSongExistence))
 			ViewMaid.Give(Timeout(1, CheckForSongExistence))
@@ -184,6 +180,7 @@ OnSpotifyReady
 	() => {
 		// Store our state
 		let sidebar: HTMLDivElement, contentsContainer: (HTMLDivElement | undefined)
+		let observedCardAnchor: HTMLDivElement | null = null
 		const contentsContainerMaid = ViewMaid.Give(new Maid())
 		const nowPlayingViewMaid = ViewMaid.Give(new Maid())
 
@@ -193,7 +190,7 @@ OnSpotifyReady
 			nowPlayingViewMaid.CleanUp()
 
 			// Now check to see if we have our card anchor
-			const cardAnchor = contentsContainer!.querySelector<HTMLDivElement>(CardInsertAnchor)
+			const cardAnchor = observedCardAnchor = FindNowPlayingAnchor(contentsContainer!)
 			if (cardAnchor === null) {
 				return
 			}
@@ -268,6 +265,12 @@ OnSpotifyReady
 
 			// Check if there's anything we can do immediately
 			CheckForNowPlaying()
+			// The new NPV root may arrive before its scroll content or replace that
+			// content without replacing the sidebar itself.
+			const contentsObserver = contentsContainerMaid.Give(new MutationObserver(() => {
+				if (!observedCardAnchor?.isConnected) DeferCheckForNowPlaying()
+			}))
+			contentsObserver.observe(contentsContainer, { childList: true, subtree: true })
 
 			// Handle when we should check
 			contentsContainerMaid.Give(SongChanged.Connect(DeferCheckForNowPlaying))
@@ -295,32 +298,12 @@ OnSpotifyReady
 			for (const element of sidebar.children) {
 				if (
 					(element instanceof HTMLDivElement)
-					&& ((element.children.length === 0) || (element.querySelector(ContentsContainer) !== null))
+					&& ((element.children.length === 0) || element.matches(ContentsContainer) || (element.querySelector(ContentsContainer) !== null))
 				) {
 					sidebarChildObserver.observe(element, { childList: true })
 				}
 			}
 		}
 		CheckForSidebar()
-	}
-)
-.then( // Spotify Fullscreen Button Removal
-	() => {
-		const SearchDOM = () => {
-			const controlsContainer = document.querySelector<HTMLButtonElement>(".main-nowPlayingBar-extraControls")
-			if (controlsContainer === null) {
-				ViewMaid.Give(Defer(SearchDOM))
-			} else {
-				for (const element of controlsContainer.children) {
-					if (
-						(element.attributes.getNamedItem("data-testid")?.value === "fullscreen-mode-button")
-						&& (element.id !== "BeautifulLyricsFullscreenButton")
-					) {
-						(element as HTMLElement).style.display = "none"
-					}
-				}
-			}
-		}
-		SearchDOM()
 	}
 )

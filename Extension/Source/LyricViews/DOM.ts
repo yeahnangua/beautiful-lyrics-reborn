@@ -48,3 +48,18 @@ export const FindNowPlayingAnchor = (contents: HTMLElement): HTMLDivElement | nu
 	}
 	return null
 }
+
+export const BindNowPlayingContents = (changed: (contents: HTMLDivElement | undefined) => void): (() => void) => {
+	let previous: HTMLDivElement | undefined
+	const update = () => {
+		const sidebar = document.querySelector(':is(.Root__right-sidebar, #Desktop_PanelContainer_Id)')
+		const contents = sidebar?.querySelector<HTMLDivElement>('[data-npv-root], aside, section.main-buddyFeed-container') ?? undefined
+		if (contents === previous) return
+		previous = contents
+		changed(contents)
+	}
+	const observer = new MutationObserver(update)
+	observer.observe(document.body, { childList: true, subtree: true })
+	update()
+	return () => observer.disconnect()
+}

@@ -32,7 +32,7 @@ import FullscreenPageView from "./Page/Fullscreen.ts"
 import { CreateElement, ApplyDynamicBackground } from "./Shared.ts"
 import Icons from "./Icons.ts"
 import { MeasureLyricsDisplay, CancelLyricsDisplay } from "../Modules/Metrics.ts"
-import { BindPlaybarElements, FindNowPlayingAnchor } from "./DOM.ts"
+import { BindNowPlayingContents, BindPlaybarElements, FindNowPlayingAnchor } from "./DOM.ts"
 
 // Create our maid
 const ViewMaid = GlobalMaid.Give(new Maid())
@@ -46,8 +46,6 @@ const MainView = ":is(#main-view, .Root__main-view)"
 const CurrentMainPage = `${MainView} .main-view-container div[data-overlayscrollbars-viewport]`
 const LegacyMainPage = `${MainView} .main-view-container .os-host`
 const NativeMainPage = `${MainView} .main-view-container__scroll-node`
-const RightSidebar = ":is(.Root__right-sidebar, #Desktop_PanelContainer_Id)"
-const ContentsContainer = "[data-npv-root], aside, section.main-buddyFeed-container"
 const SpotifyCardViewQuery = ".main-nowPlayingView-section:not(:is(#BeautifulLyrics-CardView)):has(.main-nowPlayingView-lyricsTitle)"
 
 // Store our internal utilities
@@ -179,7 +177,7 @@ OnSpotifyReady
 .then( // Right Side-bar/Card View
 	() => {
 		// Store our state
-		let sidebar: HTMLDivElement, contentsContainer: (HTMLDivElement | undefined)
+		let contentsContainer: HTMLDivElement | undefined
 		let observedCardAnchor: HTMLDivElement | null = null
 		const contentsContainerMaid = ViewMaid.Give(new Maid())
 		const nowPlayingViewMaid = ViewMaid.Give(new Maid())
@@ -252,13 +250,14 @@ OnSpotifyReady
 		}
 		const DeferCheckForNowPlaying = () => ViewMaid.Give(Defer(CheckForNowPlaying), "CheckForNowPlaying")
 
-		const CheckForContentsContainer = () => {
+		const CheckForContentsContainer = (contents: HTMLDivElement | undefined) => {
 			// Clean-up when we are called
+			ViewMaid.Clean("CheckForNowPlaying")
 			contentsContainerMaid.CleanUp()
 			nowPlayingViewMaid.CleanUp()
 
 			// Determine if our contents-container even exists
-			contentsContainer = (sidebar.querySelector<HTMLDivElement>(ContentsContainer) ?? undefined)
+			contentsContainer = contents
 			if (contentsContainer === undefined) {
 				return
 			}
@@ -276,34 +275,6 @@ OnSpotifyReady
 			contentsContainerMaid.Give(SongChanged.Connect(DeferCheckForNowPlaying))
 
 		}
-		const DeferCheckForContentsContainer = () => ViewMaid.Give(Defer(CheckForContentsContainer), "CheckForContentsContainer")
-
-		const CheckForSidebar = () => {
-			// Check for our sidebar existing
-			const newSidebar = document.querySelector<HTMLDivElement>(RightSidebar)
-			if (newSidebar === null) {
-				ViewMaid.Give(Defer(CheckForSidebar), "CheckForSidebar")
-				return
-			}
-			sidebar = newSidebar
-
-			// Create our observer
-			const sidebarChildObserver = ViewMaid.Give(new MutationObserver(DeferCheckForContentsContainer))
-
-			// Check if there's anything we can do immediately
-			CheckForContentsContainer()
-
-			// Observe our elements
-			sidebarChildObserver.observe(sidebar, { childList: true })
-			for (const element of sidebar.children) {
-				if (
-					(element instanceof HTMLDivElement)
-					&& ((element.children.length === 0) || element.matches(ContentsContainer) || (element.querySelector(ContentsContainer) !== null))
-				) {
-					sidebarChildObserver.observe(element, { childList: true })
-				}
-			}
-		}
-		CheckForSidebar()
+		ViewMaid.Give(BindNowPlayingContents(CheckForContentsContainer))
 	}
 )

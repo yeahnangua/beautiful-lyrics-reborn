@@ -44,7 +44,7 @@ async function withViews(run) {
   }
   class Fullscreen extends Page {}
   const mocks = {
-    BindPlaybarElements: () => ({ Update() {}, Destroy() {} }), FindNowPlayingAnchor: () => null,
+    BindNowPlayingContents: () => () => {}, BindPlaybarElements: () => ({ Update() {}, Destroy() {} }), FindNowPlayingAnchor: () => null,
     MeasureLyricsDisplay:()=>()=>{},CancelLyricsDisplay(){},
     Maid, GlobalMaid: maid, OnSpotifyReady: Promise.resolve(),
     Defer: fn => { frames.set(++nextFrame, fn); return [2, nextFrame]; }, Timeout: () => () => {},

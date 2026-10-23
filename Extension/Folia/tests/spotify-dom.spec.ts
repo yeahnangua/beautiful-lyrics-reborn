@@ -5,7 +5,7 @@ import { stripTypeScriptTypes } from 'node:module';
 const source = stripTypeScriptTypes(readFileSync(new URL('../../Source/LyricViews/DOM.ts', import.meta.url), 'utf8'));
 async function prepare(page: Page, html: string) {
   await page.setContent(html);
-  await page.addScriptTag({ type: 'module', content: `${source}\nwindow.domCompat = { FindPlaybarControls, BindPlaybarElements, FindNowPlayingAnchor };` });
+  await page.addScriptTag({ type: 'module', content: `${source}\nwindow.domCompat = { FindPlaybarControls, BindPlaybarElements, FindNowPlayingAnchor, BindNowPlayingContents };` });
   await expect.poll(() => page.evaluate(() => !!(window as any).domCompat)).toBe(true);
 }
 const bar = '<aside data-testid="now-playing-bar"><div class="hashed-controls"><button data-testid="fullscreen-mode-button" style="display:inline-flex"></button><div><button data-testid="control-button-queue"></button></div></div></aside>';
@@ -57,4 +57,28 @@ test('legacy controls remain supported and sidebar anchors stay inside the scrol
   expect(await contents.evaluate(element => (window as any).domCompat.FindNowPlayingAnchor(element)?.id)).toBe('widget');
   await contents.evaluate(element => element.innerHTML = '<div data-overlayscrollbars-viewport><a href="/album/example">Song</a></div><section><h2>Outside the scroll container</h2></section>');
   expect(await contents.evaluate(element => (window as any).domCompat.FindNowPlayingAnchor(element))).toBeNull();
+});
+
+test('sidebar bindings follow late content and whole-panel replacements without duplicate callbacks', async ({ page }) => {
+  await prepare(page, '<main></main>');
+  await page.evaluate(() => {
+    (window as any).changes = [];
+    (window as any).stopSidebar = (window as any).domCompat.BindNowPlayingContents((contents: HTMLElement | undefined) => {
+      (window as any).changes.push(contents?.id ?? null);
+    });
+  });
+  const main = page.locator('main');
+  await main.evaluate(element => element.innerHTML = '<aside id="Desktop_PanelContainer_Id"></aside>');
+  expect(await page.evaluate(() => (window as any).changes)).toEqual([]);
+  await page.locator('#Desktop_PanelContainer_Id').evaluate(element => element.innerHTML = '<div data-npv-root id="first"></div>');
+  await expect.poll(() => page.evaluate(() => (window as any).changes)).toEqual(['first']);
+  await page.locator('#first').evaluate(element => element.append(document.createElement('div')));
+  expect(await page.evaluate(() => (window as any).changes)).toEqual(['first']);
+  await main.evaluate(element => element.innerHTML = '<aside id="Desktop_PanelContainer_Id"><div data-npv-root id="replacement"></div></aside>');
+  await expect.poll(() => page.evaluate(() => (window as any).changes)).toEqual(['first', 'replacement']);
+  await main.evaluate(element => element.innerHTML = '');
+  await expect.poll(() => page.evaluate(() => (window as any).changes)).toEqual(['first', 'replacement', null]);
+  await page.evaluate(() => (window as any).stopSidebar());
+  await main.evaluate(element => element.innerHTML = '<aside id="Desktop_PanelContainer_Id"><div data-npv-root id="closed"></div></aside>');
+  expect(await page.evaluate(() => (window as any).changes)).toEqual(['first', 'replacement', null]);
 });

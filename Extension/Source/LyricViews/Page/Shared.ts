@@ -13,6 +13,7 @@ import LyricsRenderer from "../../Modules/LyricsRenderer.ts"
 // Our Modules
 import Icons from "./Icons.ts"
 import { CreateElement } from "../Shared.ts"
+import { MeasureLyricsDisplay } from "../../Modules/Metrics.ts"
 
 // Shared Lyrics Behavior
 export const CreateLyricsRenderer = (
@@ -24,6 +25,7 @@ export const CreateLyricsRenderer = (
 	const UpdateLyricsRenderer = () => {
 		// Wipe our previous renderer
 		maid.Clean("LyricsRenderer")
+		maid.Clean("DisplayMeasurement")
 
 		// If we don't have lyrics we need to display that
 		if (HaveSongLyricsLoaded === false) {
@@ -48,6 +50,7 @@ export const CreateLyricsRenderer = (
 				"LyricsRenderer"
 			)
 		}
+		maid.Give(MeasureLyricsDisplay(container, "page", HaveSongLyricsLoaded ? SongLyrics?.Type : undefined), "DisplayMeasurement")
 	}
 	UpdateLyricsRenderer()
 	maid.Give(SongChanged.Connect(UpdateLyricsRenderer))

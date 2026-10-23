@@ -13,6 +13,7 @@ import { SongLyrics } from "@Spices/Spicetify/Services/Player/mod.ts"
 
 // Our Modules
 import LyricsRenderer from "../../Modules/LyricsRenderer.ts"
+import { MeasureLyricsDisplay, CancelLyricsDisplay } from "../../Modules/Metrics.ts"
 import {
 	CreateElement,
 	Store
@@ -147,6 +148,8 @@ export default class CardView implements Giveable {
 	}
 
 	private CreateLyricsRenderer() {
+		this.Maid.Clean("DisplayMeasurement")
+		this.Maid.Give(MeasureLyricsDisplay(this.LyricsContentContainer, "card", SongLyrics?.Type), "DisplayMeasurement")
 		this.Maid.Give(
 			new LyricsRenderer(
 				this.LyricsContentContainer, SongLyrics!
@@ -158,6 +161,7 @@ export default class CardView implements Giveable {
 	private ReactToLyricsVisibility() {
 		// Determine if we are visible
 		const isVisbile = Store.Items.CardLyricsVisible
+		if (!isVisbile) { this.Maid.Clean("DisplayMeasurement"); CancelLyricsDisplay("card") }
 
 		// Determine what is presently parented to header
 		const visibleHeaderElement = isVisbile ? this.ExpandedControls.Container : this.ShowLyricsButton

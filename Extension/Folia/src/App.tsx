@@ -22,6 +22,7 @@ export function App({ model, actions }: { model: FoliaModel; actions: FoliaActio
   const { player, index, panel, failed } = state;
   const { t } = useTranslation();
   const [settings, setSettings] = useState(loadSettings);
+  useEffect(() => { actions.metric?.('fullscreen_mode', { mode: settings.mode }); }, [settings.mode, actions]);
   const changeSettings = (patch: Partial<Settings>) => {
     setSettings(previous => { const next = { ...previous, ...patch }; saveSettings(next); return next; });
     model.change({ failed: false });

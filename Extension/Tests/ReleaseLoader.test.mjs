@@ -92,6 +92,15 @@ test("a stale loader uses last successful release when pointer is unavailable", 
   await startReleaseLoader(f.old, f.runtime);
   assert.equal(f.runtime.__beautifulLyricsRebornLoader.build, f.fresh.sha256);
 });
+
+test("existing schema-one loader accepts a split release without requesting its fullscreen runtime", async () => {
+  const f = fixture();
+  f.fresh.fullscreen = { api: 1, sha256: 'a'.repeat(64), file: 'beautiful-lyrics-reborn-fullscreen.aaaaaaaaaaaaaaaa.mjs' };
+  await startReleaseLoader(f.old, f.runtime);
+  assert.deepEqual(f.imports, ["export default 'new';"]);
+  assert.equal(f.runtime.__beautifulLyricsRebornLoader.build, f.fresh.sha256);
+  assert.ok(f.calls.every(call => !call.url.includes('beautiful-lyrics-reborn-fullscreen.')));
+});
 test("rejects corrupt payloads and falls back before evaluating any code", async () => {
   const f = fixture();
   const fetcher = f.runtime.fetch;

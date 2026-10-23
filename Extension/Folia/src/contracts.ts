@@ -34,6 +34,7 @@ export interface PlayerSnapshot {
 }
 export interface LibraryItem { type: 'folder' | 'playlist'; uri: string; name: string; cover?: string }
 export interface FoliaActions {
+  metric?(kind: string, fields: Record<string, unknown>): void;
   close(): void;
   toggleFullscreen(): void;
   prev(): void;

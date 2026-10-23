@@ -31,6 +31,7 @@ for(const mode of modes) test(`${mode}: renders, pauses, seeks, resizes and rele
 });
 test('static, loading, missing, instrumental, RTL and settings persistence',async({page})=>{
   await page.goto('/');
+  await expect(page.locator('.folia-app')).toBeVisible();
   for(const status of ['loading','missing','instrumental','static']){
     await page.evaluate(status=>{const fixture=(window as any).testFolia;fixture.update({lyrics:{status,lines:[],staticLines:['مرحبا بالعالم','第二行  spaces'],direction:'rtl'}});},status);
     await expect(page.locator('.folia-app')).toHaveAttribute('dir','rtl');

@@ -10,6 +10,15 @@ custom_domain = true
 binding = "STATS"
 dataset = "lyrics_outcomes"
 
+[[analytics_engine_datasets]]
+binding = "METRICS"
+dataset = "lyrics_metrics"
+
+[[ratelimits]]
+name = "METRICS_LIMITER"
+namespace_id = "823601"
+simple = { limit = 120, period = 60 }
+
 [observability.logs]
 enabled = true
 invocation_logs = true

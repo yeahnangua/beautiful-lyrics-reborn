@@ -31,6 +31,7 @@ import FullscreenPageView from "./Page/Fullscreen.ts"
 // Our Modules
 import { CreateElement, ApplyDynamicBackground } from "./Shared.ts"
 import Icons from "./Icons.ts"
+import { MeasureLyricsDisplay, CancelLyricsDisplay } from "../Modules/Metrics.ts"
 
 // Create our maid
 const ViewMaid = GlobalMaid.Give(new Maid())
@@ -142,10 +143,14 @@ OnSpotifyReady
 .then( // Location Handler
 	() => {
 		const HandleSpotifyLocation = (location: HistoryLocation) => {
+			// A repeated entry must not restart an in-flight fullscreen download.
+			if (location.pathname === "/BeautifulLyrics/Fullscreen" && ActivePageView instanceof FullscreenPageView) return
 			// Cancel a pending mount when navigating away or switching view types.
 			ViewMaid.Clean("FindPageContainer")
 			// Remove our previous page-view
 			ViewMaid.Clean("PageView")
+			CancelLyricsDisplay("page")
+			CancelLyricsDisplay("fullscreen")
 
 			// Now handle our page-view
 			if (location.pathname === "/BeautifulLyrics/Page") {
@@ -222,6 +227,7 @@ OnSpotifyReady
 
 			// Also handle our own card
 			const ShouldCreateCard = () => {
+				nowPlayingViewMaid.Clean("CardLoadingMeasurement")
 				if (
 					// We shouldn't be rendering the card-view when we have another of our views open
 					SpotifyHistory.location.pathname.startsWith("/BeautifulLyrics")
@@ -229,10 +235,12 @@ OnSpotifyReady
 					|| (HaveSongLyricsLoaded && (SongLyrics === undefined))
 				) {
 					nowPlayingViewMaid.Clean("Card")
+					CancelLyricsDisplay("card")
 					return
 				} else if (HaveSongLyricsLoaded === false) { // Render a template if we're still loading our lyrics
 					const card = nowPlayingViewMaid.Give(CreateElement<HTMLDivElement>(LoadingLyricsCard), "Card")
 					cardAnchor.after(card)
+					nowPlayingViewMaid.Give(MeasureLyricsDisplay(card, "card"), "CardLoadingMeasurement")
 
 					return
 				}

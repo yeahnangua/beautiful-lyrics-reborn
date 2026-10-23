@@ -144,6 +144,7 @@ export type UpstreamEvent = {
   outcome: "pending" | "success" | "failed" | "timeout" | "cancelled";
 };
 export type ProviderAttempt = {
+  selected?: boolean;
   provider: string;
   stage: "metadata" | "syllable" | "line" | "static";
   startedAt: string;

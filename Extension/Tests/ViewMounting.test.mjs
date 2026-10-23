@@ -44,6 +44,7 @@ async function withViews(run) {
   }
   class Fullscreen extends Page {}
   const mocks = {
+    MeasureLyricsDisplay:()=>()=>{},CancelLyricsDisplay(){},
     Maid, GlobalMaid: maid, OnSpotifyReady: Promise.resolve(),
     Defer: fn => { frames.set(++nextFrame, fn); return [2, nextFrame]; }, Timeout: () => () => {},
     SpotifyHistory: history, SpotifyPlaybar: { Button },

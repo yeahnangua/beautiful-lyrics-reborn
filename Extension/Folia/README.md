@@ -37,3 +37,7 @@ Folia's AGPL license is preserved in `vendor/LICENSE`, and the original avatar/e
 The Vite build adapts Paper Shader's style injection to use the canvas's Shadow Root. This keeps its required full-size canvas rules inside the isolated surface and avoids document-level stylesheet changes.
 
 The alternate-text helper retains Reborn's translation-only subtitle policy. Transliteration controls, engines and dictionaries remain absent from the payload.
+
+## On-demand online runtime
+
+Online releases package this entire runtime separately and only download/import it on the first fullscreen/cinema entry. The main extension keeps the Spotify host and passes snapshots/actions into the verified runtime, so there is one playback service and lyric cache. Offline builds embed this module. See [loading, publication and metric definitions](../../docs/fullscreen-loading-and-statistics.md) for cache behavior, cancellation, hash validation and anonymous aggregate statistics.

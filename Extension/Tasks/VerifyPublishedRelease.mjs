@@ -19,6 +19,13 @@ async function verify() {
   assert.match(payload.headers.get("content-type"), /javascript/);
   assert.match(payload.headers.get("cache-control"), /immutable/);
   assert.equal(createHash("sha256").update(Buffer.from(await payload.arrayBuffer())).digest("hex"), expected.sha256);
+  if (expected.fullscreen) {
+    const runtime = await fetch(new URL(expected.fullscreen.file, base), { signal: AbortSignal.timeout(60000) });
+    assert.equal(runtime.status, 200);
+    assert.match(runtime.headers.get('content-type'), /javascript/);
+    assert.match(runtime.headers.get('cache-control'), /immutable/);
+    assert.equal(createHash('sha256').update(Buffer.from(await runtime.arrayBuffer())).digest('hex'), expected.fullscreen.sha256);
+  }
   console.log(`Verified published release ${expected.version} (${expected.sha256.slice(0, 16)})`);
 }
 

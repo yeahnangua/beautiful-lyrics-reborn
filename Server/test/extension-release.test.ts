@@ -26,6 +26,9 @@ describe("extension releases", () => {
     const response = await f.worker.fetch!(request("beautiful-lyrics-reborn.0123456789abcdef.mjs"), f.env, {} as ExecutionContext);
     expect(response.headers.get("Cache-Control")).toContain("immutable");
     expect(response.headers.get("Content-Type")).toContain("text/javascript");
+    const fullscreen = await f.worker.fetch!(request("beautiful-lyrics-reborn-fullscreen.0123456789abcdef.mjs"), f.env, {} as ExecutionContext);
+    expect(fullscreen.status).toBe(200);
+    expect(fullscreen.headers.get("Cache-Control")).toContain("immutable");
   });
   it("does not cache missing assets or expose the bootstrap via this route", async () => {
     const f = fixture();

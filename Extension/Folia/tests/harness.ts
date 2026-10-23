@@ -1,6 +1,12 @@
-// @ts-types="../src/runtime.d.ts"
-import { mountFolia } from '../dist/folia.mjs';
+import { createFullscreenLoader } from '../../Spices/AutoUpdate/FullscreenLoader.mjs';
 import type { FoliaActions, FoliaHandle, PlayerSnapshot } from '../src/contracts';
+
+const lazy = new URLSearchParams(location.search).has('lazy');
+let mountFolia: typeof import('../src/runtime').mountFolia;
+if (!lazy) {
+  // @ts-types="../src/runtime.d.ts"
+  mountFolia = (await import('../dist/folia.mjs')).mountFolia;
+}
 
 // Browser fixture uses the actual compiled payload and host contracts, with local song data.
 const cover = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"><defs><linearGradient id="g"><stop stop-color="#fdba74"/><stop offset="1" stop-color="#7c3aed"/></linearGradient></defs><rect width="512" height="512" fill="url(#g)"/><circle cx="256" cy="256" r="120" fill="#18181b"/></svg>');
@@ -10,7 +16,7 @@ let player: PlayerSnapshot = {
   playing:true,shuffle:false,loop:'off',liked:false,volume:0.65,canSeek:true,canLike:true,canPlaylist:true,canFeedback:true,fullscreen:false,audioStatus:'available',
   lyrics:{status:'synced',staticLines:[],direction:'ltr',lines:Array.from({length:20},(_,i)=>({id:String(i),fullText:i%2?'Echo echo, into the night':'星河流过，你我之间',agentId:i%2?'opposite':'lead',startTime:i*4,endTime:i*4+3.8,words:(i%2?['Echo ','echo, ','into ','the ','night']:['星河','流过，','你我','之间']).map((text,j)=>({text,startTime:i*4+j*.7,endTime:i*4+j*.7+.65})),backgroundVocals:i===5?[{text:'回声',startTime:20,endTime:23,words:[{text:'回声',startTime:20,endTime:23}]}]:undefined}))},
 };
-let handle: FoliaHandle;
+let handle: FoliaHandle | undefined;
 let clock=20.6, timer: ReturnType<typeof setInterval> | undefined;
 const log = (type: string, value?: unknown) => calls.push({type,value});
 const update = (patch: Partial<PlayerSnapshot>) => { player={...player,...patch};handle?.update(player); };
@@ -29,9 +35,25 @@ let offset=0;
 function mount(){
   const host=document.createElement('div');host.id='fixture-host';document.body.append(host);
   handle=mountFolia(host,player,actions,'en');
-  timer=setInterval(()=>{if(player.playing)clock+=1/30;handle.step(clock,offset,{power:100,bass:120,lowMid:100,mid:100,vocal:100,treble:100});},1000/30);
+  timer=setInterval(()=>{if(player.playing)clock+=1/30;handle?.step(clock,offset,{power:100,bass:120,lowMid:100,mid:100,vocal:100,treble:100});},1000/30);
 }
-function destroy(){clearInterval(timer);handle.destroy();document.querySelector('#fixture-host')?.remove();}
-window.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();if(!handle.closePanel())actions.close();}});
-mount();
-Object.assign(window,{testFolia:{calls,update,setTime:(value:number)=>{clock=value;},mount,destroy,getPlayer:()=>player}});
+let controller = new AbortController();
+let opening: Promise<string> | undefined;
+const load = lazy ? createFullscreenLoader((window as any).fullscreenRelease) : undefined;
+function open(): Promise<string> {
+  if (opening) return opening;
+  controller = new AbortController();
+  const signal = controller.signal;
+  const request = load!(signal).then((runtime: { mountFolia: typeof mountFolia; source: string }) => {
+    signal.throwIfAborted();
+    mountFolia = runtime.mountFolia;
+    mount();
+    return runtime.source;
+  }).finally(() => { if (opening === request) opening = undefined; });
+  opening = request;
+  return request;
+}
+function destroy(){controller.abort();clearInterval(timer);handle?.destroy();handle=undefined;document.querySelector('#fixture-host')?.remove();}
+window.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();if(!handle?.closePanel())actions.close();}});
+if (!lazy) mount();
+Object.assign(window,{testFolia:{calls,update,setTime:(value:number)=>{clock=value;},mount,destroy,open,getPlayer:()=>player}});

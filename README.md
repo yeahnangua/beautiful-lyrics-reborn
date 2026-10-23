@@ -22,6 +22,8 @@ https://lyrics.txw.qzz.io
 - Fullscreen and page lyric views.
 - Dynamic cover-art based backgrounds.
 - Folia fullscreen with 13 switchable lyric visualizers, five backgrounds, a floating playback capsule, and saved font/display preferences. Subtitles are hidden by default.
+- Online releases load the complete fullscreen runtime only when fullscreen/cinema is opened, with verified persistent caching. Offline bundles remain self-contained.
+- The statistics page includes provider performance, weighted latency percentiles, cache reuse and fullscreen usage. Aggregate plugin metrics are always enabled; no song, lyric, account, token or persistent user identifier is sent. See [loading and statistics details](docs/fullscreen-loading-and-statistics.md).
 - Reborn lyrics provider flow:
   1. The first available syllable lyrics from direct QQ Music QRC, KuGou KRC, NetEase YRC,
      plus Lyrically/Paxsenix Apple Music, Kugou,

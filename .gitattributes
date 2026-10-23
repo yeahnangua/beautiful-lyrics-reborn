@@ -1,3 +1,4 @@
 dist/* linguist-vendored
 # Immutable release filenames and descriptors contain a hash of these exact bytes.
 Extension/Builds/Release/beautiful-lyrics-reborn.*.mjs -text
+Extension/Builds/Release/beautiful-lyrics-reborn-fullscreen.*.mjs -text

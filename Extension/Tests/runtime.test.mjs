@@ -13,7 +13,7 @@ const deferred = () => { let resolve, reject; const promise = new Promise((a,b) 
 const token = () => ({accessToken:'valid',expiresAtTime:Date.now()+60000,tokenType:'Bearer'});
 const fast = {timeoutMs:10,retryDelayMs:1};
 const read = path => readFile(new URL(path,import.meta.url),'utf8');
-const evaluate = (source, mocks, result) => new Function(...Object.keys(mocks), stripTypeScriptTypes(source, { mode: "transform" }).replace(/^import[\s\S]*?from\s+["'][^"']+["'];?\s*$/gm,'').replace(/\bexport\s+/g,'') + `\nreturn ${result};`)(...Object.values(mocks));
+const evaluate = (source, mocks, result) => { mocks={BeginLyricsMeasurement(){},EmitMetric(){},...mocks};return new Function(...Object.keys(mocks), stripTypeScriptTypes(source, { mode: "transform" }).replace(/^import[\s\S]*?from\s+["'][^"']+["'];?\s*$/gm,'').replace(/\bexport\s+/g,'') + `\nreturn ${result};`)(...Object.values(mocks)); };
 const lyricsLoader = source => source.slice(source.indexOf('let lyricsController:'),source.indexOf('export const RetrySongLyricsIfMissing'));
 
 test('token shares in-flight work, retries once, and reuses valid cache', async () => {
@@ -203,11 +203,11 @@ const flushLyrics = () => new Promise(resolve => setImmediate(resolve));
 const prefetchLyrics = id => ({Type:'Static',Lines:[{Text:id}],RequestId:id,LyricsHash:id});
 async function setupLyricsPrefetch({queue=['B','C'],cache=new Map(),readCache=id=>Promise.resolve(cache.get(id))}={}) {
  const code=lyricsLoader(await read('../Spices/Spicetify/Services/Player/mod.ts'));
- const requests=[],published=[],cached=[],cleanup=[];
+ const requests=[],published=[],cached=[],cleanup=[],metrics=[];
  const track=id=>({type:'track',isLocal:false,uri:'spotify:track:'+id,name:id,duration:{milliseconds:180000}});
  const player={data:{nextItems:queue.map(track)}};
  const state=evaluate('let Song={Type:"Streamed",Id:"A",Duration:180},SongLyrics,SongProviderLyrics,SongLyricsFromCache=false,HaveSongLyricsLoaded=false;'+code,
-  {PlayerMaid:{Give:fn=>cleanup.push(fn)},SpotifyPlayer:player,SpotifyURI:{from:uri=>({id:uri.split(':').at(-1)})},track,
+  {EmitMetric:(kind,fields)=>metrics.push({kind,...fields}),PlayerMaid:{Give:fn=>cleanup.push(fn)},SpotifyPlayer:player,SpotifyURI:{from:uri=>({id:uri.split(':').at(-1)})},track,
    ProviderLyricsStore:{GetItem:readCache,SetItem:async(id,value)=>{cached.push(id);cache.set(id,value)}},
    TransformedLyricsStore:{GetItem:async()=>undefined,SetItem:async()=>{}},
    BuildLyricsRequestURL:id=>'https://example.test/lyrics/'+id,TransformProviderLyrics:async value=>({...value,Language:'eng'}),
@@ -216,13 +216,14 @@ async function setupLyricsPrefetch({queue=['B','C'],cache=new Map(),readCache=id
    fetch:(url,{signal})=>{const pending=deferred();requests.push({id:new URL(url).pathname.split('/').at(-1),signal,resolve:value=>pending.resolve(Response.json(value)),reject:pending.reject});return pending.promise;},
    Abortable,CreateAbortScope,LyricsCacheExpiration:()=>{},Delay:async()=>{}},
   '({prefetch:PrefetchUpcomingLyrics,load:(id,queue)=>{Song=id===undefined?undefined:{Type:"Streamed",Id:id,Duration:180};SpotifyPlayer.data={nextItems:queue.map(track)};LoadSongLyrics()},state:()=>({SongLyrics,SongProviderLyrics,SongLyricsFromCache,HaveSongLyricsLoaded})})');
- return {...state,player,requests,published,cached,destroy:()=>cleanup.forEach(fn=>fn())};
+ return {...state,player,requests,published,cached,metrics,destroy:()=>cleanup.forEach(fn=>fn())};
 }
 
 test('switching to a pending prefetch reuses it and preserves overlapping upcoming requests',async()=>{
  const app=await setupLyricsPrefetch();
  try {
   app.prefetch();await flushLyrics();assert.deepEqual(app.requests.map(x=>x.id),['B','C']);
+  assert.deepEqual(app.metrics,[]);
   app.load('B',['C','D']);await flushLyrics();
   assert.deepEqual(app.requests.map(x=>x.id),['B','C','D']);
   assert.ok(app.requests.every(x=>!x.signal.aborted));
@@ -230,6 +231,7 @@ test('switching to a pending prefetch reuses it and preserves overlapping upcomi
   app.requests[0].resolve(prefetchLyrics('B'));await flushLyrics();
   assert.deepEqual(app.cached,['B']);assert.equal(app.published.length,1);
   assert.equal(app.state().SongLyrics.RequestId,'B');assert.equal(app.state().SongLyricsFromCache,false);
+  assert.equal(app.metrics.length,1);assert.equal(app.metrics[0].source,'prefetch');
  } finally { app.destroy(); }
 });
 
@@ -247,6 +249,7 @@ test('rapid switching cancels obsolete requests, ignores late replies, and teard
   app.destroy();await flushLyrics();assert.ok(app.requests.every(x=>x.signal.aborted));
   for(const request of app.requests)request.resolve(prefetchLyrics(request.id));
   await flushLyrics();assert.deepEqual(app.cached,[]);assert.deepEqual(app.published,[]);
+  assert.deepEqual(app.metrics,[]);
  } finally { app.destroy(); }
 });
 
@@ -277,6 +280,7 @@ test('pending cache reads deduplicate repeated queue items and can be promoted o
  try {
   cached.prefetch();await flushLyrics();cached.load('B',[]);await flushLyrics();
   assert.deepEqual(cached.requests,[]);assert.equal(cached.state().SongLyricsFromCache,true);
+  assert.equal(cached.metrics[0].source,'cache');
  } finally { cached.destroy(); }
 });
 

@@ -24,6 +24,7 @@ import {
 } from "./LyricUtilities.ts"
 import { SimplifySearchText } from "./SearchText.ts"
 import { ShouldRefreshCachedLyrics } from "./LyricsPolicy.ts"
+import { BeginLyricsMeasurement, EmitMetric } from "../../../../Source/Modules/Metrics.ts"
 
 // Re-export some useful types
 export type { TransformedLyrics }
@@ -540,6 +541,9 @@ const PrefetchUpcomingLyrics = () => {
 	}
 }
 const LoadSongLyrics = () => {
+	BeginLyricsMeasurement()
+	const measurementStarted = performance.now()
+	let measurementSource = "network"
 	lyricsController?.abort()
 	const controller = lyricsController = new AbortController()
 	PrefetchUpcomingLyrics()
@@ -565,7 +569,7 @@ const LoadSongLyrics = () => {
 					return undefined
 				})
 			controller.signal.throwIfAborted()
-			if (lyrics) return lyrics
+			if (lyrics) { measurementSource = "prefetch"; return lyrics }
 		}
 		return FetchProviderLyrics(songAtUpdate.Id, lyricsRequestURL, controller.signal, remainingRetries)
 	}
@@ -591,6 +595,7 @@ const LoadSongLyrics = () => {
 					}
 					controller.signal.throwIfAborted()
 					fromCache = true
+					measurementSource = "cache"
 					return providerLyrics
 				}
 			}
@@ -644,6 +649,7 @@ const LoadSongLyrics = () => {
 
 				// Update our lyrics
 				SongLyrics = transformedLyrics, SongProviderLyrics = originalLyrics, SongLyricsFromCache = fromCache, HaveSongLyricsLoaded = true
+				EmitMetric("lyrics_load", { durationMs: Math.round(performance.now() - measurementStarted), source: measurementSource, outcome: transformedLyrics ? "success" : "none", lyricsType: transformedLyrics?.Type ?? "none" })
 				SongLyricsLoadedSignal.Fire()
 			}
 		)
@@ -656,6 +662,7 @@ const LoadSongLyrics = () => {
 
 				console.warn(`Failed to load Lyrics for Track (${songAtUpdate.Id})`)
 				console.error(error)
+				EmitMetric("lyrics_load", { durationMs: Math.round(performance.now() - measurementStarted), source: measurementSource, outcome: "failed", lyricsType: "none" })
 
 				SongLyrics = undefined, HaveSongLyricsLoaded = true
 				SongLyricsLoadedSignal.Fire()

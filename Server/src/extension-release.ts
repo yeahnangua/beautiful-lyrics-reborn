@@ -8,7 +8,7 @@ export async function extensionReleaseResponse(request: Request, assets?: Fetche
     "Cache-Control": "no-store",
     "CDN-Cache-Control": "no-store",
   });
-  if (!latest && !/^beautiful-lyrics-reborn\.[a-f0-9]{16}\.mjs$/.test(file)) {
+  if (!latest && !/^beautiful-lyrics-reborn(?:-fullscreen)?\.[a-f0-9]{16}\.mjs$/.test(file)) {
     return new Response("Not found", { status: 404, headers });
   }
   if (!assets) return new Response("Releases not configured", { status: 503, headers });

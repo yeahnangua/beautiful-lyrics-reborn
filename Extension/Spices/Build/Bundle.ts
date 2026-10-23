@@ -40,13 +40,16 @@ type BundleConfiguration = {
 	Type?: ("Release" | "Test" | "Offline");
 
 	VersionIdentifier?: string;
+	FullscreenRelease?: { api: number; file: string; sha256: string };
 }
 export default async (bundleConfiguration: BundleConfiguration = {}): Promise<unknown> => {
   // Compile Folia's TSX, image globs and isolated Tailwind before esbuild embeds it.
+  if (!bundleConfiguration.FullscreenRelease) {
   const foliaBuild = new Deno.Command("node", {
     args: [resolve(Deno.cwd(), "Folia/build.mjs")], stdout: "inherit", stderr: "inherit",
   }).spawn()
   if (!(await foliaBuild.status).success) throw new Error("Folia build failed. Run npm ci in Extension/Folia first.")
+  }
 	// Determine any absolute configuration values
 	const bundleType = (
 		(bundleConfiguration.Type === undefined) ? "Release"
@@ -71,6 +74,12 @@ export default async (bundleConfiguration: BundleConfiguration = {}): Promise<un
 
 	// Setup all our plugins
 	const plugins: esbuild.Plugin[] = []
+	if (bundleConfiguration.FullscreenRelease) plugins.push({
+		name: "fullscreen-on-demand",
+		setup(build) {
+			build.onResolve({ filter: /FullscreenRuntime\.ts$/ }, () => ({ path: resolve("Source/Modules/FullscreenRuntimeOnline.ts") }))
+		},
+	})
 
 	{
 		plugins.push(...denoPlugins({ configPath: resolve(Deno.cwd(), "./deno.json") }))
@@ -157,6 +166,7 @@ export default async (bundleConfiguration: BundleConfiguration = {}): Promise<un
 		sourcemap: buildDirectory === undefined ? false : "linked",
 		minify: applyOptimizations,
 		legalComments: "inline",
+		define: { __FULLSCREEN_RELEASE__: JSON.stringify(bundleConfiguration.FullscreenRelease ?? null), __BUILD_VERSION__: JSON.stringify(BuildVersion) },
 		write: false
 	}), styles)
 	if (buildDirectory === undefined) {

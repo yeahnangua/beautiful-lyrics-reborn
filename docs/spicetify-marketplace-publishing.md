@@ -113,3 +113,6 @@ directory, and deploy the Worker assets without rebuilding the extension (a rebu
 would replace that pointer). Alternatively roll back the whole Worker deployment,
 which also rolls back the lyrics server. The next check prompts a reload to the
 previous payload. Keep older immutable files when publishing subsequent releases.
+## Fullscreen runtime assets
+
+Online releases now include a pinned `fullscreen` descriptor in `latest.json` and a separate `beautiful-lyrics-reborn-fullscreen.<hash>.mjs`. Publish and verify both payloads together; keep the runtime referenced by each retained main release. Existing schema-1 loaders remain compatible. The updated Worker also accepts `/metrics` and uses the independent `lyrics_metrics` dataset and `METRICS_LIMITER` binding. Details and deployment order: [fullscreen loading and statistics](fullscreen-loading-and-statistics.md).

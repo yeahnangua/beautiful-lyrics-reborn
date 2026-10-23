@@ -1,194 +1,61 @@
-// Self-contained stats dashboard. Fetches /stats JSON and renders an SVG donut.
-// ponytail: inline HTML string, no bundler/asset pipeline. Move to a real asset if it grows.
-export const dashboardHtml = /* html */ `<!DOCTYPE html>
-<html lang="zh">
+// Compact public statistics page. Detailed aggregates remain available through /stats.
+export const dashboardHtml = /* html */ `<!doctype html>
+<html lang="zh-CN">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Lyrics Stats</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=Space+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>歌词统计 · Beautiful Lyrics Reborn</title>
 <style>
-  :root {
-    --bg: #0b0a0f;
-    --panel: #14121b;
-    --ink: #f4f1ea;
-    --muted: #8a8496;
-    --line: #262233;
-    --syllable: #f5b642;
-    --lineType: #6ea8fe;
-    --static: #b07cf0;
-    --none: #4a4556;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: radial-gradient(120% 90% at 80% -10%, #1c1830 0%, var(--bg) 55%) fixed;
-    color: var(--ink);
-    font-family: "Space Grotesk", system-ui, sans-serif;
-    min-height: 100vh;
-    padding: clamp(1.5rem, 4vw, 4rem);
-    -webkit-font-smoothing: antialiased;
-  }
-  .grain {
-    position: fixed; inset: 0; pointer-events: none; opacity: 0.035; z-index: 99;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  }
-  header {
-    display: flex; justify-content: space-between; align-items: flex-end;
-    flex-wrap: wrap; gap: 1rem; max-width: 1000px; margin: 0 auto 2.5rem;
-    animation: rise 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-  }
-  h1 {
-    font-family: "Fraunces", serif; font-weight: 600; font-size: clamp(2.2rem, 6vw, 3.6rem);
-    line-height: 0.95; letter-spacing: -0.02em;
-  }
-  h1 em { font-style: italic; color: var(--syllable); }
-  .sub { color: var(--muted); font-size: 0.95rem; margin-top: 0.5rem; letter-spacing: 0.01em; }
-  .ranges { display: flex; gap: 0.4rem; }
-  .ranges button {
-    font-family: inherit; font-size: 0.85rem; color: var(--muted);
-    background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
-    padding: 0.45rem 1rem; cursor: pointer; transition: all 0.2s ease;
-  }
-  .ranges button:hover { color: var(--ink); border-color: #3a3450; }
-  .ranges button[aria-pressed="true"] { color: var(--bg); background: var(--syllable); border-color: var(--syllable); font-weight: 600; }
-  main {
-    max-width: 1000px; margin: 0 auto;
-    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: clamp(1.5rem, 4vw, 3.5rem);
-    align-items: center;
-  }
-  @media (max-width: 720px) { main { grid-template-columns: 1fr; } }
-  .chart-wrap { position: relative; display: grid; place-items: center; animation: rise 0.8s 0.1s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
-  svg.donut { width: min(360px, 80vw); height: auto; transform: rotate(-90deg); }
-  svg.donut circle { fill: none; stroke-width: 26; stroke-linecap: round; transition: stroke-dashoffset 1s cubic-bezier(0.2, 0.8, 0.2, 1); }
-  .center { position: absolute; text-align: center; }
-  .center .big { font-family: "Fraunces", serif; font-size: 3rem; font-weight: 600; letter-spacing: -0.02em; }
-  .center .lbl { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.15em; }
-  .legend { display: flex; flex-direction: column; gap: 0.9rem; animation: rise 0.8s 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
-  .row {
-    display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 0.9rem;
-    padding: 0.85rem 0; border-bottom: 1px solid var(--line);
-  }
-  .row:last-child { border-bottom: none; }
-  .dot { width: 12px; height: 12px; border-radius: 4px; }
-  .row .name { font-weight: 500; }
-  .row .desc { display: block; color: var(--muted); font-size: 0.75rem; font-weight: 400; }
-  .row .pct { font-family: "JetBrains Mono", monospace; font-weight: 700; font-size: 1.15rem; }
-  .row .cnt { font-family: "JetBrains Mono", monospace; color: var(--muted); font-size: 0.85rem; min-width: 3.5ch; text-align: right; }
-  footer { max-width: 1000px; margin: 3rem auto 0; color: var(--muted); font-size: 0.8rem; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
-  footer a { color: var(--syllable); text-decoration: none; }
-  .state { max-width: 1000px; margin: 4rem auto; text-align: center; color: var(--muted); font-family: "Fraunces", serif; font-style: italic; font-size: 1.3rem; }
-  @keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+  :root{--bg:#101114;--panel:#191b20;--line:#2c2e36;--ink:#f2f0eb;--muted:#9c9da7;--gold:#ecc17b;--blue:#8dacdf;--green:#9acbb3;--none:#535762}
+  *{box-sizing:border-box}html{background:var(--bg)}body{margin:0;color:var(--ink);font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased;background:radial-gradient(ellipse at 50% 0,#24212a70,transparent 650px);min-height:100vh}[hidden]{display:none!important}h1,h2,p{margin:0}button,a{font:inherit;outline-offset:4px}button:focus-visible,a:focus-visible{outline:2px solid var(--gold)}a{color:var(--muted);text-decoration:none}a:hover{color:var(--gold)}button{cursor:pointer}::selection{background:#6a543a}
+  .page{max-width:1000px;margin:0 auto;padding:46px 32px 24px}header{display:flex;justify-content:space-between;align-items:center;gap:24px;margin-bottom:28px}.brand{font-size:10px;letter-spacing:2px;color:var(--gold);margin-bottom:7px}h1{font-size:27px;font-weight:550;letter-spacing:-.7px}.subtitle{font-size:12px;color:var(--muted);margin-top:6px}.ranges{display:flex;gap:3px;padding:4px;background:#1c1e24;border:1px solid var(--line);border-radius:10px;flex-shrink:0}.ranges button{border:0;background:transparent;color:var(--muted);padding:8px 15px;border-radius:6px;font-size:12px;transition:background .2s,color .2s}.ranges button:hover{color:var(--ink)}.ranges button[aria-pressed=true]{background:#eac17c;color:#24201a;font-weight:600}
+  .overview{display:grid;grid-template-columns:1.12fr 1fr;border:1px solid var(--line);border-radius:18px;background:linear-gradient(120deg,#202026,#191b20 65%);overflow:hidden;margin-bottom:20px}.distribution{display:flex;align-items:center;gap:27px;padding:32px}.ring{width:184px;height:184px;position:relative;flex-shrink:0}.ring:before{content:'';position:absolute;inset:20px;border-radius:50%;background:#eac17b05;box-shadow:0 0 45px #eac17b0a}.ring svg{width:100%;height:100%;transform:rotate(-90deg);animation:settle 1.2s cubic-bezier(.16,1,.3,1) both;overflow:visible}.ring circle{fill:none;stroke-width:11}.ring .arc{animation:draw 1.1s cubic-bezier(.22,.7,.2,1) both}.ring-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;animation:appear 1s .2s both;pointer-events:none}.ring-center strong{font-size:33px;font-weight:500;letter-spacing:-1.4px;font-variant-numeric:tabular-nums}.ring-center span{font-size:11px;color:var(--muted);margin-top:2px}.legend{display:grid;gap:14px;flex:1;min-width:108px}.legend-row{display:grid;grid-template-columns:auto 1fr auto;gap:7px;align-items:center;font-size:11px}.dot{display:inline-block;width:6px;height:6px;border-radius:50%;flex-shrink:0}.legend-row span{color:var(--muted)}.legend-row b{font-size:11px;font-weight:500;font-variant-numeric:tabular-nums}
+  .numbers{display:grid;grid-template-columns:1fr 1fr;gap:0;padding:24px 24px 24px 0}.number{padding:13px 20px;min-width:0}.number:nth-child(-n+2){border-bottom:1px solid var(--line)}.number:nth-child(odd){border-right:1px solid var(--line)}.number small{display:block;color:var(--muted);font-size:11px}.number strong{display:block;font-size:27px;line-height:1.4;font-weight:500;letter-spacing:-.7px;margin-top:8px;font-variant-numeric:tabular-nums}.number .empty{font-size:20px;color:var(--muted);letter-spacing:0}.number p{font-size:10px;color:#747780;margin-top:4px}
+  .bottom{display:grid;grid-template-columns:1.45fr 1fr;gap:20px}.panel{border:1px solid var(--line);border-radius:14px;background:var(--panel);overflow:hidden}.panel-head{display:flex;align-items:center;justify-content:space-between;padding:20px 22px 17px;gap:12px}h2{font-size:14px;font-weight:550}.panel-head span{font-size:10px;color:var(--muted)}.table-wrap{overflow-x:auto;scrollbar-width:thin}table{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}th{text-align:right;font-size:10px;font-weight:400;color:#7e828c;padding:8px 22px;background:#ffffff02}td{text-align:right;padding:13px 22px;border-top:1px solid #292c32}th:first-child,td:first-child{text-align:left}.provider{font-weight:500}.transport{display:inline-block;font-size:9px;color:var(--muted);margin-left:6px;padding:1px 5px;border-radius:4px;background:#ffffff05}.success{color:var(--green)}.empty-state{color:var(--muted);padding:26px 22px;font-size:12px}.full-numbers{display:grid;grid-template-columns:1fr 1fr;padding:0 22px 19px;gap:16px}.full-numbers strong{display:block;font-size:27px;font-weight:500;letter-spacing:-.6px;font-variant-numeric:tabular-nums}.full-numbers span{font-size:10px;color:var(--muted)}.modes{border-top:1px solid var(--line);padding:16px 22px}.modes-label{color:var(--muted);font-size:10px;margin-bottom:10px}.mode-tags{display:flex;gap:7px;flex-wrap:wrap}.mode-tag{font-size:10px;padding:4px 8px;border:1px solid #3a3d45;border-radius:5px;color:#c6c8ce;text-transform:capitalize}.mode-tag b{font-size:9px;color:#8a8d96;font-weight:400;margin-left:7px}.note{font-size:10px;line-height:1.8;color:#82858f;margin-top:17px}.note span{color:var(--muted)}footer{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--line);margin-top:24px;padding-top:16px;font-size:10px;color:#767a83}.state{padding:68px 24px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:14px}.state button{border:1px solid var(--line);color:var(--ink);background:var(--panel);border-radius:6px;padding:6px 14px;font-size:12px;margin-left:12px}
+  @keyframes draw{from{stroke-dasharray:0 500;opacity:0}to{opacity:1}}@keyframes settle{from{transform:rotate(-125deg)}to{transform:rotate(-90deg)}}@keyframes appear{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+  @media(max-width:900px){.distribution{padding:26px 22px;gap:20px}.ring{width:155px;height:155px}.numbers{padding:18px 18px 18px 0}.number{padding:12px 14px}.number strong{font-size:24px}.ring-center strong{font-size:29px}.legend{min-width:100px}}
+  @media(max-width:720px){.page{padding:28px 22px 22px}.overview{grid-template-columns:1fr}.distribution{padding:30px;justify-content:center;gap:35px}.ring{width:180px;height:180px}.legend{flex:0 1 160px}.numbers{padding:0 20px 18px;border-top:1px solid var(--line)}.number{padding:20px 16px 14px}.number:nth-child(-n+2){border-bottom:1px solid var(--line)}.bottom{grid-template-columns:1fr;gap:16px}.full-numbers{padding-bottom:16px}.modes{padding:14px 22px}.page h1{font-size:25px}.number strong{font-size:27px}header{flex-wrap:wrap;gap:18px;margin-bottom:22px}.ranges button{padding:7px 16px}footer{align-items:start;line-height:1.8}.note{margin-top:15px}}
+  @media(max-width:390px){.page{padding:25px 18px 18px}.distribution{padding:26px 20px;gap:24px}.ring{width:154px;height:154px}.legend{min-width:110px;gap:13px}.ring-center strong{font-size:29px}.numbers{padding-left:12px;padding-right:12px}th,td{padding-left:18px;padding-right:18px}}
+  @media(prefers-reduced-motion:reduce){*,*:before{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
-<div class="grain"></div>
-<header>
-  <div>
-    <h1>逐字歌词 <em>命中率</em></h1>
-    <div class="sub" id="totalLine">加载中…</div>
-  </div>
-  <div class="ranges" id="ranges">
-    <button data-days="7">7 天</button>
-    <button data-days="30" aria-pressed="true">30 天</button>
-    <button data-days="90">90 天</button>
-  </div>
-</header>
-<main id="main" hidden>
-  <div class="chart-wrap">
-    <svg class="donut" viewBox="0 0 200 200" id="donut"></svg>
-    <div class="center">
-      <div class="big" id="topPct">–</div>
-      <div class="lbl" id="topLbl">逐字</div>
-    </div>
-  </div>
-  <div class="legend" id="legend"></div>
-</main>
-<div class="state" id="state">正在获取统计…</div>
-<footer>
-  <span>数据来源：Analytics Engine · 高流量下为采样估算</span>
-  <a href="/stats" target="_blank">原始 JSON →</a>
-</footer>
+<div class="page">
+  <header><div><div class="brand">BEAUTIFUL LYRICS REBORN</div><h1>歌词服务统计</h1><p class="subtitle" id="totalLine">正在获取统计…</p></div><div class="ranges" id="ranges" role="group" aria-label="统计时间范围"><button data-days="7" aria-pressed="false">7 天</button><button data-days="30" aria-pressed="true">30 天</button><button data-days="90" aria-pressed="false">90 天</button></div></header>
+  <div class="state" id="state" role="status">正在获取统计…</div>
+  <main id="main" hidden><div id="details"></div></main>
+  <footer><span>匿名汇总 · 采样估算 · 上报可能丢失</span><a href="/stats" target="_blank" rel="noopener">完整数据 ↗</a></footer>
+</div>
 <script>
-  const META = {
-    syllable: { name: "逐字", desc: "Syllable · 卡拉OK 级", color: "var(--syllable)" },
-    line:     { name: "逐行", desc: "Line · 逐行同步", color: "var(--lineType)" },
-    static:   { name: "纯文本", desc: "Static · 无时间轴", color: "var(--static)" },
-    none:     { name: "未命中", desc: "None · 无歌词", color: "var(--none)" }
-  };
-  const ORDER = ["syllable", "line", "static", "none"];
-  const R = 74, C = 2 * Math.PI * R;
-  const $ = (id) => document.getElementById(id);
-
-  function render(data) {
-    const total = data.total || 0;
-    $("main").hidden = total === 0;
-    $("state").hidden = total !== 0;
-    if (total === 0) { $("state").textContent = "这个时间段还没有请求数据。"; $("totalLine").textContent = "暂无数据"; return; }
-
-    $("totalLine").textContent = total.toLocaleString() + " 次请求 · 近 " + data.days + " 天";
-
-    const donut = $("donut");
-    const legend = $("legend");
-    donut.innerHTML = "";
-    legend.innerHTML = "";
-    let offset = 0;
-
-    // background track
-    donut.insertAdjacentHTML("beforeend",
-      '<circle cx="100" cy="100" r="' + R + '" style="stroke:var(--line);stroke-width:26"/>');
-
-    const top = ORDER.reduce((a, b) => (data[a]?.count || 0) >= (data[b]?.count || 0) ? a : b);
-    $("topPct").textContent = (data[top]?.percent ?? 0) + "%";
-    $("topLbl").textContent = META[top].name;
-
-    ORDER.forEach((key, i) => {
-      const d = data[key] || { count: 0, percent: 0 };
-      const frac = total === 0 ? 0 : d.count / total;
-      const len = frac * C;
-      const arc = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-      arc.setAttribute("cx", "100"); arc.setAttribute("cy", "100"); arc.setAttribute("r", R);
-      arc.style.stroke = META[key].color;
-      arc.style.strokeDasharray = C;
-      arc.style.strokeDashoffset = C; // start hidden, animate in
-      donut.appendChild(arc);
-      const thisOffset = offset;
-      requestAnimationFrame(() => {
-        arc.style.strokeDasharray = len + " " + (C - len);
-        arc.style.strokeDashoffset = -thisOffset;
-      });
-      offset += len;
-
-      legend.insertAdjacentHTML("beforeend",
-        '<div class="row" style="animation-delay:' + (i * 60) + 'ms">' +
-          '<span class="dot" style="background:' + META[key].color + '"></span>' +
-          '<span class="name">' + META[key].name + '<span class="desc">' + META[key].desc + '</span></span>' +
-          '<span class="pct">' + d.percent + '%</span>' +
-          '<span class="cnt">' + d.count.toLocaleString() + '</span>' +
-        '</div>');
-    });
+  const $=id=>document.getElementById(id);
+  const num=value=>Number.isFinite(Number(value))?Number(value):0;
+  const count=value=>Math.round(num(value)).toLocaleString('zh-CN');
+  const sum=rows=>rows.reduce((n,r)=>n+num(r.count),0);
+  const pct=(n,total)=>total>0?(100*n/total).toFixed(1)+'%':'暂无数据';
+  const ms=value=>value==null||value===''||!Number.isFinite(Number(value))?'暂无数据':Math.round(Number(value)).toLocaleString('zh-CN')+' ms';
+  const node=(tag,text,parent,cls)=>{const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(cls)el.className=cls;if(parent)parent.append(el);return el;};
+  const svgNode=(tag,attrs,parent)=>{const el=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const[key,value]of Object.entries(attrs))el.setAttribute(key,String(value));parent.append(el);return el;};
+  function render(data){
+    const root=$('details');root.replaceChildren();$('main').hidden=false;$('state').hidden=true;$('totalLine').textContent='近 '+data.days+' 天 · 按 UTC 日期汇总';
+    const total=num(data.total),metrics=data.metrics||{},client=metrics.client||[],loads=client.filter(r=>r.kind==='lyrics_load');const hits=sum(loads.filter(r=>r.source==='cache'||r.source==='prefetch'));const latency=(metrics.latency||[]).find(r=>r.kind==='lyrics_display');
+    const overview=node('section',undefined,root,'overview');overview.setAttribute('aria-label','统计概览');const distribution=node('div',undefined,overview,'distribution');const ring=node('div',undefined,distribution,'ring');const svg=svgNode('svg',{viewBox:'0 0 180 180',role:'img','aria-label':'歌词类型分布'},ring);const radius=72,c=2*Math.PI*radius;
+    svgNode('circle',{cx:90,cy:90,r:radius,stroke:'#30323a'},svg);const legend=node('div',undefined,distribution,'legend');let offset=0;
+    const keys=['syllable','line','static','none'],names=['逐字歌词','逐行歌词','纯文本','未命中'],colors=['#ecc17b','#8dacdf','#9acbb3','#535762'];
+    keys.forEach((key,i)=>{const n=total?num(data[key]?.count):0,f=total?n/total:0;if(f>0){const arc=svgNode('circle',{cx:90,cy:90,r:radius,stroke:colors[i],'stroke-dasharray':Math.max(0,f*c-(f<1?4:0))+' '+c,'stroke-dashoffset':-offset,class:'arc'},svg);arc.style.animationDelay=(i*.08)+'s';}offset+=f*c;const row=node('div',undefined,legend,'legend-row');node('i',undefined,row,'dot').style.background=colors[i];node('span',names[i],row);node('b',total?pct(n,total):'—',row);row.title=count(n)+' 次';});
+    const center=node('div',undefined,ring,'ring-center');node('strong',total?pct(num(data.syllable?.count),total):'—',center);node('span','逐字占比',center);
+    const numbers=node('div',undefined,overview,'numbers');for(const[label,value,note]of[['接口请求',count(total),'含后两首预取'],['缓存复用',metrics.available?pct(hits,sum(loads)):'暂无数据','缓存与进行中预取'],['平均等待',ms(latency?.avgMs),'歌词首次显示'],['平均请求耗时',ms((metrics.latency||[]).find(r=>r.kind==='request')?.avgMs),'服务端处理时间']]){const item=node('div',undefined,numbers,'number');node('small',label,item);node('strong',value,item,value==='暂无数据'?'empty':undefined);node('p',note,item);}
+    const bottom=node('div',undefined,root,'bottom');const sources=node('section',undefined,bottom,'panel');const sourceHead=node('div',undefined,sources,'panel-head');node('h2','歌词来源',sourceHead);node('span','不含取消与屏蔽',sourceHead);
+    const groups=new Map();for(const row of metrics.providers||[]){const key=row.provider+' / '+row.transport,g=groups.get(key)||{provider:row.provider,transport:row.transport,valid:0,success:0};if(['success','none','failed','timeout'].includes(row.outcome))g.valid+=num(row.count);if(row.outcome==='success')g.success+=num(row.count);groups.set(key,g);}
+    const providers=[...groups.values()].filter(g=>g.valid>0).sort((a,b)=>b.valid-a.valid);const providerNames={qqmusic:'QQ 音乐',netease:'网易云音乐',kugou:'酷狗音乐',spotify:'Spotify',amlldb:'AMLL DB',lrclib:'LRCLIB'};
+    if(!providers.length)node('p','暂无数据',sources,'empty-state');else{const wrap=node('div',undefined,sources,'table-wrap'),table=node('table',undefined,wrap);const head=node('tr',undefined,node('thead',undefined,table));['来源','成功率','平均耗时'].forEach(text=>{node('th',text,head).scope='col';});const body=node('tbody',undefined,table);for(const g of providers){const row=node('tr',undefined,body),cell=node('td',undefined,row);node('span',providerNames[g.provider]||g.provider,cell,'provider');node('span',g.transport==='direct'?'直连':g.transport==='lyrically'?'代理':g.transport,cell,'transport');node('td',pct(g.success,g.valid),row,'success');const l=(metrics.providerLatency||[]).find(r=>r.provider===g.provider&&r.transport===g.transport);node('td',ms(l?.avgMs),row);}}
+    const full=node('section',undefined,bottom,'panel');node('h2','全屏使用',node('div',undefined,full,'panel-head'));const fullNumbers=node('div',undefined,full,'full-numbers');const opens=sum(client.filter(r=>r.kind==='fullscreen_load'&&r.outcome==='success')),sessions=sum(client.filter(r=>r.kind==='session')),first=sum(client.filter(r=>r.kind==='fullscreen_first'));for(const[value,label]of[[metrics.available?count(opens):'—','成功打开次数'],[pct(first,sessions),'首次使用 / 会话']]){const item=node('div',undefined,fullNumbers);node('strong',value==='暂无数据'?'—':value,item);node('span',label,item);}
+    const modes=node('div',undefined,full,'modes');node('p','常用模式',modes,'modes-label');const modeMap=new Map();for(const row of client.filter(r=>r.kind==='fullscreen_mode'))modeMap.set(row.mode,(modeMap.get(row.mode)||0)+num(row.count));const list=[...modeMap].sort((a,b)=>b[1]-a[1]).slice(0,3);const tags=node('div',undefined,modes,'mode-tags');if(!list.length)node('span','暂无数据',tags,'subtitle');for(const[mode,n]of list){const tag=node('span',mode,tags,'mode-tag');node('b',count(n),tag);}
+    node('p',metrics.available?'来源成功率按有效尝试计算。全屏使用比例为会话事件估算，不代表独立用户。':'新增体验统计暂不可用，歌词类型统计仍可查看。',root,'note');
   }
-
-  async function load(days) {
-    $("state").hidden = false; $("main").hidden = true;
-    $("state").textContent = "正在获取统计…";
-    try {
-      const res = await fetch("/stats?days=" + days);
-      if (!res.ok) throw new Error(await res.text());
-      render(await res.json());
-    } catch (e) {
-      $("state").hidden = false; $("main").hidden = true;
-      $("state").textContent = "加载失败：" + e.message;
-    }
-  }
-
-  $("ranges").addEventListener("click", (e) => {
-    const btn = e.target.closest("button");
-    if (!btn) return;
-    [...$("ranges").children].forEach((b) => b.setAttribute("aria-pressed", b === btn));
-    load(btn.dataset.days);
-  });
+  let revision=0,controller,currentDays=30;
+  async function load(days){const current=++revision;currentDays=days;controller?.abort();controller=new AbortController();$('main').hidden=true;$('state').hidden=false;$('state').textContent='正在获取统计…';try{const response=await fetch('/stats?days='+days,{signal:controller.signal});if(!response.ok)throw Error('unavailable');const data=await response.json();if(current===revision)render(data);}catch{if(current!==revision)return;$('state').textContent='暂时无法获取统计';const retry=node('button','重试',$('state'));retry.addEventListener('click',()=>load(currentDays));}}
+  $('ranges').addEventListener('click',event=>{const button=event.target.closest('button');if(!button)return;for(const b of $('ranges').querySelectorAll('button'))b.setAttribute('aria-pressed',String(b===button));load(Number(button.dataset.days));});
   load(30);
 </script>
 </body>

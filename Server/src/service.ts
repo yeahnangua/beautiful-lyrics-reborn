@@ -29,6 +29,8 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
         if (!source.MatchedTitle && matchedTitle(result[1])) source.MatchedTitle = matchedTitle(result[1])!;
         lyrics.Source = source;
         if (context.diagnostics) {
+          const selected = [...context.diagnostics.attempts].reverse().find(attempt => attempt.provider === result[0] && attempt.outcome === "success" && attempt.lyricsType === lyrics.Type);
+          if (selected) selected.selected = true;
           context.diagnostics.source = source;
           context.diagnostics.track = metadata ?? context.diagnostics.track;
         }

@@ -14,8 +14,8 @@ import { GetCoverArtForSong } from "../Shared.ts"
 import { convertLyrics } from "../../../Folia/src/lyrics.ts"
 import { TrackAnalysis } from "../../../Folia/src/audio.ts"
 import type { FoliaHandle, PlayerSnapshot } from "../../../Folia/src/contracts.ts"
-// @ts-types="../../../Folia/src/runtime.d.ts"
-import { mountFolia } from "../../../Folia/dist/folia.mjs"
+import { LoadFullscreenRuntime } from "../../Modules/FullscreenRuntime.ts"
+import { EmitMetric, RecordFullscreenUse, MeasureLyricsDisplay } from "../../Modules/Metrics.ts"
 import { PlaylistBridge } from "./PlaylistBridge.ts"
 
 // Spotify owns playback/navigation; the isolated Folia root consumes snapshots and precise clocks.
@@ -31,34 +31,91 @@ export default class PageView implements Giveable {
   private previousTrack = ""
   private closeAfterFullscreenExit: boolean
   private ownsFullscreen = false
+  private loading = false
+  private readonly loadController = new AbortController()
+  private readonly requestedNative: boolean
   private readonly analysis = new TrackAnalysis(typeof Spotify.getAudioData === "function" ? uri => Spotify.getAudioData(uri) : undefined)
   constructor(makeSpotifyFullscreen?: true) {
+    this.requestedNative = !!makeSpotifyFullscreen
     this.closeAfterFullscreenExit = !!makeSpotifyFullscreen
     const previous = SpotifyHistory.entries[SpotifyHistory.entries.length - 2]
     if (previous && !previous.pathname.startsWith("/BeautifulLyrics")) LastPageLocation = previous.pathname
+    this.Maid.Give(() => this.loadController.abort())
+    const loader = document.createElement("div")
+    loader.id = "BeautifulLyrics-FullscreenLoading"
+    Object.assign(loader.style, { position: "fixed", bottom: "100px", right: "24px", zIndex: "1001", padding: "20px", background: "#18181b", color: "white", borderRadius: "12px" })
+    loader.setAttribute("role", "status")
+    const message = document.createElement("p")
+    const retry = document.createElement("button")
+    retry.textContent = "重试"
+    retry.hidden = true
+    const close = document.createElement("button")
+    close.textContent = "关闭"
+    loader.append(message, retry, close)
+    document.body.append(loader)
+    this.Maid.Give(() => loader.remove())
+    const measureWaiting = () => {
+      this.Maid.Clean("DisplayMeasurement")
+      this.Maid.Give(MeasureLyricsDisplay(loader, "fullscreen"), "DisplayMeasurement")
+    }
+    measureWaiting()
+    const load = async () => {
+      if (this.loading || !this.active) return
+      this.loading = true; retry.hidden = true; message.textContent = "正在加载全屏组件…"
+      const started = performance.now()
+      try {
+        const runtime = await LoadFullscreenRuntime(this.loadController.signal)
+        if (!this.active || !Song) return
+        this.Mount(runtime.mountFolia)
+        loader.remove()
+        EmitMetric("fullscreen_load", { durationMs: Math.round(performance.now() - started), source: runtime.source, outcome: "success" })
+        RecordFullscreenUse()
+      } catch {
+        if (!this.active || this.loadController.signal.aborted) return
+        message.textContent = "全屏组件加载失败，请重试。"; retry.hidden = false
+        EmitMetric("fullscreen_load", { durationMs: Math.round(performance.now() - started), source: "network", outcome: "failed" })
+      } finally { this.loading = false }
+    }
+    retry.onclick = () => void load()
+    close.onclick = () => this.Close()
+    const escapeLoading = (event: KeyboardEvent) => { if (!this.Handle && event.key === "Escape") { event.preventDefault(); this.Close() } }
+    document.addEventListener("keydown", escapeLoading)
+    this.Maid.Give(() => document.removeEventListener("keydown", escapeLoading))
+    this.Maid.Give(SongChanged.Connect(() => {
+      if (!Song) this.Close()
+      else if (!this.Handle) measureWaiting()
+    }))
+    const songCheck = setTimeout(() => { if (this.active && !Song) this.Close() }, 1000)
+    this.Maid.Give(() => clearTimeout(songCheck))
+    void load()
+  }
+  private Mount(mountFolia: Awaited<ReturnType<typeof LoadFullscreenRuntime>>["mountFolia"]) {
+    const mountMaid = this.Maid.Give(new Maid(), "RuntimeMount")
+    try {
     const host = document.createElement("div")
     host.id = "BeautifulLyrics-FoliaFullscreen"
     Object.assign(host.style, { position: "fixed", inset: "0", zIndex: "1000", background: "#09090b" })
     document.body.append(host)
-    this.Maid.Give(() => { this.Handle?.destroy(); this.Handle = undefined; host.remove() })
+    mountMaid.Give(() => { this.Handle?.destroy(); this.Handle = undefined; host.remove() })
     const main = document.querySelector<HTMLElement>("#main")
     if (main) {
       const display = main.style.display
       main.style.display = "none"
-      this.Maid.Give(() => { main.style.display = display })
+      mountMaid.Give(() => { main.style.display = display })
     }
     // Reuse the existing feedback capture/dialog in the document's top layer.
     const feedbackContainer = document.createElement("div")
     feedbackContainer.hidden = true
     feedbackContainer.innerHTML = LyricsFeedbackButton
     host.append(feedbackContainer)
-    BindLyricsFeedbackButton(feedbackContainer, this.Maid)
-    const library = this.Maid.Give(new PlaylistBridge({
+    BindLyricsFeedbackButton(feedbackContainer, mountMaid)
+    const library = mountMaid.Give(new PlaylistBridge({
       list: (folder, filter) => GetPlaylistsAndFolders("Recents", folder, filter),
       details: GetPlaylistDetails, contents: GetPlaylistContents, add: AddToPlaylist,
       create: (type, name, parent) => (type === "folder" ? CreateFolder : CreatePlaylist)(name, parent || undefined),
     }, () => Song?.Uri))
     this.Handle = mountFolia(host, this.Snapshot(), {
+      metric: EmitMetric,
       close: () => this.Close(), toggleFullscreen: () => this.ToggleFullscreen(),
       prev: () => SpotifyPlayer.back(), next: () => SpotifyPlayer.next(),
       togglePlay: () => SetIsPlaying(!IsPlaying), seek: time => { if (Song?.Type !== "DJ") SeekTo(Math.max(0, Math.min(Song?.Duration ?? 0, time))) },
@@ -72,20 +129,21 @@ export default class PageView implements Giveable {
       addToPlaylist: (uri, track) => library.Add(uri, track), createLibraryItem: (type, name, parent) => library.Create(type, name, parent),
     }, Spotify.Locale?.getLocale?.() ?? navigator.language)
     const update = () => this.Update()
-    for (const signal of [SongDetailsLoaded, SongContextChanged, SongLyricsLoaded, IsPlayingChanged, IsShufflingChanged, LoopModeChanged, IsLikedChanged]) this.Maid.Give(signal.Connect(update))
-    this.Maid.Give(SongChanged.Connect(() => {
+    for (const signal of [SongDetailsLoaded, SongContextChanged, SongLyricsLoaded, IsPlayingChanged, IsShufflingChanged, LoopModeChanged, IsLikedChanged]) mountMaid.Give(signal.Connect(update))
+    mountMaid.Give(SongChanged.Connect(() => {
       if (!Song) { this.Close(); return }
       this.Update()
       void this.LoadAnalysis()
     }))
     const step = () => this.Handle?.step(Math.max(0, Timestamp), GetLyricsOffset(), this.analysis.sample(Timestamp, IsPlaying))
-    this.Maid.Give(TimeStepped.Connect(step))
-    this.Maid.Give(LyricsOffsetChanged.Connect(step))
+    mountMaid.Give(TimeStepped.Connect(step))
+    mountMaid.Give(LyricsOffsetChanged.Connect(step))
     step()
+    this.Update()
     // Sync volume changed through Spotify's other controls, at a bounded low frequency.
     let volume = SpotifyPlayer.getVolume()
     const volumeTimer = setInterval(() => { const next = SpotifyPlayer.getVolume(); if (next !== volume) { volume = next; this.Update({ volume: next }) } }, 500)
-    this.Maid.Give(() => clearInterval(volumeTimer))
+    mountMaid.Give(() => clearInterval(volumeTimer))
     const fullscreenChanged = () => {
       this.Update()
       if (this.active && !document.fullscreenElement && this.closeAfterFullscreenExit) {
@@ -94,7 +152,7 @@ export default class PageView implements Giveable {
       }
     }
     document.addEventListener("fullscreenchange", fullscreenChanged)
-    this.Maid.Give(() => document.removeEventListener("fullscreenchange", fullscreenChanged))
+    mountMaid.Give(() => document.removeEventListener("fullscreenchange", fullscreenChanged))
     const keydown = (event: KeyboardEvent) => {
       if (document.querySelector("dialog[open]")) return
       if (event.key === "Escape") {
@@ -110,18 +168,18 @@ export default class PageView implements Giveable {
       }
     }
     document.addEventListener("keydown", keydown, true)
-    this.Maid.Give(() => document.removeEventListener("keydown", keydown, true))
+    mountMaid.Give(() => document.removeEventListener("keydown", keydown, true))
     RetrySongLyricsIfMissing()
     void this.LoadAnalysis()
-    const initialSongCheck = setTimeout(() => { if (this.active && !Song) this.Close() }, 1000)
-    this.Maid.Give(() => clearTimeout(initialSongCheck))
-    if (makeSpotifyFullscreen && !document.fullscreenElement) {
+    if (this.requestedNative && !document.fullscreenElement) {
       this.ownsFullscreen = true
       void document.documentElement.requestFullscreen().catch(error => {
       this.closeAfterFullscreenExit = false
+      this.ownsFullscreen = false
       console.warn("[BeautifulLyrics/Folia] Fullscreen unavailable; retaining cinema view", error)
       })
     }
+    } catch (error) { this.Maid.Clean("RuntimeMount"); throw error }
   }
   private Snapshot(): PlayerSnapshot {
     const track = SpotifyPlayer.data?.item
@@ -143,7 +201,16 @@ export default class PageView implements Giveable {
       lyrics: this.cachedLyrics,
     }
   }
-  private Update(patch?: Partial<PlayerSnapshot>) { if (this.active) this.Handle?.update({ ...this.Snapshot(), ...patch }) }
+  private Update(patch?: Partial<PlayerSnapshot>) {
+    if (!this.active) return
+    const snapshot = { ...this.Snapshot(), ...patch }
+    this.Handle?.update(snapshot)
+    const host = document.getElementById("BeautifulLyrics-FoliaFullscreen")
+    if (host) {
+      this.Maid.Clean("DisplayMeasurement")
+      this.Maid.Give(MeasureLyricsDisplay(host, "fullscreen", snapshot.lyrics.status === "synced" ? SongLyrics?.Type : snapshot.lyrics.status === "static" ? "Static" : undefined), "DisplayMeasurement")
+    }
+  }
   private async LoadAnalysis() {
     const pending = this.analysis.setSong(Song?.Uri ?? "")
     this.Update()
@@ -158,6 +225,7 @@ export default class PageView implements Giveable {
   }
   public Close() {
     if (!this.active) return
+    this.loadController.abort()
     this.closeAfterFullscreenExit = false
     this.ownsFullscreen = false
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})

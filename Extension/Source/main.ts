@@ -28,7 +28,7 @@ const Load = async () => {
 		const fonts = [
 			new FontFace(
 				"BeautifulLyrics",
-				"url(https://fonts.socalifornian.live/LyricsRegular.woff2)",
+				"url(https://raw.githubusercontent.com/quuuut/ttmlrender/320a5416284a0b02fd6024b9f88bfd47c228dec8/fonts/LyricsRegular.woff2)",
 				{
 					weight: "400",
 					style: "normal"
@@ -36,7 +36,7 @@ const Load = async () => {
 			),
 			new FontFace(
 				"BeautifulLyrics",
-				"url(https://fonts.socalifornian.live/LyricsMedium.woff2)",
+				"url(https://raw.githubusercontent.com/quuuut/ttmlrender/320a5416284a0b02fd6024b9f88bfd47c228dec8/fonts/LyricsMedium.woff2)",
 				{
 					weight: "500",
 					style: "normal"
@@ -44,7 +44,7 @@ const Load = async () => {
 			),
 			new FontFace(
 				"BeautifulLyrics",
-				"url(https://fonts.socalifornian.live/LyricsSemibold.woff2)",
+				"url(https://raw.githubusercontent.com/quuuut/ttmlrender/320a5416284a0b02fd6024b9f88bfd47c228dec8/fonts/LyricsSemibold.woff2)",
 				{
 					weight: "600",
 					style: "normal"
@@ -52,7 +52,7 @@ const Load = async () => {
 			),
 			new FontFace(
 				"BeautifulLyrics",
-				"url(https://fonts.socalifornian.live/LyricsBold.woff2)",
+				"url(https://raw.githubusercontent.com/quuuut/ttmlrender/320a5416284a0b02fd6024b9f88bfd47c228dec8/fonts/LyricsBold.woff2)",
 				{
 					weight: "700",
 					style: "normal"

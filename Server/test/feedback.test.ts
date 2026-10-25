@@ -239,13 +239,17 @@ describe("feedback with real local D1", () => {
     expect(reports.items[0].id).toBe(id);
     expect((await call("/admin/api/reports/" + id, "PATCH", { status: "bad" }, cookie)).status).toBe(400);
   });
-  it("cleans expired rows with cascades and retains copied feedback logs", async () => {
-    const old = record({ startedAt: new Date(Date.now() - 61 * 86400_000).toISOString() });
+  it("cleans requests older than 14 days and retains recent requests and copied feedback logs", async () => {
+    const recent = record({ startedAt: new Date(Date.now() - 13 * 86400_000).toISOString() });
+    await saveDiagnostics(db, recent);
+    const old = record({ startedAt: new Date(Date.now() - 15 * 86400_000).toISOString() });
     await saveDiagnostics(db, old);
     const { id } = await (await call("/reports", "POST", payload({ requestId: old.id }))).json() as { id: string };
     await cleanupFeedback(db);
     expect(await loadDiagnostics(db, old.id)).toBeNull();
-    expect((await db.prepare("SELECT diagnostics FROM lyric_reports WHERE id=?").bind(id).first())).not.toBeNull();
+    expect(await loadDiagnostics(db, recent.id)).toEqual(recent);
+    const report = await db.prepare("SELECT diagnostics FROM lyric_reports WHERE id=?").bind(id).first<{ diagnostics: string }>();
+    expect(JSON.parse(report!.diagnostics)).toEqual(old);
     await db.prepare("UPDATE lyric_reports SET created_at=?").bind(new Date(Date.now() - 366 * 86400_000).toISOString()).run();
     await cleanupFeedback(db);
     expect((await db.prepare("SELECT * FROM report_snapshots").all()).results).toEqual([]);
@@ -336,17 +340,62 @@ describe("feedback with real local D1", () => {
     expect(results[2]!.meta.rows_written).toBe(0);
     expect(results[2]!.meta.changes).toBe(0);
   });
-  it("bounds legacy attempt deletion before removing expired parents", async () => {
-    const old = record({ startedAt: new Date(Date.now() - 61 * 86400_000).toISOString(), attempts: [] });
+  it("drains legacy attempts across batches before removing expired parents in the same run", async () => {
+    const old = record({ startedAt: new Date(Date.now() - 15 * 86400_000).toISOString(), attempts: [] });
     await saveLegacyDiagnostics(old);
     await db.prepare(`WITH RECURSIVE ord(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM ord WHERE n<1004)
       INSERT INTO provider_attempts(request_id,ordinal,data) SELECT ?,n,'{}' FROM ord`).bind(old.id).run();
     await cleanupFeedback(db);
-    expect((await db.prepare("SELECT count(*) AS n FROM provider_attempts").first<{ n: number }>())?.n).toBe(5);
-    expect(await loadDiagnostics(db, old.id)).not.toBeNull();
-    await cleanupFeedback(db);
     expect(await loadDiagnostics(db, old.id)).toBeNull();
     expect((await db.prepare("SELECT * FROM provider_attempts").all()).results).toHaveLength(0);
+  });
+  it("drains all expired rows beyond each batch limit while retaining unexpired data", async () => {
+    const now = Date.now();
+    const oldTime = new Date(now - 15 * 86400_000).toISOString();
+    const recent = record();
+    await saveLegacyDiagnostics(recent);
+    const report = await (await call("/reports", "POST", payload({ requestId: recent.id }))).json() as { id: string };
+    await db.batch([
+      db.prepare(`WITH RECURSIVE ord(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM ord WHERE n<2004)
+        INSERT INTO lyric_requests(id,created_at,spotify_id,song,artists,provider,outcome,data)
+        SELECT 'expired-'||n,?,'track','Song','Artist','netease','success','{}' FROM ord`).bind(oldTime),
+      db.prepare(`WITH RECURSIVE ord(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM ord WHERE n<104)
+        INSERT INTO lyric_reports(id,submission_id,created_at,spotify_id,song,artists,provider,category,data)
+        SELECT 'expired-'||n,'submission-'||n,?,'track','Song','Artist','netease','other','{}' FROM ord`)
+        .bind(new Date(now - 366 * 86400_000).toISOString()),
+      db.prepare(`INSERT INTO report_snapshots(report_id,original,displayed)
+        SELECT id,'{}','{}' FROM lyric_reports WHERE id LIKE 'expired-%'`),
+      db.prepare(`INSERT INTO report_history(id,report_id,created_at,status,note)
+        SELECT id,id,created_at,'pending','' FROM lyric_reports WHERE id LIKE 'expired-%'`),
+      db.prepare(`WITH RECURSIVE ord(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM ord WHERE n<1004)
+        INSERT INTO rate_limits(key,minute,count) SELECT 'expired-'||n,0,1 FROM ord`),
+      db.prepare(`WITH RECURSIVE ord(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM ord WHERE n<104)
+        INSERT INTO admin_sessions(id,expires) SELECT 'expired-'||n,0 FROM ord`),
+      db.prepare("INSERT INTO admin_sessions(id,expires) VALUES('current',?)").bind(now + 3600_000)
+    ]);
+    await cleanupFeedback(db);
+    expect(await loadDiagnostics(db, recent.id)).toEqual(recent);
+    expect((await db.prepare("SELECT id FROM lyric_requests").all()).results).toEqual([{ id: recent.id }]);
+    expect((await db.prepare("SELECT request_id FROM provider_attempts").all()).results).toEqual([{ request_id: recent.id }]);
+    for (const [table, column] of [["lyric_reports", "id"], ["report_snapshots", "report_id"]]) {
+      expect((await db.prepare(`SELECT ${column} AS id FROM ${table}`).all()).results).toEqual([{ id: report.id }]);
+    }
+    expect((await db.prepare("SELECT * FROM report_history").all()).results).toHaveLength(0);
+    expect((await db.prepare("SELECT key FROM rate_limits").all()).results).toHaveLength(1);
+    expect((await db.prepare("SELECT id FROM admin_sessions").all()).results).toEqual([{ id: "current" }]);
+  });
+  it("keeps completed cleanup batches committed when a later batch fails and resumes on retry", async () => {
+    await db.prepare(`WITH RECURSIVE ord(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM ord WHERE n<2004)
+      INSERT INTO lyric_requests(id,created_at,spotify_id,song,artists,provider,outcome,data)
+      SELECT 'expired-'||n,?,'track','Song','Artist','netease','success','{}' FROM ord`)
+      .bind(new Date(Date.now() - 15 * 86400_000).toISOString()).run();
+    const batch = vi.fn(db.batch.bind(db)).mockImplementationOnce(db.batch.bind(db))
+      .mockRejectedValueOnce(new Error("database unavailable"));
+    const interrupted = { prepare: db.prepare.bind(db), batch } as unknown as D1Database;
+    await expect(cleanupFeedback(interrupted)).rejects.toThrow("database unavailable");
+    expect((await db.prepare("SELECT count(*) AS n FROM lyric_requests").first<{ n: number }>())?.n).toBe(1005);
+    await cleanupFeedback(db);
+    expect((await db.prepare("SELECT count(*) AS n FROM lyric_requests").first<{ n: number }>())?.n).toBe(0);
   });
   it.each(["none", "failed", "cancelled"] as const)("persists %s lyric request outcomes without credentials", async outcome => {
     const handler = createWorker({ getLyrics: async () => { if (outcome === "failed") throw Error("PRIVATE token"); return undefined; } });

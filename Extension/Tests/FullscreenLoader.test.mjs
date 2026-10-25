@@ -24,6 +24,7 @@ test('corrupt cache and mirror bytes are rejected; verified CDN fallback is cach
  const f=fixture(async url=>new Response(url.includes('jsdelivr')?bytes:'corrupt'),new Response('corrupt'));
  const loaded=await createFullscreenLoader(descriptor,f.runtime)(new AbortController().signal);
  assert.equal(loaded.source,'network');assert.equal(f.calls.length,3);assert.equal(f.state().imports,1);
+ assert.ok(f.calls.every(([,options])=>options.headers['User-Agent']==='beautiful-lyrics-reborn'));
 });
 test('cancellation aborts both mirrors and prevents import; a later opening can retry',async()=>{
  let hang=true;const f=fixture(async(_url,{signal})=>hang?new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(signal.reason),{once:true})):new Response(bytes));

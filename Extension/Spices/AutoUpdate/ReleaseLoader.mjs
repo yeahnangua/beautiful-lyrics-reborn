@@ -7,6 +7,7 @@ export async function startReleaseLoader(fallback, runtime = globalThis) {
   const domestic = "https://lyrics.20050129.xyz/extension/";
   const cdn = "https://cdn.jsdelivr.net/gh/yeahnangua/beautiful-lyrics-reborn@main/Extension/Builds/Release/";
   const storageKey = "beautiful-lyrics-reborn:last-release";
+  const headers = { "User-Agent": "beautiful-lyrics-reborn" };
   const valid = (value) => value?.schema === 1 && /^\d+\.\d+\.\d+$/.test(value.version)
     && /^[a-f0-9]{64}$/.test(value.sha256)
     && value.file === `beautiful-lyrics-reborn.${value.sha256.slice(0, 16)}.mjs`;
@@ -16,6 +17,7 @@ export async function startReleaseLoader(fallback, runtime = globalThis) {
   const latest = async () => {
     const response = await runtime.fetch(`${base}latest.json`, {
       cache: "no-store", signal: AbortSignal.timeout(10000),
+      headers,
     });
     if (!response.ok) throw new Error(`Version check failed (${response.status})`);
     const release = await response.json();
@@ -34,7 +36,7 @@ export async function startReleaseLoader(fallback, runtime = globalThis) {
     });
     try {
       return await Promise.race([aborted, (async () => {
-        const response = await runtime.fetch(origin + release.file, { signal });
+        const response = await runtime.fetch(origin + release.file, { signal, headers });
         if (!response.ok) throw new Error(`Bundle download failed (${response.status})`);
         const bytes = await response.arrayBuffer();
         const digest = await runtime.crypto.subtle.digest("SHA-256", bytes);

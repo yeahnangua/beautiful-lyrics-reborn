@@ -69,6 +69,14 @@ This builds an offline Spicetify extension and enables
 
 ## Server Development
 
+Explicit HTTP requests made by the extension (lyrics, policy, feedback, iTunes,
+Spotify fetches, metrics, and release/fullscreen checks/downloads) and Worker upstream requests include
+`beautiful-lyrics-reborn` in `User-Agent`. Existing provider-specific user agents
+are preserved and extended. Spotify's Chromium runtime may discard a custom
+`User-Agent`; this does not override the client's global user agent or the headers
+of resources loaded by the browser (such as images, fonts, and module imports) or
+Spotify's internal platform APIs.
+
 ```bash
 cd Server
 npm install

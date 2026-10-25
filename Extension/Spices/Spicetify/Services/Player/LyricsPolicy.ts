@@ -1,4 +1,5 @@
 import { Abortable, CreateAbortScope } from "@Universal/Modules/Async.ts"
+import { PluginFetch as fetch } from "@Universal/Modules/Http.ts"
 import type { LyricsProvenance } from "@Universal/Types/Lyrics.ts"
 
 type CachedLyrics = LyricsProvenance & { Type: "Syllable" | "Line" | "Static" }

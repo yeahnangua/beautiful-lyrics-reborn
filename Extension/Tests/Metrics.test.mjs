@@ -8,6 +8,7 @@ test('metrics use a fixed allowlist, batch at twenty, omit credentials and never
  for(let i=0;i<20;i++)client.emit('session',{song:'secret',account:'secret',token:'secret'});
  await new Promise(r=>setImmediate(r));assert.equal(requests.length,1);
  const options=requests[0][1];assert.equal(options.credentials,'omit');assert.equal(JSON.parse(options.body).events.length,20);assert.doesNotMatch(options.body,/secret/);
+ assert.equal(options.headers['User-Agent'],'beautiful-lyrics-reborn');
  tick();await new Promise(r=>setImmediate(r));assert.equal(requests.length,1);
  client.emit('fullscreen_first');listeners.get('pagehide')();await new Promise(r=>setImmediate(r));assert.equal(requests[1][1].keepalive,true);
  client.destroy();assert.equal(cleared,true);assert.equal(listeners.size,0);

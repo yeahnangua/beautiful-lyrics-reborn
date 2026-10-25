@@ -1,6 +1,29 @@
 import { describe, expect, it, vi } from "vitest";
 import { contextFetch, withLyricRequestRetries } from "../src/providers/request";
 
+describe("upstream user agent", () => {
+  it("identifies all provider requests while preserving compatibility UAs and credentials", async () => {
+    const requests: Headers[] = [];
+    const fetcher = contextFetch(vi.fn(async (_input, init) => {
+      requests.push(new Headers(init?.headers));
+      return new Response("ok");
+    }) as typeof fetch);
+    await fetcher("https://example.test/default");
+    await fetcher("https://example.test/provider", {
+      headers: { "User-Agent": "Mozilla/5.0", Authorization: "Bearer test", "X-User-Agent": "upstream-client" }
+    });
+    await fetcher(new Request("https://example.test/request", {
+      headers: { "User-Agent": "beautiful-lyrics-reborn/1.0", Accept: "application/json" }
+    }));
+    expect(requests.map(headers => headers.get("User-Agent"))).toEqual([
+      "beautiful-lyrics-reborn", "Mozilla/5.0 beautiful-lyrics-reborn", "beautiful-lyrics-reborn/1.0"
+    ]);
+    expect(requests[1]?.get("Authorization")).toBe("Bearer test");
+    expect(requests[1]?.get("X-User-Agent")).toBe("upstream-client");
+    expect(requests[2]?.get("Accept")).toBe("application/json");
+  });
+});
+
 describe("request cancellation", () => {
   it("bounds the response body as well as the headers", async () => {
     vi.useFakeTimers();

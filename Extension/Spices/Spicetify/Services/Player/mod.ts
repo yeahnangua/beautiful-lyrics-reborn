@@ -1,4 +1,5 @@
 import { Abortable, CreateAbortScope, Delay } from "@Universal/Modules/Async.ts"
+import { PluginFetch as fetch } from "@Universal/Modules/Http.ts"
 // Spotify Types
 import type { TrackInformationResponse, TrackInformation, TrackReleaseDate } from "../../Types/API/InternalTrackInformation.ts"
 import type TrackMetadata from "../../Types/App/TrackMetadata.ts"

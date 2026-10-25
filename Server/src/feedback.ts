@@ -8,7 +8,7 @@ export type FeedbackEnv = {
   ADMIN_PASSWORD?: string;
   ADMIN_SESSION_SECRET?: string;
 };
-const reportCors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
+const reportCors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, User-Agent" };
 const statuses = ["pending", "in_progress", "resolved", "ignored"];
 const categories = ["lyrics", "timing", "version", "display", "other"];
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

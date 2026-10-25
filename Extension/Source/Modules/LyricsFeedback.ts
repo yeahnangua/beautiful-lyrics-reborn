@@ -1,4 +1,5 @@
 import { Maid } from "@Universal/Modules/Maid.ts"
+import { PluginFetch as fetch } from "@Universal/Modules/Http.ts"
 import { CreateAbortScope } from "@Universal/Modules/Async.ts"
 import { Song, SongDetails, SongLyrics, SongProviderLyrics, SongLyricsFromCache, HaveSongLyricsLoaded, SongChanged, SongLyricsLoaded, Timestamp } from "@Spices/Spicetify/Services/Player/mod.ts"
 import { SpotifyPlayer } from "@Spices/Spicetify/Services/Session.ts"

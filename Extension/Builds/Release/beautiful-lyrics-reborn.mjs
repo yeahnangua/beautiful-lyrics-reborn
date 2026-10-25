@@ -7,6 +7,7 @@ export async function startReleaseLoader(fallback, runtime = globalThis) {
   const domestic = "https://lyrics.20050129.xyz/extension/";
   const cdn = "https://cdn.jsdelivr.net/gh/yeahnangua/beautiful-lyrics-reborn@main/Extension/Builds/Release/";
   const storageKey = "beautiful-lyrics-reborn:last-release";
+  const headers = { "User-Agent": "beautiful-lyrics-reborn" };
   const valid = (value) => value?.schema === 1 && /^\d+\.\d+\.\d+$/.test(value.version)
     && /^[a-f0-9]{64}$/.test(value.sha256)
     && value.file === `beautiful-lyrics-reborn.${value.sha256.slice(0, 16)}.mjs`;
@@ -16,6 +17,7 @@ export async function startReleaseLoader(fallback, runtime = globalThis) {
   const latest = async () => {
     const response = await runtime.fetch(`${base}latest.json`, {
       cache: "no-store", signal: AbortSignal.timeout(10000),
+      headers,
     });
     if (!response.ok) throw new Error(`Version check failed (${response.status})`);
     const release = await response.json();
@@ -34,7 +36,7 @@ export async function startReleaseLoader(fallback, runtime = globalThis) {
     });
     try {
       return await Promise.race([aborted, (async () => {
-        const response = await runtime.fetch(origin + release.file, { signal });
+        const response = await runtime.fetch(origin + release.file, { signal, headers });
         if (!response.ok) throw new Error(`Bundle download failed (${response.status})`);
         const bytes = await response.arrayBuffer();
         const digest = await runtime.crypto.subtle.digest("SHA-256", bytes);
@@ -129,4 +131,4 @@ export async function startReleaseLoader(fallback, runtime = globalThis) {
   }
 }
 
-await startReleaseLoader({"schema":1,"version":"5.2.3","sha256":"56627be5a4389cd9d8ee4c3a641b659489dd2a3054e21954e9b14ae7d16849f2","file":"beautiful-lyrics-reborn.56627be5a4389cd9.mjs","fullscreen":{"api":1,"sha256":"4ef07e067d5cffeb6e80b67bee24ac47e7e2974cc62d000d553bb42391c18283","file":"beautiful-lyrics-reborn-fullscreen.4ef07e067d5cffeb.mjs"}});
+await startReleaseLoader({"schema":1,"version":"5.2.3","sha256":"b37f71a22f8baf9147c5e764e4a7204edb46ac5ebf72e1b894c17403588ae364","file":"beautiful-lyrics-reborn.b37f71a22f8baf91.mjs","fullscreen":{"api":1,"sha256":"4ef07e067d5cffeb6e80b67bee24ac47e7e2974cc62d000d553bb42391c18283","file":"beautiful-lyrics-reborn-fullscreen.4ef07e067d5cffeb.mjs"}});

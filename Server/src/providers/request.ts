@@ -1,4 +1,5 @@
 import type { RequestContext, UpstreamEvent } from "../types";
+import { WithUserAgent } from "../../../Universal/Modules/Http";
 
 /** Bound even mock/non-cooperative operations, and remove listeners after settlement. */
 export async function abortable<T>(operation: () => Promise<T>, signal: AbortSignal): Promise<T> {
@@ -62,7 +63,8 @@ export function contextFetch(fetchImpl: typeof fetch, context: RequestContext = 
     if (scope.signal.aborted) onAbort();
     try {
       return await abortable(async () => {
-        const response = await fetchImpl(input, { ...init, signal: scope.signal });
+        const headers = WithUserAgent(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+        const response = await fetchImpl(input, { ...init, headers, signal: scope.signal });
         scope.signal.throwIfAborted();
         event.status = response.status;
         const bytes = await response.arrayBuffer();

@@ -1,3 +1,4 @@
+import { PluginFetch as fetch } from "@Universal/Modules/Http.ts"
 // Stylings
 import './Stylings/main.scss'
 

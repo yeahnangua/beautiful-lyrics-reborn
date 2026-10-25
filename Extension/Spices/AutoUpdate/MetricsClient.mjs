@@ -7,7 +7,7 @@ export function createMetricsClient(runtime = globalThis, version = "unknown") {
     sending = true;
     try {
       await runtime.fetch("https://lyrics.txw.qzz.io/metrics", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json", "User-Agent": "beautiful-lyrics-reborn" },
         body: JSON.stringify({ schema: 1, events }), keepalive: leaving,
         signal: AbortSignal.timeout(5000), credentials: "omit",
       });

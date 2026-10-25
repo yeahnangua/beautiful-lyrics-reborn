@@ -1,4 +1,5 @@
 import { createAccessTokenProvider, getPlatformToken } from "./AccessToken.ts"
+import { PluginFetch as fetch } from "@Universal/Modules/Http.ts"
 // Imported Types
 import type SpicetifyTypes from "../Types/App/Spicetify.ts"
 

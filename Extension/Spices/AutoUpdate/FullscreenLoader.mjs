@@ -27,7 +27,7 @@ export function createFullscreenLoader(release, runtime = globalThis) {
     try {
       return await Promise.race([aborted, (async () => {
         signal.throwIfAborted();
-        const response = await runtime.fetch(origin + release.file, { signal });
+        const response = await runtime.fetch(origin + release.file, { signal, headers: { "User-Agent": "beautiful-lyrics-reborn" } });
         if (!response.ok) throw Error("Fullscreen download failed");
         const bytes = await verified(await response.arrayBuffer());
         signal.throwIfAborted();

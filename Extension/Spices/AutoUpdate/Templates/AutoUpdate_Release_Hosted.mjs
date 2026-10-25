@@ -151,7 +151,7 @@ let cameFromReload = false
 // Now handle receiving our version updates
 {
 	const GetLatestVersion = () => (
-		fetch(LatestVersionURL)
+		fetch(LatestVersionURL, { headers: { "User-Agent": "beautiful-lyrics-reborn" } })
 		.then(response => response.text())
 		.then(version => UpdateVersion(version))
 		.catch(() => setTimeout(GetLatestVersion, 1000))

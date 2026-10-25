@@ -1,4 +1,5 @@
 import { feedbackResponse, type FeedbackEnv } from "./feedback";
+import { PluginFetch as fetch } from "../../Universal/Modules/Http";
 import { hashLyrics, saveDiagnostics, cleanupFeedback } from "./diagnostics";
 import type { RequestDiagnostics } from "./types";
 import { extensionReleaseResponse } from "./extension-release";
@@ -29,7 +30,7 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
   "Access-Control-Allow-Headers":
-    "Authorization, Content-Type, X-Spotify-App-Platform, X-Spotify-App-Version"
+    "Authorization, Content-Type, User-Agent, X-Spotify-App-Platform, X-Spotify-App-Version"
 };
 
 function emptyLyricsResponse(): Response {

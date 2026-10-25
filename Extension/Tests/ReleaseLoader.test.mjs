@@ -54,6 +54,7 @@ test("loads latest once and keeps one update notice visible until its close butt
   assert.equal(f.imports.length, 1);
   assert.equal(f.runtime.__beautifulLyricsRebornLoader.build, f.fresh.sha256);
   assert.equal(f.calls[0].options.cache, "no-store");
+  assert.ok(f.calls.every(call => call.options.headers["User-Agent"] === "beautiful-lyrics-reborn"));
   assert.deepEqual(f.calls.filter(call => call.url.endsWith("latest.json")).map(call => call.url), [`${worker}latest.json`]);
   f.runtime.fetch = async () => Response.json(f.old); // Rollback is also an update.
   await f.tick(); await f.tick();

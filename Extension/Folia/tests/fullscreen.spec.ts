@@ -92,3 +92,34 @@ test('subtitles are off by default, all 13 modes are available, and saved prefer
   await page.getByRole('button',{name:'Visual settings',exact:true}).click();
   await expect(page.getByLabel('Show subtitles',{exact:true})).toBeChecked();
 });
+
+test('attribution: collapsed controls retain contributor links for synced/static lyrics and clear stale credits', async ({page, context}, testInfo) => {
+  await context.route('https://spicylyrics.org/uid/**', route => route.fulfill({body:'Contributor profile'}));
+  await page.goto('/');
+  await expect(page.locator('.folia-app')).toBeVisible();
+  const attribution = { provider:'spicylyrics', source:'spicy_lyrics',
+    uploader:{id:'1',username:'Uploader',url:'https://spicylyrics.org/uid/1'},
+    maker:{id:'2',username:'Maker',url:'https://spicylyrics.org/uid/2'} };
+  for (const status of ['synced','static'] as const) {
+    await page.evaluate(({status,attribution}) => {
+      const fixture = (window as any).testFolia;
+      fixture.update({lyrics:{...fixture.getPlayer().lyrics, status, staticLines:['First lyric','Last lyric'], attribution}});
+    }, {status,attribution});
+    await expect(page.locator('.folia-controls')).toHaveAttribute('data-expanded','false');
+    const uploader = page.getByRole('link',{name:'🔗 Uploader',exact:true});
+    await expect(uploader).toBeVisible();
+    await expect(uploader).toHaveAttribute('href',attribution.uploader.url);
+    await expect(page.getByRole('link',{name:'🔗 Maker',exact:true})).toHaveAttribute('href',attribution.maker.url);
+    await expect(page.locator('.folia-attribution')).toContainText('Lyrics via spicylyrics');
+  }
+  await page.screenshot({path:testInfo.outputPath('attribution-static.png')});
+  const [popup] = await Promise.all([page.waitForEvent('popup'),page.getByRole('link',{name:'🔗 Uploader',exact:true}).click()]);
+  await popup.waitForLoadState(); expect(popup.url()).toBe(attribution.uploader.url); await popup.close();
+  await page.setViewportSize({width:390,height:844});
+  await expect(page.getByRole('link',{name:'🔗 Uploader',exact:true})).toBeVisible();
+  await page.evaluate(() => {
+    const fixture=(window as any).testFolia;
+    fixture.update({key:'spotify:track:next',lyrics:{status:'loading',direction:'ltr',lines:[],staticLines:[]}});
+  });
+  await expect(page.locator('.folia-attribution')).toHaveCount(0);
+});

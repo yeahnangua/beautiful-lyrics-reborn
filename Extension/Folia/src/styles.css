@@ -58,3 +58,8 @@
 .folia-static small { font-size: 12px; color: #a1a1aa; }
 .folia-failure { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); z-index: 85; padding: 10px 18px; border-radius: 14px; background: #18181bcc; font-size: 12px; }
 @media (max-width: 700px) { .folia-transport { flex-wrap: wrap; gap: 4px; } .folia-panel { bottom: 210px; padding: 18px; } .folia-controls { bottom: 16px; } .folia-volume input { width: 54px; } }
+
+.folia-attribution { padding-top: 8px; font-size: 11px; color: #a1a1aa; text-align: center; overflow-wrap: anywhere; }
+.folia-attribution a { display: inline-block; padding: 2px 5px; color: #e4e4e7; border-radius: 6px; text-decoration: underline; }
+.folia-attribution a:hover { background: #ffffff18; }
+.folia-attribution a:focus-visible { outline: 2px solid #a1a1aa; outline-offset: 2px; }

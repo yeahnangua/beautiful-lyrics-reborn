@@ -53,9 +53,12 @@ export function createLyricsCache(db: D1Database | undefined): LyricsCache {
       .bind(trackId, Date.now())
       .first<CacheRow>();
     if (!row) return undefined;
+    // Delete only the row inspected here: a concurrent writer may have replaced it.
+    const discard = () => db.prepare("DELETE FROM lyrics_cache WHERE spotify_id=? AND provider=? AND lyrics_type=? AND data=?")
+      .bind(trackId, row.provider, row.lyrics_type, row.data).run().catch(() => {});
     if (isSourceBlocked(blocks, row.provider, row.lyrics_type)) {
       // A moderation block must not be bypassed by a row cached before it existed.
-      await invalidate(trackId).catch(() => {});
+      await discard();
       return undefined;
     }
     try {
@@ -63,7 +66,7 @@ export function createLyricsCache(db: D1Database | undefined): LyricsCache {
       if (entry.schema !== schema || entry.lyrics.Type !== row.lyrics_type) throw new Error("Stale cache entry");
       return entry.lyrics;
     } catch {
-      await invalidate(trackId).catch(() => {});
+      await discard();
       return undefined;
     }
   };
@@ -79,7 +82,10 @@ export function createLyricsCache(db: D1Database | undefined): LyricsCache {
         VALUES(?,?,?,?,?,?,?,?)
         ON CONFLICT(spotify_id) DO UPDATE SET provider=excluded.provider,transport=excluded.transport,
           lyrics_type=excluded.lyrics_type,lyrics_hash=excluded.lyrics_hash,stored_at=excluded.stored_at,
-          expires_at=excluded.expires_at,data=excluded.data`)
+          expires_at=excluded.expires_at,data=excluded.data
+        WHERE lyrics_cache.expires_at<=excluded.stored_at
+          OR (CASE excluded.lyrics_type WHEN 'Syllable' THEN 3 WHEN 'Line' THEN 2 ELSE 1 END)
+            >= (CASE lyrics_cache.lyrics_type WHEN 'Syllable' THEN 3 WHEN 'Line' THEN 2 ELSE 1 END)`)
       .bind(trackId, source.Provider, source.Transport, lyrics.Type, lyrics.LyricsHash ?? "",
         now, now + ttlByType[lyrics.Type], JSON.stringify(stored))
       .run();

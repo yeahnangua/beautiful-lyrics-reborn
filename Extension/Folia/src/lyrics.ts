@@ -19,7 +19,8 @@ export function convertLyrics(lyrics: (Lyrics & { NaturalAlignment?: string }) |
   const direction = lyrics?.NaturalAlignment === 'Right' ? 'rtl' : 'ltr';
   if (!loaded) return { status: 'loading', lines: [], staticLines: [], direction };
   if (!lyrics) return { status: 'missing', lines: [], staticLines: [], direction };
-  if (lyrics.Type === 'Static') return { status: 'static', lines: [], staticLines: lyrics.Lines.map(line => line.Text), direction };
+  const attribution = lyrics.Attribution;
+  if (lyrics.Type === 'Static') return { status: 'static', attribution, lines: [], staticLines: lyrics.Lines.map(line => line.Text), direction };
   const lines: Line[] = [];
   for (const [index, group] of lyrics.Content.entries()) {
     if (group.Type !== 'Vocal') continue;
@@ -36,7 +37,7 @@ export function convertLyrics(lyrics: (Lyrics & { NaturalAlignment?: string }) |
   }
   // Keep overlapping lines intact and their stable order at identical start times.
   lines.sort((a, b) => a.startTime - b.startTime);
-  return { status: lines.some(line => line.fullText.trim()) ? 'synced' : 'instrumental', lines, staticLines: [], direction };
+  return { status: lines.some(line => line.fullText.trim()) ? 'synced' : 'instrumental', attribution, lines, staticLines: [], direction };
 }
 export const lyricSeekTime = (time: number, offset: number, duration: number): number =>
   Math.max(0, Math.min(duration, time - offset));

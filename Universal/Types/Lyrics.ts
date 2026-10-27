@@ -1,3 +1,10 @@
+export type Contributor = { id: string; username: string; url: string };
+export type SpicyAttribution = {
+  provider: "spicylyrics";
+  source: string;
+  uploader?: Contributor;
+  maker?: Contributor;
+};
 export type LyricsSource = {
   Provider: string;
   Transport: "direct" | "lyrically";
@@ -6,6 +13,7 @@ export type LyricsSource = {
   MatchedTitle?: string;
 };
 export type LyricsProvenance = {
+  Attribution?: SpicyAttribution;
   Source?: LyricsSource;
   RequestId?: string;
   RetrievedAt?: string;

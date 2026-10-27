@@ -434,41 +434,34 @@
 	inherits: true;
 }
 
-/* ─── Spicy Lyrics Attribution ─────────────────────────────────── */
-/* The line is appended as a VocalsGroup child inside the .Lyrics
-   container so it participates in the scroller's active/sung states.
-   Synced lyrics: the zero-vocal entry fires at EndTime-0.1 s so the
-   parent .Vocals gets .Active during the final 100 ms.
-   Static lyrics: plain footer, no time-gated highlight.            */
-
-.AttributionLine {
-	/* Visual: muted, smaller than regular vocals */
-	font-family: "BeautifulLyrics" !important;
+/* Attribution is measured as part of the lyric stack. */
+.VocalsGroup.AttributionLine {
+	flex-shrink: 0;
+	padding: 0.5em 0;
+}
+.Lyrics .AttributionLine .AttributionText {
+	width: 100%;
+	display: block;
 	font-size: clamp(0.9rem, 1.6cqw, 1.4rem);
+	font-weight: 400;
+	line-height: 1.5;
 	opacity: var(--vocal-idle-opacity);
-	justify-content: center;
-
-	/* Keep it low in the lyric stack – appears below every vocal line */
-	order: 9999;
+	color: white;
+	direction: ltr;
+	text-align: center;
+	overflow-wrap: anywhere;
 }
-
-.AttributionText {
-	/* Cursor-link hint for the 🔗 symbols */
-	cursor: default;
-
-	/* Highlight is inherited from parent .Vocals.Active / .Vocals.Sung via
-	   background-clip:text, matching how .Synced / .Line lyrics glow.     */
-}
-
-/* When the scroller marks the parent Vocals container active the
-   attribution text inherits the full gradient glow.                */
-.Vocals.Active .AttributionText,
-.Vocals.Sung .AttributionText {
+.Lyrics .AttributionLine .AttributionText.Active {
 	opacity: var(--vocal-active-opacity);
+	color: #bef264;
+	text-shadow: 0 0 0.4em currentColor;
 }
-
-/* Static-lyrics path: attribution sits outside the scroller, so it
-   stays at idle opacity unless the user hovers the lyrics view.      */
-.Static ~ .AttributionLine {
-	opacity: var(--vocal-idle-opacity);
+.AttributionText a {
+	color: inherit;
+	text-decoration: underline;
+	cursor: pointer;
+}
+.AttributionText a:focus-visible {
+	outline: 2px solid currentColor;
+	outline-offset: 2px;
 }

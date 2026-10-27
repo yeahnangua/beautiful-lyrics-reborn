@@ -73,3 +73,14 @@ test('settings validation preserves supported selections and repairs corrupt pre
   assert.equal(validateSettings({showSubtitles:true}).showSubtitles,true);
   assert.equal(validateSettings({mode:'sonnet',background:'sora',fontScale:3}).fontScale,2);
 });
+
+test('Folia retains provider/uploader/maker attribution for every lyric type and clears it while loading', () => {
+  const Attribution = { provider:'spicylyrics', source:'spicy_lyrics',
+    uploader:{id:'1',username:'up',url:'https://spicylyrics.org/uid/1'},
+    maker:{id:'2',username:'maker',url:'https://spicylyrics.org/uid/2'} };
+  for (const lyrics of [{Type:'Static',Lines:[{Text:'words'}]}, {Type:'Line',Content:[]}, {Type:'Syllable',Content:[]}]) {
+    assert.deepEqual(convertLyrics({...lyrics, Attribution},true).attribution,Attribution);
+    assert.equal(convertLyrics({...lyrics, Attribution},false).attribution,undefined);
+  }
+  assert.equal(convertLyrics(undefined,true).attribution,undefined);
+});

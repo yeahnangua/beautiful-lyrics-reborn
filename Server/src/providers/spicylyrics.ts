@@ -1,3 +1,4 @@
+import { contributorUrl } from "../../../Universal/Modules/LyricsAttribution";
 import { contextFetch } from "./request";
 import { withSource } from "./matched-title";
 import type {
@@ -30,7 +31,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function finiteSeconds(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 function defined<T>(value: T | undefined): value is T {
@@ -51,11 +52,12 @@ function sanitizeVocalGroup(raw: unknown): SyllableVocal | undefined {
   if (!isRecord(raw) || !Array.isArray(raw.Syllables)) return undefined;
   const syllables = raw.Syllables.map(sanitizeSyllableMetadata).filter(defined);
   if (syllables.length === 0) return undefined;
-  const first = syllables[0]!;
-  const last = syllables[syllables.length - 1]!;
+  const start = finiteSeconds(raw.StartTime) ?? Math.min(...syllables.map(part => part.StartTime));
+  const end = finiteSeconds(raw.EndTime) ?? Math.max(...syllables.map(part => part.EndTime));
+  if (end < start) return undefined;
   return {
-    StartTime: finiteSeconds(raw.StartTime) ?? first.StartTime,
-    EndTime: finiteSeconds(raw.EndTime) ?? last.EndTime,
+    StartTime: Math.min(start, ...syllables.map(part => part.StartTime)),
+    EndTime: Math.max(end, ...syllables.map(part => part.EndTime)),
     Syllables: syllables
   };
 }
@@ -77,7 +79,9 @@ function sanitizeSyllableLyrics(body: Record<string, unknown>): SyllableSyncedLy
   const first = content[0];
   const last = content[content.length - 1];
   if (first === undefined || last === undefined) return undefined;
-  return { Type: "Syllable", StartTime: first.Lead.StartTime, EndTime: last.Lead.EndTime, Content: content };
+  const vocals = content.flatMap(group => [group.Lead, ...(group.Background ?? [])]);
+  return { Type: "Syllable", StartTime: Math.min(...vocals.map(vocal => vocal.StartTime)),
+    EndTime: Math.max(...vocals.map(vocal => vocal.EndTime)), Content: content };
 }
 
 function sanitizeLineLyrics(body: Record<string, unknown>): LineSyncedLyrics | undefined {
@@ -95,7 +99,7 @@ function sanitizeLineLyrics(body: Record<string, unknown>): LineSyncedLyrics | u
   const first = content[0];
   const last = content[content.length - 1];
   if (first === undefined || last === undefined) return undefined;
-  return { Type: "Line", StartTime: first.StartTime, EndTime: last.EndTime, Content: content };
+  return { Type: "Line", StartTime: Math.min(...content.map(line => line.StartTime)), EndTime: Math.max(...content.map(line => line.EndTime)), Content: content };
 }
 
 function sanitizeStaticLyrics(body: Record<string, unknown>): StaticSyncedLyrics | undefined {
@@ -112,17 +116,21 @@ function sanitizeStaticLyrics(body: Record<string, unknown>): StaticSyncedLyrics
 
 function contributorFrom(raw: unknown): Contributor | undefined {
   if (!isRecord(raw) || typeof raw.id !== "string" || typeof raw.username !== "string" || typeof raw.url !== "string") return undefined;
-  return { id: raw.id, username: raw.username, url: raw.url };
+  const url = contributorUrl(raw.url);
+  if (!raw.username.trim() || !url) return undefined;
+  return { id: raw.id, username: raw.username, url };
 }
 
 function buildAttribution(envelope: SpicyEnvelope): SpicyAttribution | undefined {
   if (!isRecord(envelope.Body)) return undefined;
   const source = typeof envelope.Body.source === "string" ? envelope.Body.source : "unknown";
-  if (source === "spicy_lyrics" && isRecord(envelope.Body.UploadAttribution)) {
-    const rawAttr = envelope.Body.UploadAttribution as Record<string, unknown>;
+  if (source === "spicy_lyrics") {
+    if (!isRecord(envelope.Body.UploadAttribution)) return undefined;
+    const rawAttr = envelope.Body.UploadAttribution;
     const uploader = contributorFrom(rawAttr.Uploader);
     if (uploader === undefined) return undefined;
     const maker = contributorFrom(rawAttr.Maker);
+    if (rawAttr.Maker != null && maker === undefined) return undefined;
     return maker === undefined
       ? { provider: "spicylyrics", source, uploader }
       : { provider: "spicylyrics", source, uploader, maker };
@@ -136,7 +144,6 @@ function buildAttribution(envelope: SpicyEnvelope): SpicyAttribution | undefined
 // response only contains what the client expects, and so upstream schema drift cannot leak.
 function sanitizeSpicyBody(raw: unknown, attribution: SpicyAttribution | undefined): BeautifulLyrics | undefined {
   if (!isRecord(raw)) return undefined;
-  const base: Record<string, unknown> = {};
   switch (raw.Type) {
     case "Syllable": {
       const lyrics = sanitizeSyllableLyrics(raw);
@@ -180,7 +187,10 @@ function createSpicyLyricsProviderImplementation(fetchImpl: typeof fetch): Spicy
       } catch {
         return undefined;
       }
+      if (!isRecord(envelope)) return undefined;
       const attribution = buildAttribution(envelope);
+      // Do not serve community lyrics when their required credits cannot be shown.
+      if (!attribution) return undefined;
       const lyrics = sanitizeSpicyBody(envelope.Body, attribution);
       if (lyrics === undefined) return undefined;
       return withSource(lyrics, { Provider: "spicylyrics", Transport: "direct", TrackId: track.id });

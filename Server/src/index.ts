@@ -15,7 +15,7 @@ import { spicyLyricsProvider, setSpicyLyricsApiKey } from "./providers/spicylyri
 import { createLyricsService, type LyricsService } from "./service";
 import type { BeautifulLyrics, SpotifyClientContext, TrackMetadata } from "./types";
 import { dashboardHtml } from "./dashboard";
-import { createLyricsCache } from "./cache";
+import { createLyricsCache, cleanupLyricsCache } from "./cache";
 import { loadSourcePolicy, validSpotifyId } from "./source-policy";
 import { metricsResponse, recordRequestMetrics, detailedStatistics, type MetricsEnv } from "./metrics";
 
@@ -143,6 +143,7 @@ export type WorkerEnv = FeedbackEnv & MetricsEnv & {
   STATS_ACCOUNT_ID?: string;
   STATS_API_TOKEN?: string;
   SPICY_LYRICS_KEY?: string;
+  LYRICS_CACHE_DB?: D1Database;
 };
 
 function recordOutcome(env: WorkerEnv, lyrics: BeautifulLyrics | undefined): void {
@@ -202,7 +203,10 @@ async function statsResponse(env: WorkerEnv, url: URL): Promise<Response> {
 export function createWorker(service: LyricsService): ExportedHandler<WorkerEnv> {
   return {
     scheduled(_event, env, ctx) {
-      ctx.waitUntil(cleanupFeedback(env.FEEDBACK_DB).catch(() => console.warn("Feedback cleanup failed")));
+      ctx.waitUntil(Promise.all([
+        cleanupFeedback(env.FEEDBACK_DB).catch(() => console.warn("Feedback cleanup failed")),
+        cleanupLyricsCache(env.LYRICS_CACHE_DB).catch(() => console.warn("Lyrics cache cleanup failed"))
+      ]));
     },
     async fetch(request: Request, env: WorkerEnv, ctx?: ExecutionContext): Promise<Response> {
       if (new URL(request.url).pathname === "/metrics") return metricsResponse(request, env);
@@ -287,7 +291,7 @@ export function createWorker(service: LyricsService): ExportedHandler<WorkerEnv>
       };
       let lyrics: BeautifulLyrics | undefined;
       let failed = false;
-      const cache = createLyricsCache(env.FEEDBACK_DB);
+      const cache = createLyricsCache(env.LYRICS_CACHE_DB);
       try {
         let sourceBlocks: Awaited<ReturnType<typeof loadSourcePolicy>> = [];
         try {
@@ -299,11 +303,11 @@ export function createWorker(service: LyricsService): ExportedHandler<WorkerEnv>
         }
         diagnostics.sourceBlocks = sourceBlocks;
         // A cache hit still had to pass the source policy check inside the cache.
-        const stored = env.FEEDBACK_DB === undefined ? undefined : await cache.get(trackId, sourceBlocks).catch(() => {
+        const stored = env.LYRICS_CACHE_DB === undefined ? undefined : await cache.get(trackId, sourceBlocks).catch(() => {
           console.warn("Lyrics cache read failed");
           return undefined;
         });
-        if (env.FEEDBACK_DB !== undefined) diagnostics.cache = stored ? "hit" : "miss";
+        if (env.LYRICS_CACHE_DB !== undefined) diagnostics.cache = stored ? "hit" : "miss";
         setSpicyLyricsApiKey(env.SPICY_LYRICS_KEY);
         lyrics = stored ?? await service.getLyrics(trackId, accessToken, metadata, extractSpotifyClientContext(request),
           { signal: request.signal, diagnostics, sourceBlocks });

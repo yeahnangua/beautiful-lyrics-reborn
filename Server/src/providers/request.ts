@@ -1,38 +1,25 @@
 import type { RequestContext, UpstreamEvent } from "../types";
+import { Abortable, CreateAbortScope } from "../../../Universal/Modules/Async";
 import { WithUserAgent } from "../../../Universal/Modules/Http";
 
-/** Bound even mock/non-cooperative operations, and remove listeners after settlement. */
-export async function abortable<T>(operation: () => Promise<T>, signal: AbortSignal): Promise<T> {
-  signal.throwIfAborted();
-  let onAbort: () => void = () => {};
-  try {
-    return await Promise.race([
-      new Promise<never>((_, reject) => {
-        onAbort = () => reject(signal.reason ?? new Error("Request aborted"));
-        signal.addEventListener("abort", onAbort, { once: true });
-      }),
-      Promise.resolve().then(() => { signal.throwIfAborted(); return operation(); })
-    ]);
-  } finally {
-    signal.removeEventListener("abort", onAbort);
-  }
-}
+/**
+ * Bounds even mock or non-cooperative operations, and removes listeners after
+ * settlement. A thin wrapper so call sites keep reading `(operation, signal)`.
+ */
+export const abortable = <T>(operation: () => Promise<T>, signal: AbortSignal): Promise<T> =>
+  Abortable(signal, operation);
 
+/** Time budget for one stage. Nested scopes inherit the parent's absolute deadline. */
 export function requestScope(milliseconds: number, context: RequestContext = {}) {
-  const controller = new AbortController();
-  const deadline = Math.min(Date.now() + milliseconds, context.deadline ?? Infinity);
-  const cancel = () => controller.abort(context.signal?.reason);
-  context.signal?.addEventListener("abort", cancel, { once: true });
-  if (context.signal?.aborted) cancel();
-  if (deadline <= Date.now()) controller.abort(new DOMException("Request timed out", "TimeoutError"));
-  const timer = setTimeout(() => controller.abort(new DOMException("Request timed out", "TimeoutError")), Math.max(0, deadline - Date.now()));
+  const scope = CreateAbortScope(milliseconds, { Signal: context.signal, Deadline: context.deadline });
   return {
     ...(context.diagnostics ? { diagnostics: context.diagnostics } : {}),
     ...(context.trace ? { trace: context.trace } : {}),
-    signal: controller.signal,
-    deadline,
-    dispose() { clearTimeout(timer); context.signal?.removeEventListener("abort", cancel); },
-    cancel(reason?: unknown) { controller.abort(reason); }
+    signal: scope.Signal,
+    deadline: scope.Deadline,
+    // Disposing must not abort siblings that may still win this stage.
+    dispose() { scope.Detach(); },
+    cancel(reason?: unknown) { scope.Cancel(reason); }
   };
 }
 

@@ -2,8 +2,8 @@
 
 Beautiful Lyrics Reborn is a community-maintained revival of the original
 Beautiful Lyrics Spicetify extension. It keeps the fullscreen/card/page lyric
-experience alive and adds a new Cloudflare Worker lyrics service for Spotify,
-QQ Music, KuGou, NetEase, Musixmatch, Lyrically/Paxsenix, and LRCLIB fallbacks.
+experience alive and adds a new Cloudflare Worker lyrics service for Spicy Lyrics,
+Spotify, QQ Music, KuGou, NetEase, Musixmatch, Lyrically/Paxsenix, and LRCLIB fallbacks.
 
 This repository contains both pieces:
 
@@ -25,12 +25,12 @@ https://lyrics.txw.qzz.io
 - Online releases load the complete fullscreen runtime only when fullscreen/cinema is opened, with verified persistent caching. Offline bundles remain self-contained.
 - The statistics page includes provider performance, weighted latency percentiles, cache reuse and fullscreen usage. Aggregate plugin metrics are always enabled; no song, lyric, account, token or persistent user identifier is sent. See [loading and statistics details](docs/fullscreen-loading-and-statistics.md).
 - Reborn lyrics provider flow:
-  1. The first available syllable lyrics from direct QQ Music QRC, KuGou KRC, NetEase YRC,
+  1. The first available syllable lyrics from direct Spicy Lyrics, QQ Music QRC, KuGou KRC, NetEase YRC,
      or Musixmatch RichSync, plus Lyrically/Paxsenix Apple Music, Kugou,
      NetEase, and Deezer; syllable providers are queried concurrently.
   2. The first available line lyrics from Lyrically/Paxsenix Spotify proxy,
      Kugou, Spotify, Deezer, YouTube, or LRCLIB; Line providers are queried concurrently.
-  3. Static fallbacks from Lyrically/Paxsenix Spotify proxy, Spotify,
+  3. Static fallbacks from Spicy Lyrics, Lyrically/Paxsenix Spotify proxy, Spotify,
      Deezer, YouTube, Genius, and LRCLIB.
 
 Lyrics preserve the quality order syllable > line > static. The syllable phase
@@ -46,6 +46,10 @@ to improve matching, and
 uses RichSync only when the track has word timing. A missing or restricted result
 leaves the other providers available. Upstream availability and rate limits can
 vary by server IP; no user credentials are bundled with these providers.
+
+Spicy Lyrics is keyed by Spotify track ID and needs a secret API key. When the
+`SPICY_LYRICS_KEY` Worker secret is unset, the provider is skipped entirely. See
+[docs/spicylyrics.md](docs/spicylyrics.md) for setup and the binding attribution requirement.
 
 ## Local Extension Install
 

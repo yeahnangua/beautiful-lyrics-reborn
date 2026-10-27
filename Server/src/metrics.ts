@@ -86,7 +86,7 @@ export function recordRequestMetrics(env: MetricsEnv, record: RequestDiagnostics
   if (!env.METRICS) return;
   try {
     const type = lyrics?.Type ?? "none";
-    env.METRICS.writeDataPoint({ indexes: ["server:request"], blobs: ["server", "request", "v1", record.outcome, type], doubles: [record.durationMs] });
+    env.METRICS.writeDataPoint({ indexes: ["server:request"], blobs: ["server", "request", "v1", record.outcome, type, record.cache ?? "none"], doubles: [record.durationMs] });
     for (const attempt of record.attempts) {
       if (attempt.stage === "metadata") continue;
       const source = attempt.source ?? candidateSource(attempt.provider, { Type: "Static", Lines: [] });
@@ -118,11 +118,12 @@ export const statisticsQueries = (days: number) => {
     client: `SELECT blob2 AS kind, blob4 AS source, blob5 AS outcome, blob6 AS lyricsType, blob7 AS view, blob8 AS mode, sum(_sample_interval) AS count, ${latency}, min(timestamp) AS since FROM lyrics_metrics WHERE ${range} AND blob1='client' GROUP BY kind, source, outcome, lyricsType, view, mode`,
     trend: `SELECT toDate(timestamp) AS day, blob1 AS origin, blob2 AS kind, blob4 AS dimension, sum(_sample_interval) AS count FROM lyrics_metrics WHERE ${range} AND ((blob1='server' AND blob2='request') OR (blob1='client' AND blob2 IN ('session','fullscreen_first','lyrics_load','fullscreen_load'))) GROUP BY day, origin, kind, dimension ORDER BY day`,
     latency: `SELECT blob1 AS origin, blob2 AS kind, ${latency} FROM lyrics_metrics WHERE ${range} AND ((blob1='server' AND blob2='request' AND blob4!='cancelled') OR (blob1='client' AND blob2 IN ('lyrics_load','lyrics_display','fullscreen_load'))) GROUP BY origin, kind`,
+    cache: `SELECT blob6 AS cache, blob4 AS outcome, blob5 AS lyricsType, sum(_sample_interval) AS count, ${latency} FROM lyrics_metrics WHERE ${range} AND blob1='server' AND blob2='request' GROUP BY cache, outcome, lyricsType`,
     providerLatency: `SELECT blob4 AS provider, blob5 AS transport, ${latency} FROM lyrics_metrics WHERE ${range} AND blob1='server' AND blob2='provider' AND blob7 IN ('success','none','failed','timeout') GROUP BY provider, transport`,
   };
 };
 export async function detailedStatistics(env: MetricsEnv, days: number) {
-  if (!env.METRICS) return { available: false, server: [], providers: [], client: [], trend: [], latency: [], providerLatency: [] };
+  if (!env.METRICS) return { available: false, server: [], providers: [], client: [], trend: [], latency: [], providerLatency: [], cache: [] };
   const queries = statisticsQueries(days);
   const entries = await Promise.all(Object.entries(queries).map(async ([key, sql]) => [key, await queryMetrics(env, sql)] as const));
   return { available: true, ...Object.fromEntries(entries) };

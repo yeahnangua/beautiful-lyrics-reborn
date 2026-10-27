@@ -48,6 +48,13 @@ export async function cleanupFeedback(db: D1Database | undefined): Promise<void>
   ];
   while (true) {
     const results = await db.batch(statements);
-    if (results.every(result => result.meta.changes === 0)) return;
+    if (results.every(result => result.meta.changes === 0)) break;
+  }
+  // Kept out of the batch: an unapplied 0005 migration must not block retention.
+  for (let pass = 0; pass < 20; pass++) {
+    const purged = await db
+      .prepare("DELETE FROM lyrics_cache WHERE spotify_id IN (SELECT spotify_id FROM lyrics_cache WHERE expires_at < ? LIMIT 1000)")
+      .bind(now).run().catch(() => undefined);
+    if (!purged || purged.meta.changes === 0) break;
   }
 }

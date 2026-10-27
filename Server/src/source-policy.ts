@@ -1,6 +1,6 @@
 import type { BeautifulLyrics, LyricsSource, SourceBlock } from "./types";
 
-export const sourceProviders = ["qqmusic", "kugou", "netease", "musixmatch", "applemusic", "spotify", "deezer", "youtube", "genius", "lrclib"] as const;
+export const sourceProviders = ["qqmusic", "kugou", "netease", "musixmatch", "spicylyrics", "applemusic", "spotify", "deezer", "youtube", "genius", "lrclib"] as const;
 export const lyricsTypes = ["Syllable", "Line", "Static"] as const;
 export const validSpotifyId = (value: string): boolean => /^[a-zA-Z0-9]+$/.test(value) && value.length <= 100;
 

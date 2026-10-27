@@ -1,6 +1,7 @@
 import { decodeEntitiesDeep } from "./convert/entities";
 import { matchedTitle } from "./providers/matched-title";
 import { abortable, requestScope } from "./providers/request";
+import { FirstQualified } from "../../Universal/Modules/Async";
 import { candidateSource, isSourceBlocked, providerName } from "./source-policy";
 import type { BeautifulLyrics, ProviderClients, RequestContext, SpotifyClientContext, TrackMetadata, ProviderAttempt, LyricsSource } from "./types";
 
@@ -79,11 +80,7 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
         } finally { attempt.durationMs = Date.now() - started; }
       };
       const first = (candidates: Promise<Candidate>[], accept: (lyrics: BeautifulLyrics) => boolean) =>
-        Promise.any(candidates.map(async candidate => {
-          const result = await candidate;
-          if (!accept(result[1])) throw new Error("Lower quality lyrics");
-          return result;
-        })).catch(() => undefined);
+        FirstQualified(candidates, candidate => accept(candidate[1]));
 
       // Metadata and every syllable source share the same 15-second budget.
       const syllable = requestScope(15_000, context);
@@ -116,6 +113,7 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
           };
         const candidates = syllableCandidates;
         candidates.push(
+          run("spicylyrics", scope => providers.spicylyrics.getLyrics({ id: trackId, name: "", artists: [] }, scope), syllable),
           run("qq music", withMetadata((t, scope) => providers.qqmusic.getSyllableLyrics(t, scope)), syllable),
           run("kugou direct", withMetadata((t, scope) => providers.kugou.getSyllableLyrics(t, scope)), syllable),
           run("netease direct", withMetadata((t, scope) => providers.netease.getSyllableLyrics(t, scope)), syllable),
@@ -202,7 +200,7 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
       }
       if (context.signal?.aborted) return undefined;
 
-      const staticOrder = ["spotify proxy", "spotify", "deezer", "youtube", "genius", "lrclib", "apple music", "kugou", "netease"];
+      const staticOrder = ["spicylyrics", "spotify proxy", "spotify", "deezer", "youtube", "genius", "lrclib", "apple music", "kugou", "netease"];
       for (const source of staticOrder) {
         const lyrics = available.get(source);
         if (lyrics?.Type === "Static") return finish([source, lyrics]);

@@ -11,7 +11,7 @@ export const adminHtml = `<!doctype html>
 <div id="records">
 <form id="filters">
 <label>歌曲 / 歌手<input name="q" placeholder="搜索歌曲或歌手"></label><label>Spotify ID<input name="spotifyId"></label>
-<label>来源<select name="source"><option value="">全部</option><option>qqmusic</option><option>kugou</option><option>netease</option><option>musixmatch</option><option>applemusic</option><option>spotify</option><option>deezer</option><option>youtube</option><option>genius</option><option>lrclib</option><option>unknown</option></select></label>
+<label>来源<select name="source"><option value="">全部</option><option>qqmusic</option><option>kugou</option><option>netease</option><option>musixmatch</option><option>spicylyrics</option><option>applemusic</option><option>spotify</option><option>deezer</option><option>youtube</option><option>genius</option><option>lrclib</option><option>unknown</option></select></label>
 <label>请求 ID<input name="requestId"></label>
 <label data-report>问题类型<select name="category"><option value="">全部</option><option value="lyrics">歌词错误</option><option value="timing">时间不同步</option><option value="version">版本错配</option><option value="display">显示问题</option><option value="other">其他</option></select></label>
 <label data-report>处理状态<select name="status"><option value="">全部</option><option value="pending">待处理</option><option value="in_progress">处理中</option><option value="resolved">已解决</option><option value="ignored">已忽略</option></select></label>
@@ -32,7 +32,7 @@ const $=id=>document.getElementById(id);let view='reports',cursor=null,current=n
 const statusNames={pending:'待处理',in_progress:'处理中',resolved:'已解决',ignored:'已忽略'};
 const categoryNames={lyrics:'歌词错误',timing:'时间不同步',version:'版本错配',display:'显示问题',other:'其他'};
 const typeNames={Syllable:'逐字',Line:'逐行',Static:'纯文本'};
-const providers=['qqmusic','kugou','netease','musixmatch','applemusic','spotify','deezer','youtube','genius','lrclib'];
+const providers=['qqmusic','kugou','netease','musixmatch','spicylyrics','applemusic','spotify','deezer','youtube','genius','lrclib'];
 let blockCurrent=null,blockCursor=null,blockRevision=0;
 for(const [id,all] of [['blockSourceFilter',true],['blockProvider',false]]){
   if(all){const option=document.createElement('option');option.value='';option.textContent='全部';$(id).append(option)}

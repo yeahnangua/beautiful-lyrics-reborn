@@ -23,6 +23,8 @@ export type TimeMetadata = {
 export type StaticSyncedLyrics = LyricsProvenance & {
   Type: "Static";
   Lines: TextMetadata[];
+  /** Spicy attribution when this result came from the Spicy Lyrics provider. */
+  Attribution?: SpicyAttribution;
 };
 
 export type LineVocal = TimeMetadata &
@@ -38,6 +40,8 @@ export type Interlude = TimeMetadata & {
 export type LineSyncedLyrics = LyricsProvenance & TimeMetadata & {
   Type: "Line";
   Content: (LineVocal | Interlude)[];
+  /** Spicy attribution when this result came from the Spicy Lyrics provider. */
+  Attribution?: SpicyAttribution;
 };
 
 export type SyllableMetadata = TimeMetadata &
@@ -60,6 +64,8 @@ export type SyllableVocalSet = {
 export type SyllableSyncedLyrics = LyricsProvenance & TimeMetadata & {
   Type: "Syllable";
   Content: (SyllableVocalSet | Interlude)[];
+  /** Spicy attribution when this result came from the Spicy Lyrics provider. */
+  Attribution?: SpicyAttribution;
 };
 
 export type BeautifulLyrics = StaticSyncedLyrics | LineSyncedLyrics | SyllableSyncedLyrics;
@@ -94,6 +100,7 @@ export type ProviderClients = {
   kugou: SyllableLyricsProvider;
   netease: SyllableLyricsProvider;
   musixmatch: SyllableLyricsProvider;
+  spicylyrics: SpicyLyricsProvider;
   lyrically: LyricallyProvider;
   spotify: SpotifyProvider;
   lrclib: LrclibProvider;
@@ -119,6 +126,10 @@ export type SpotifyProvider = {
 };
 
 export type LrclibProvider = {
+  getLyrics(track: TrackMetadata, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
+};
+
+export type SpicyLyricsProvider = {
   getLyrics(track: TrackMetadata, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
 };
 
@@ -166,6 +177,8 @@ export type RequestDiagnostics = {
   startedAt: string;
   durationMs: number;
   outcome: "pending" | "success" | "none" | "failed" | "cancelled";
+  /** Whether this request was answered from the stored lyrics cache. */
+  cache?: "hit" | "miss";
   source?: LyricsSource;
   lyricsHash?: string;
   attempts: ProviderAttempt[];
@@ -174,3 +187,13 @@ export type RequestDiagnostics = {
 };
 
 export type SourceBlock = { provider: string; lyricsType: BeautifulLyrics["Type"] };
+
+export type Contributor = { id: string; username: string; url: string };
+export type SpicyAttribution = {
+  provider: "spicylyrics";
+  /** The source reported by the Spicy Lyrics API: "spicy_lyrics" | "apple_music" | "spotify" | "unknown" */
+  source: string;
+  /** Present when the upstream source is "spicy_lyrics"; undefined for apple_music or spotify. */
+  uploader?: Contributor;
+  maker?: Contributor;
+};

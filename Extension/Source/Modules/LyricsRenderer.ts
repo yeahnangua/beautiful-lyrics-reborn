@@ -19,6 +19,7 @@ import { LyricsScroller, VocalGroups } from "./LyricsRenderer/LyricsScroller.ts"
 
 // Our Components
 import InterludeVisual from "./LyricsRenderer/Components/Interlude.ts"
+import AttributionVocals from "./LyricsRenderer/Components/AttributionVocals.ts"
 import StaticVocals from "./LyricsRenderer/Components/StaticVocals.ts"
 import LineVocals from "./LyricsRenderer/Components/LineVocals.ts"
 import SyllableVocals from "./LyricsRenderer/Components/SyllableVocals.ts"
@@ -46,9 +47,15 @@ export default class LyricsRenderer implements Giveable {
 		// Now set our natural-alignment
 		lyricsContainer.classList.add(`NaturallyAligned${transformedLyrics.NaturalAlignment}`)
 
-		// vocal-groups shared between synced-lyrics rendering and the attribution tail.
-		const vocalGroups: VocalGroups<SyncedVocals> = []
-		const vocalGroupStartTimes: number[] = []
+		const appendAttribution = () => {
+			if (!transformedLyrics.Attribution) return undefined
+			const container = this.Maid.Give(document.createElement("div"))
+			container.classList.add("VocalsGroup", "AttributionLine")
+			const vocal = this.Maid.Give(new AttributionVocals(container, transformedLyrics.Attribution,
+				transformedLyrics.Type === "Static" ? undefined : transformedLyrics.EndTime))
+			lyricsContainer.appendChild(container)
+			return { GroupContainer: container, Vocals: [vocal] }
+		}
 
 		// Now handle creating our vocals
 		if (transformedLyrics.Type === "Static") {
@@ -77,9 +84,15 @@ export default class LyricsRenderer implements Giveable {
 				lyricsContainer.appendChild(lineContainer)
 			}
 
+			const attribution = appendAttribution()
+			if (attribution) lines.push(attribution)
+
 			// Create our scroller
 			this.Maid.Give(new LyricsScroller(scrollContainer, lyricsContainer, lines, false))
 		} else {
+			const vocalGroups: VocalGroups<SyncedVocals> = []
+			const vocalGroupStartTimes: number[] = []
+
 			// Now populate our vocal-groups based on our type
 			if (transformedLyrics.Type === "Line") {
 				for (const vocalGroup of transformedLyrics.Content) {
@@ -178,6 +191,12 @@ export default class LyricsRenderer implements Giveable {
 				}
 			}
 
+			const attribution = appendAttribution()
+			if (attribution) {
+				vocalGroups.push(attribution)
+				vocalGroupStartTimes.push(Math.max(0, transformedLyrics.EndTime - 0.1))
+			}
+
 			// Now create our scroller
 			const scroller = this.Maid.Give(
 				new LyricsScroller(
@@ -244,38 +263,6 @@ export default class LyricsRenderer implements Giveable {
 		// Now parent our container
 		parentContainer.appendChild(scrollContainer)
 
-		// Render provider attribution when present (e.g. Spicy Lyrics community sync).
-		// The line appears at the end of the lyrics; during the last 0.1 s it is
-		// highlighted with a brand-colour tint. For static lyrics it is always visible.
-		const rawLyrics = transformedLyrics as (TransformedLyrics & { Attribution?: unknown });
-		if (rawLyrics.Attribution) {
-			const attr = rawLyrics.Attribution as {
-				provider: string;
-				source: string;
-				uploader?: { username: string; url: string };
-				maker?: { username: string; url: string };
-			};
-			const attrContainer = this.Maid.Give(document.createElement("div"));
-			attrContainer.classList.add("VocalsGroup", "AttributionLine");
-			const attrInner = this.Maid.Give(document.createElement("span"));
-			attrInner.classList.add("AttributionText");
-			// Provider credit, always shown.
-			let text = `Lyrics via ${attr.provider}`;
-			// Community-sync uploader / maker links with 🔗 symbol.
-			if (attr.source === "spicy_lyrics" && attr.uploader) {
-				text += ` · 🔗 ${attr.uploader.username}`;
-				if (attr.maker) text += ` / 🔗 ${attr.maker.username}`;
-			}
-			attrInner.textContent = text;
-			attrContainer.appendChild(attrInner);
-			lyricsContainer.appendChild(attrContainer);
-			// Wire up highlight timing for synced lyrics.
-			if (transformedLyrics.Type !== "Static") {
-				const attrStart = Math.max(0, transformedLyrics.EndTime - 0.1);
-				vocalGroups.push({ GroupContainer: attrContainer, Vocals: [] });
-				vocalGroupStartTimes.push(attrStart);
-			}
-		}
 	}
 
 	// Private Methods

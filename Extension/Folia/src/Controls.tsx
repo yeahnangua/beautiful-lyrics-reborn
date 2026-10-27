@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { motion, type MotionValue } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Heart, ListPlus, Settings2, Flag, Volume2, Maximize, Minimize, X } from 'lucide-react';
+import { contributorUrl } from '../../../Universal/Modules/LyricsAttribution.ts';
+import type { SpicyAttribution } from '../../../Universal/Types/Lyrics.ts';
 import type { PlayerSnapshot, FoliaActions } from './contracts';
 
 // Folia's expanding glass capsule adapted to host-owned Spotify transport actions.
@@ -37,6 +39,7 @@ export function Controls({ player, time, actions, panel }: { player: PlayerSnaps
           <label className="folia-volume"><Volume2 size={17} /><input aria-label={t('volume')} type="range" min={0} max={1} step={0.01} value={player.volume} onChange={event => actions.setVolume(Number(event.target.value))} /></label>
         </div>
       </div>
+      {player.lyrics.attribution && <Attribution attribution={player.lyrics.attribution} />}
       <Progress time={time} duration={player.duration} disabled={!player.canSeek} seek={actions.seek} />
     </motion.div>
   </>;
@@ -57,4 +60,17 @@ function Progress({ time, duration, disabled, seek }: { time: MotionValue<number
     onPointerCancel={() => { dragging.current = false; }} onChange={event => { if (label.current) label.current.textContent = timeText(Number(event.target.value)); }}
     onKeyUp={event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) seek(Number(event.currentTarget.value)); }}
     onBlur={event => { if (dragging.current) { dragging.current = false; seek(Number(event.currentTarget.value)); } }} /><span>{timeText(duration)}</span></div>;
+}
+
+function Attribution({ attribution }: { attribution: SpicyAttribution }) {
+  const contributors = attribution.source === 'spicy_lyrics' ? [attribution.uploader, attribution.maker].filter(value => value !== undefined) : [];
+  return <div className="folia-attribution" dir="ltr">
+    <span>Lyrics via {attribution.provider}</span>
+    {contributors.map((contributor, index) => {
+      const href = contributorUrl(contributor.url);
+      return <React.Fragment key={`${contributor.id}:${index}`}><span>{index === 0 ? ' · ' : ' / '}</span>
+        {href ? <a href={href} target="_blank" rel="noopener noreferrer">🔗 {contributor.username}</a> : <span>{contributor.username}</span>}
+      </React.Fragment>;
+    })}
+  </div>;
 }

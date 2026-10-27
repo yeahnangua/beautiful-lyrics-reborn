@@ -198,3 +198,47 @@ describe("worker route integration", () => {
     expect(getLyrics).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("cache conflict ordering", () => {
+  const byType = (type: BeautifulLyrics["Type"], provider = "spicylyrics"): BeautifulLyrics => {
+    const Source = { Provider: provider, Transport: "direct" as const };
+    if (type === "Syllable") return { ...structuredClone(syllable), Source };
+    if (type === "Line") return { Type: "Line", StartTime: 0, EndTime: 2,
+      Content: [{ Type: "Vocal", Text: "line", StartTime: 0, EndTime: 2, OppositeAligned: false }], Source };
+    return { Type: "Static", Lines: [{ Text: "static" }], Source };
+  };
+  const types = ["Static", "Line", "Syllable"] as const;
+  for (const [rank, existing] of types.entries()) for (const [nextRank, incoming] of types.entries()) {
+    it(`${existing} followed by ${incoming} retains the best unexpired tier`, async () => {
+      const cache = createLyricsCache(db);
+      await cache.put("conflict", byType(existing, "qqmusic"));
+      await cache.put("conflict", byType(incoming));
+      const hit = await cache.get("conflict", []);
+      expect(hit?.Type).toBe(nextRank >= rank ? incoming : existing);
+      expect(hit?.Source?.Provider).toBe(nextRank >= rank ? "spicylyrics" : "qqmusic");
+    });
+  }
+  it("allows a lower tier to replace an expired row", async () => {
+    const cache = createLyricsCache(db);
+    await cache.put("expired", byType("Syllable"));
+    await db.prepare("UPDATE lyrics_cache SET expires_at=0 WHERE spotify_id=?").bind("expired").run();
+    await cache.put("expired", byType("Static"));
+    expect((await cache.get("expired", []))?.Type).toBe("Static");
+  });
+  it("does not delete a concurrent replacement while discarding a blocked row", async () => {
+    const cache = createLyricsCache(db);
+    await cache.put("race", byType("Syllable", "qqmusic"));
+    const wrapped = { prepare(sql: string) {
+      const statement = db.prepare(sql);
+      if (!sql.startsWith("DELETE FROM lyrics_cache")) return statement;
+      return { bind(...values: unknown[]) {
+        return { async run() {
+          await cache.put("race", byType("Syllable", "kugou"));
+          return statement.bind(...values).run();
+        } };
+      } };
+    } } as unknown as D1Database;
+    expect(await createLyricsCache(wrapped).get("race", [{ provider: "qqmusic", lyricsType: "Syllable" }])).toBeUndefined();
+    expect((await cache.get("race", []))?.Source?.Provider).toBe("kugou");
+  });
+});

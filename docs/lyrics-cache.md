@@ -16,9 +16,11 @@
 
 TTL 定义在 `Server/src/cache.ts` 的 `ttlByType`。改这里即可，没有别处依赖。
 
-## 三条正确性约束
+## 正确性约束
 
 **审核优先于缓存。** 表里额外存了 `provider` 和 `lyrics_type` 两列。读缓存时先过一遍 `isSourceBlocked`：如果管理员在 `/admin` 拉黑了这个来源，命中视为 miss，并把整行删掉。少了这一步，一条在拉黑之前写下的旧行会变成绕过审核的后门。
+
+**并发写入保留更高质量。** `ON CONFLICT` 在数据库内比较质量等级，未过期的逐字结果不能被稍后返回的逐行或纯文本覆盖。同等级结果可刷新，过期结果可由任意等级替换。清除屏蔽或损坏行时只删除本次实际读取的版本，不删除并发请求刚写入的替代结果。
 
 **运行时字段不入库。** `RequestId`、`RetrievedAt`、`LyricsHash` 描述的是单次响应，`strip()` 在写入前剥掉。命中时由路由层重新生成，所以 `RequestId` 每次不同、`LyricsHash` 保持稳定（`hashLyrics` 本来就只哈希内容）。
 
@@ -46,7 +48,7 @@ KV 免费额度是 100k 读 / **1k 写**每天，写额度对「每首新歌写�
 
 ```bash
 cd Server
-npm test                 # 290 项，含 14 项缓存用例
+npm test
 npx tsc --noEmit
 ```
 
@@ -62,4 +64,4 @@ npx wrangler deploy
 
 `docs/fullscreen-loading-and-statistics.md` 里提到「不需要 D1 数据库迁移」，那句在本变更后已经不成立——上线前先跑上面的迁移。
 
-回滚只需 `git revert` 并重新部署；旧的 `0005` 表留着不影响任何代码路径，`cleanupFeedback` 会继续按 `expires_at` 清它。
+回滚代码并重新部署时，保留 `0005` 表不影响旧代码。旧代码不会清理该表，恢复本版本后才会继续按 `expires_at` 清理。

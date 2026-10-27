@@ -22,6 +22,9 @@ function createProviders(): ProviderClients {
     netease: {
       getSyllableLyrics: vi.fn().mockResolvedValue(undefined)
     },
+    spicylyrics: {
+      getLyrics: vi.fn().mockResolvedValue(undefined)
+    },
     spotify: {
       getLyrics: vi.fn().mockResolvedValue(undefined),
       getTrackMetadata: vi.fn().mockResolvedValue(undefined)
@@ -422,6 +425,31 @@ describe("lyrics service", () => {
       ]
     }));
     expect(providers.spotify.getLyrics).not.toHaveBeenCalled();
+  });
+
+  it("prefers Spicy Lyrics syllables before other syllable providers", async () => {
+    const providers = createProviders();
+    vi.mocked(providers.spicylyrics.getLyrics).mockResolvedValue({
+      ...wordLyrics("spicy"),
+      Source: { Provider: "spicylyrics", Transport: "direct", TrackId: "track" }
+    });
+    vi.mocked(providers.qqmusic.getSyllableLyrics).mockReturnValue(new Promise(() => {}));
+    const result = await createLyricsService(providers).getLyrics("track", "token", { id: "track", name: "Song", artists: ["Artist"] });
+    expect(result?.Source).toEqual({ Provider: "spicylyrics", Transport: "direct", TrackId: "track" });
+    expect(result).toMatchObject({ Content: [{ Lead: { Syllables: [{ Text: "spicy" }] } }] });
+  });
+
+  it("honours a Spicy Lyrics source block and falls through to another syllable source", async () => {
+    const providers = createProviders();
+    vi.mocked(providers.spicylyrics.getLyrics).mockResolvedValue({
+      ...wordLyrics("spicy"),
+      Source: { Provider: "spicylyrics", Transport: "direct", TrackId: "track" }
+    });
+    vi.mocked(providers.qqmusic.getSyllableLyrics).mockResolvedValue(wordLyrics("qq"));
+    const result = await createLyricsService(providers).getLyrics("track", "token", { id: "track", name: "Song", artists: ["Artist"] }, undefined,
+      { sourceBlocks: [{ provider: "spicylyrics", lyricsType: "Syllable" }] });
+    expect(result?.Source?.Provider).toBe("qqmusic");
+    expect(result).toMatchObject({ Content: [{ Lead: { Syllables: [{ Text: "qq" }] } }] });
   });
 
   it("uses Lyrically Spotify proxy line lyrics when it wins the line race", async () => {
@@ -1159,12 +1187,13 @@ describe("provider attempt diagnostics", () => {
   it("records all pending sources as cancelled when the client aborts", async () => {
     const providers = createProviders();
     for (const provider of [providers.qqmusic, providers.kugou, providers.netease, ]) vi.mocked(provider.getSyllableLyrics).mockImplementation(() => new Promise(() => {}));
+    vi.mocked(providers.spicylyrics.getLyrics).mockImplementation(() => new Promise(() => {}));
     for (const method of ["getAppleMusicLyrics", "getKugouLyrics", "getNeteaseLyrics", "getDeezerLyrics"] as const) vi.mocked(providers.lyrically[method]).mockImplementation(() => new Promise(() => {}));
     const record = diagnostics(), controller = new AbortController();
     const pending = createLyricsService(providers).getLyrics("track", "token", record.track, undefined, { diagnostics: record, signal: controller.signal });
     await Promise.resolve();controller.abort();
     expect(await pending).toBeUndefined();
-    expect(record.attempts).toHaveLength(7);
+    expect(record.attempts).toHaveLength(8);
     expect(record.attempts.every(attempt => attempt.outcome === "cancelled")).toBe(true);
   });
 });

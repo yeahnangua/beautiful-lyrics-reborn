@@ -38,5 +38,9 @@ database_name = "beautiful-lyrics-feedback"
 database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "migrations"
 
+# Spicy Lyrics provider key (secret). Set it with: `wrangler secret put SPICY_LYRICS_KEY`.
+# The provider is skipped when this is unset, so an empty secret is a safe no-op.
+# Get a key at https://developers.spicylyrics.org/dashboard/applications (choose a secret key).
+
 [triggers]
 crons = ["15 19 * * *"]

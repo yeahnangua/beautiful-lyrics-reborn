@@ -10,9 +10,11 @@ import { lyricallyProvider } from "./providers/lyrically";
 import { neteaseProvider } from "./providers/netease";
 import { qqMusicProvider } from "./providers/qqmusic";
 import { spotifyProvider } from "./providers/spotify";
+import { spicyLyricsProvider, setSpicyLyricsApiKey } from "./providers/spicylyrics";
 import { createLyricsService, type LyricsService } from "./service";
 import type { BeautifulLyrics, SpotifyClientContext, TrackMetadata } from "./types";
 import { dashboardHtml } from "./dashboard";
+import { createLyricsCache } from "./cache";
 import { loadSourcePolicy, validSpotifyId } from "./source-policy";
 import { metricsResponse, recordRequestMetrics, detailedStatistics, type MetricsEnv } from "./metrics";
 
@@ -21,6 +23,7 @@ const defaultService = createLyricsService({
   qqmusic: qqMusicProvider,
   kugou: kugouProvider,
   netease: neteaseProvider,
+  spicylyrics: spicyLyricsProvider,
   lyrically: lyricallyProvider,
   spotify: spotifyProvider,
   lrclib: lrclibProvider
@@ -137,6 +140,7 @@ export type WorkerEnv = FeedbackEnv & MetricsEnv & {
   STATS?: AnalyticsEngineDataset;
   STATS_ACCOUNT_ID?: string;
   STATS_API_TOKEN?: string;
+  SPICY_LYRICS_KEY?: string;
 };
 
 function recordOutcome(env: WorkerEnv, lyrics: BeautifulLyrics | undefined): void {
@@ -187,7 +191,7 @@ async function statsResponse(env: WorkerEnv, url: URL): Promise<Response> {
 
   let metrics;
   try { metrics = await detailedStatistics(env, days); }
-  catch { metrics = { available: false, server: [], providers: [], client: [], trend: [], latency: [] }; }
+  catch { metrics = { available: false, server: [], providers: [], client: [], trend: [], latency: [], providerLatency: [], cache: [] }; }
   const result = jsonResponse({ days, total, ...stats, metrics });
   result.headers.set("Cache-Control", "no-store");
   return result;
@@ -281,6 +285,7 @@ export function createWorker(service: LyricsService): ExportedHandler<WorkerEnv>
       };
       let lyrics: BeautifulLyrics | undefined;
       let failed = false;
+      const cache = createLyricsCache(env.FEEDBACK_DB);
       try {
         let sourceBlocks: Awaited<ReturnType<typeof loadSourcePolicy>> = [];
         try {
@@ -291,7 +296,14 @@ export function createWorker(service: LyricsService): ExportedHandler<WorkerEnv>
           console.warn("Lyrics source policy read failed");
         }
         diagnostics.sourceBlocks = sourceBlocks;
-        lyrics = await service.getLyrics(trackId, accessToken, metadata, extractSpotifyClientContext(request),
+        // A cache hit still had to pass the source policy check inside the cache.
+        const stored = env.FEEDBACK_DB === undefined ? undefined : await cache.get(trackId, sourceBlocks).catch(() => {
+          console.warn("Lyrics cache read failed");
+          return undefined;
+        });
+        if (env.FEEDBACK_DB !== undefined) diagnostics.cache = stored ? "hit" : "miss";
+        setSpicyLyricsApiKey(env.SPICY_LYRICS_KEY);
+        lyrics = stored ?? await service.getLyrics(trackId, accessToken, metadata, extractSpotifyClientContext(request),
           { signal: request.signal, diagnostics, sourceBlocks });
         diagnostics.outcome = request.signal.aborted ? "cancelled" : lyrics ? "success" : "none";
         if (lyrics) {
@@ -311,12 +323,22 @@ export function createWorker(service: LyricsService): ExportedHandler<WorkerEnv>
         await Promise.resolve();
         diagnostics.durationMs = Date.now() - started;
         recordRequestMetrics(env, diagnostics, lyrics);
+        // One waitUntil for all background writes keeps the response a single unit of work.
+        const background: Promise<unknown>[] = [];
         if (env.FEEDBACK_DB) {
           const record = structuredClone(diagnostics);
-          const write = saveDiagnostics(env.FEEDBACK_DB, record)
-            .catch(() => console.warn("Lyrics diagnostics write failed"));
-          if (ctx?.waitUntil) ctx.waitUntil(write);
-          else await write;
+          background.push(saveDiagnostics(env.FEEDBACK_DB, record)
+            .catch(() => console.warn("Lyrics diagnostics write failed")));
+        }
+        // Only fresh results are stored; a hit has already paid for itself.
+        if (lyrics !== undefined && diagnostics.cache === "miss") {
+          background.push(cache.put(trackId, lyrics)
+            .catch(() => console.warn("Lyrics cache write failed")));
+        }
+        if (background.length > 0) {
+          const pending = Promise.all(background);
+          if (ctx?.waitUntil) ctx.waitUntil(pending);
+          else await pending;
         }
       }
       if (failed) return new Response("Lyrics request failed", { status: 502, headers: corsHeaders });

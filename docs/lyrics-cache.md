@@ -2,7 +2,7 @@
 
 在加上这层之前，`/lyrics/:id` 每次调用都会向最多 7 个上游并发抓取。同一首歌被第二个用户播放时，整条链路照原样重跑一遍：search、候选匹配、解密、转换。
 
-缓存把「一首歌的结果」在 Worker 侧留住，命中时整条上游链路被短路。
+缓存把「一首歌的结果」保存在独立 D1 数据库 `lyrics-cache`（Worker 绑定名 `LYRICS_CACHE_DB`），命中时跳过上游查询。反馈、诊断和来源屏蔽规则仍在原来的 `FEEDBACK_DB`。
 
 ## 分层
 
@@ -26,11 +26,13 @@ TTL 定义在 `Server/src/cache.ts` 的 `ttlByType`。改这里即可，没有�
 
 **存储故障不影响主链路。** 读失败 → `catch` 成 miss；写失败 → `waitUntil` 里吞掉。D1 挂掉时插件退化成加缓存之前的行为，不会更差。
 
-## 为什么不用 KV，也不做负缓存
+## 数据库隔离
 
-KV 免费额度是 100k 读 / **1k 写**每天，写额度对「每首新歌写一次」的量级完全不够。D1 的 100k 写每天有足够余量，而且 `FEEDBACK_DB` 已经绑好了，不引入新资源。
+`lyrics-cache` 只存 `lyrics_cache` 表；它有独立的 `cache-migrations` 迁移目录。反馈库继续使用 `migrations` 目录，两边的迁移不会混用。部署时先分别迁移，再发布 Worker。
 
-负缓存（查不到也存一条）理论上收益最大——长尾歌曲反复落空最浪费上游配额。但它的写入量随请求量线性增长，正好是 D1 写额度最吃紧的部分。如果确实要做，应该走 Cache API 或独立 KV，不要塞进这张表。
+每日定时任务分别清理两个数据库，一边失败不会阻止另一边清理。不提供 `LYRICS_CACHE_DB` 时关闭服务端歌词缓存，反馈库不会被用作替代缓存。
+
+查不到歌词时不写入空结果（不做负缓存）。
 
 ## 缓存键为什么只有 trackId
 
@@ -56,12 +58,26 @@ npx tsc --noEmit
 
 ## 部署
 
+你已创建的 D1 数据库名称为 `lyrics-cache`，在 `Server/wrangler.toml` 中对应：
+
+```toml
+[[d1_databases]]
+binding = "LYRICS_CACHE_DB"
+database_name = "lyrics-cache"
+database_id = "填入 lyrics-cache 的 UUID"
+migrations_dir = "cache-migrations"
+```
+
+直接使用 Wrangler 时，先填写该 UUID，再执行：
+
 ```bash
 cd Server
-npx wrangler d1 migrations apply beautiful-lyrics-feedback --remote
+npx wrangler d1 migrations apply LYRICS_CACHE_DB --remote
 npx wrangler deploy
 ```
 
-`docs/fullscreen-loading-and-statistics.md` 里提到「不需要 D1 数据库迁移」，那句在本变更后已经不成立——上线前先跑上面的迁移。
+现有 GitHub Actions 调用 `node Tasks/Deploy.mjs`，会使用 `LYRICS_CACHE_DATABASE_ID`（可选的 GitHub Actions secret），或按名称 `lyrics-cache` 查询对应 UUID。原来的 `FEEDBACK_DATABASE_ID` 继续用于反馈库。Cloudflare API token 需要有这两个数据库的 D1 管理权限。
 
-回滚代码并重新部署时，保留 `0005` 表不影响旧代码。旧代码不会清理该表，恢复本版本后才会继续按 `expires_at` 清理。
+部署脚本将分别对 `FEEDBACK_DB`、`LYRICS_CACHE_DB` 执行各自迁移。
+
+如果旧版本曾把 `lyrics_cache` 表建在反馈库，旧表不会自动搬迁或删除。新库从空缓存开始积累；旧缓存无需迁移。

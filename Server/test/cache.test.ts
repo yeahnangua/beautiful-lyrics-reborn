@@ -1,12 +1,13 @@
 import { readFile, readdir } from "node:fs/promises";
 import { Miniflare } from "miniflare";
 import { beforeAll, afterAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { cacheTtlMs, createLyricsCache } from "../src/cache";
+import { cacheTtlMs, createLyricsCache, cleanupLyricsCache } from "../src/cache";
 import { createWorker, type WorkerEnv } from "../src/index";
 import type { BeautifulLyrics, SourceBlock } from "../src/types";
 
 let mf: Miniflare;
 let db: D1Database;
+let feedbackDb: D1Database;
 
 const syllable: BeautifulLyrics = {
   Type: "Syllable",
@@ -34,11 +35,14 @@ async function countRows(trackId: string): Promise<number> {
 }
 
 beforeAll(async () => {
-  mf = new Miniflare({ modules: true, script: "export default {fetch(){return new Response('ok')}}", d1Databases: ["FEEDBACK_DB"], compatibilityDate: "2026-05-22" });
-  db = await mf.getD1Database("FEEDBACK_DB") as unknown as D1Database;
-  for (const file of (await readdir("migrations")).filter(file => file.endsWith(".sql")).sort()) {
-    const migration = await readFile("migrations/" + file, "utf8");
-    await db.exec(migration.replace(/^\s*--.*$/gm, "").replace(/\n/g, " "));
+  mf = new Miniflare({ modules: true, script: "export default {fetch(){return new Response('ok')}}", d1Databases: ["FEEDBACK_DB", "LYRICS_CACHE_DB"], compatibilityDate: "2026-05-22" });
+  db = await mf.getD1Database("LYRICS_CACHE_DB") as unknown as D1Database;
+  feedbackDb = await mf.getD1Database("FEEDBACK_DB") as unknown as D1Database;
+  for (const [directory, target] of [["migrations", feedbackDb], ["cache-migrations", db]] as const) {
+    for (const file of (await readdir(directory)).filter(file => file.endsWith(".sql")).sort()) {
+      const migration = await readFile(directory + "/" + file, "utf8");
+      await target.exec(migration.replace(/^\s*--.*$/gm, "").replace(/\n/g, " "));
+    }
   }
 }, 20000);
 
@@ -138,7 +142,7 @@ describe("cache lifetime", () => {
 });
 
 describe("worker route integration", () => {
-  const env = () => ({ FEEDBACK_DB: db } as unknown as WorkerEnv);
+  const env = () => ({ FEEDBACK_DB: feedbackDb, LYRICS_CACHE_DB: db } as unknown as WorkerEnv);
   const context = {} as ExecutionContext;
   const request = () => new Request("https://lyrics.test/lyrics/track", { headers: { Authorization: "Bearer token" } }) as unknown as Request<unknown, IncomingRequestCfProperties>;
 
@@ -163,6 +167,26 @@ describe("worker route integration", () => {
     expect(second.LyricsHash).toBe(first.LyricsHash);
   });
 
+  it("caches with only LYRICS_CACHE_DB configured", async () => {
+    const getLyrics = vi.fn().mockImplementation(async () => stored());
+    const worker = createWorker({ getLyrics });
+    const onlyCache = { LYRICS_CACHE_DB: db } as WorkerEnv;
+    await json(await worker.fetch!(request(), onlyCache, context) as Response);
+    await json(await worker.fetch!(request(), onlyCache, context) as Response);
+    expect(getLyrics).toHaveBeenCalledTimes(1);
+  });
+  it("does not use the feedback database as a cache when the cache binding is absent", async () => {
+    const getLyrics = vi.fn().mockImplementation(async () => stored());
+    const worker = createWorker({ getLyrics });
+    const onlyFeedback = { FEEDBACK_DB: feedbackDb } as WorkerEnv;
+    await json(await worker.fetch!(request(), onlyFeedback, context) as Response);
+    await json(await worker.fetch!(request(), onlyFeedback, context) as Response);
+    expect(getLyrics).toHaveBeenCalledTimes(2);
+    expect(await countRows("track")).toBe(0);
+    const tables = await feedbackDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='lyrics_cache'").all();
+    expect(tables.results).toHaveLength(0);
+  });
+
   it("does not store a miss", async () => {
     const worker = createWorker({ getLyrics: vi.fn().mockResolvedValue(undefined) });
     const response = await worker.fetch!(request(), env(), context) as Response;
@@ -175,7 +199,7 @@ describe("worker route integration", () => {
   it("falls back to providers when the stored row is moderated away", async () => {
     const cache = createLyricsCache(db);
     await cache.put("track", stored());
-    await db.prepare(`INSERT INTO source_blocks(id,spotify_id,provider,lyrics_type,enabled,reason,created_at,updated_at)
+    await feedbackDb.prepare(`INSERT INTO source_blocks(id,spotify_id,provider,lyrics_type,enabled,reason,created_at,updated_at)
       VALUES(?,?,?,?,?,?,?,?)`).bind("block-1", "track", "qqmusic", "Syllable", 1, "test", new Date().toISOString(), new Date().toISOString()).run();
 
     const replacement = structuredClone({ ...syllable, Source: { Provider: "kugou", Transport: "direct" as const } });
@@ -185,7 +209,7 @@ describe("worker route integration", () => {
     const body = await json(await worker.fetch!(request(), env(), context) as Response);
     expect(getLyrics).toHaveBeenCalledTimes(1);
     expect(body.Source).toMatchObject({ Provider: "kugou" });
-    await db.prepare("DELETE FROM source_blocks").run();
+    await feedbackDb.prepare("DELETE FROM source_blocks").run();
   });
 
   it("still serves lyrics when the cache read throws", async () => {
@@ -193,7 +217,7 @@ describe("worker route integration", () => {
     const getLyrics = vi.fn().mockResolvedValue(stored());
     const worker = createWorker({ getLyrics });
 
-    const body = await json(await worker.fetch!(request(), { FEEDBACK_DB: broken } as unknown as WorkerEnv, context) as Response);
+    const body = await json(await worker.fetch!(request(), { FEEDBACK_DB: feedbackDb, LYRICS_CACHE_DB: broken } as unknown as WorkerEnv, context) as Response);
     expect(body.Type).toBe("Syllable");
     expect(getLyrics).toHaveBeenCalledTimes(1);
   });
@@ -240,5 +264,29 @@ describe("cache conflict ordering", () => {
     } } as unknown as D1Database;
     expect(await createLyricsCache(wrapped).get("race", [{ provider: "qqmusic", lyricsType: "Syllable" }])).toBeUndefined();
     expect((await cache.get("race", []))?.Source?.Provider).toBe("kugou");
+  });
+});
+
+describe("dedicated cache maintenance", () => {
+  it("removes expired rows and retains current lyrics", async () => {
+    const cache = createLyricsCache(db);
+    await cache.put("expired", stored());
+    await cache.put("current", stored());
+    await db.prepare("UPDATE lyrics_cache SET expires_at=0 WHERE spotify_id='expired'").run();
+    await cleanupLyricsCache(db);
+    expect(await countRows("expired")).toBe(0);
+    expect(await countRows("current")).toBe(1);
+  });
+  it("runs cache cleanup even if feedback cleanup fails", async () => {
+    const cache = createLyricsCache(db);
+    await cache.put("expired", stored());
+    await db.prepare("UPDATE lyrics_cache SET expires_at=0").run();
+    const pending: Promise<unknown>[] = [];
+    const broken = { prepare() { throw new Error("Feedback unavailable"); } } as unknown as D1Database;
+    const worker = createWorker({ getLyrics: vi.fn() });
+    worker.scheduled!({} as ScheduledController, { FEEDBACK_DB: broken, LYRICS_CACHE_DB: db },
+      { waitUntil(promise: Promise<unknown>) { pending.push(promise); } } as ExecutionContext);
+    await Promise.all(pending);
+    expect(await countRows("expired")).toBe(0);
   });
 });

@@ -99,3 +99,15 @@ function strip(lyrics: BeautifulLyrics): BeautifulLyrics {
   const { RequestId: _requestId, RetrievedAt: _retrievedAt, LyricsHash: _hash, ...content } = lyrics;
   return content as BeautifulLyrics;
 }
+
+/** Bounded daily maintenance of the standalone lyrics database. */
+export async function cleanupLyricsCache(db: D1Database | undefined): Promise<void> {
+  if (!db) return;
+  const now = Date.now();
+  for (let pass = 0; pass < 20; pass++) {
+    const purged = await db.prepare(
+      "DELETE FROM lyrics_cache WHERE spotify_id IN (SELECT spotify_id FROM lyrics_cache WHERE expires_at <= ? LIMIT 1000)"
+    ).bind(now).run();
+    if (purged.meta.changes === 0) break;
+  }
+}

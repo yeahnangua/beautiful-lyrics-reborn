@@ -38,6 +38,13 @@ database_name = "beautiful-lyrics-feedback"
 database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "migrations"
 
+# Dedicated lyrics database. Tasks/Deploy.mjs resolves its UUID by name when unset.
+[[d1_databases]]
+binding = "LYRICS_CACHE_DB"
+database_name = "lyrics-cache"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "cache-migrations"
+
 # Spicy Lyrics provider key (secret). Set it with: `wrangler secret put SPICY_LYRICS_KEY`.
 # The provider is skipped when this is unset, so an empty secret is a safe no-op.
 # Get a key at https://developers.spicylyrics.org/dashboard/applications (choose a secret key).

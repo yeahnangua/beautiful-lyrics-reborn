@@ -50,8 +50,13 @@ Contributor links open in a new tab and accept only HTTP(S) URLs.
 
 ## Server cache
 
-Apply `Server/migrations/0005_lyrics_cache.sql` before using the D1 cache
-(`npx wrangler d1 migrations apply beautiful-lyrics-feedback --remote`, using
- your configured database name). Without the migration, lyrics still resolve
-from providers. Unexpired higher-quality rows cannot be overwritten by a lower
-quality concurrent result; expired rows may be replaced at any quality tier.
+Lyrics use a dedicated D1 database named `lyrics-cache`, bound as
+`LYRICS_CACHE_DB`. Apply `Server/cache-migrations/0001_lyrics_cache.sql` to that
+database; feedback/diagnostics stay in `FEEDBACK_DB`. `node Tasks/Deploy.mjs`
+resolves the cache database UUID by name (or uses `LYRICS_CACHE_DATABASE_ID`),
+applies each database's own migrations, and then deploys. See
+[lyrics-cache.md](lyrics-cache.md) for manual setup.
+
+Without the cache binding or migration, lyrics still resolve from providers.
+Unexpired higher-quality rows cannot be overwritten by a lower-quality
+concurrent result; expired rows may be replaced at any quality tier.

@@ -183,3 +183,22 @@ describe("Spicy Lyrics provider", () => {
     expect(await createSpicyLyricsProvider(fetchMock as typeof fetch).getLyrics(track)).toBeUndefined();
   });
 });
+
+describe("Spicy response validation", () => {
+  it.each([null, { ...syllableBody, UploadAttribution: undefined },
+    { ...syllableBody, UploadAttribution: { Uploader: { id: "1", username: "up", url: "javascript:alert(1)" } } },
+    { ...syllableBody, UploadAttribution: { ...syllableBody.UploadAttribution, Maker: { id: "2", username: "maker", url: "data:text/html,hi" } } }
+  ])("rejects malformed envelopes or community credits", async body => {
+    setSpicyLyricsApiKey("test");
+    const fetchMock = vi.fn().mockResolvedValue(json(body === null ? null : envelope(body)));
+    expect(await createSpicyLyricsProvider(fetchMock as typeof fetch).getLyrics(track)).toBeUndefined();
+  });
+  it("keeps the full timing span of overlapping lead and background vocals", async () => {
+    setSpicyLyricsApiKey("test");
+    const body = structuredClone(syllableBody);
+    body.Content[0]!.Background[0]!.EndTime = 8;
+    body.Content[0]!.Background[0]!.Syllables[0]!.EndTime = 8;
+    const fetchMock = vi.fn().mockResolvedValue(json(envelope(body)));
+    expect(await createSpicyLyricsProvider(fetchMock as typeof fetch).getLyrics(track)).toMatchObject({ StartTime: 1, EndTime: 8 });
+  });
+});

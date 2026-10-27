@@ -39,8 +39,19 @@ key is added.
 
 Spicy Lyrics' terms require that the provider name always be shown with the
 lyrics, and — when the `source` is a community sync — that the uploader and maker
-be linked as well. The server currently surfaces the source as
-`Provider: "spicylyrics"` in the lyrics provenance, but the extension does not yet
-render provider attribution. Before enabling this provider in a public build,
-add a client-side attribution line that honours the upstream `source` and
-`UploadAttribution` fields, otherwise the terms are not satisfied.
+be linked as well. The server preserves this information in `Attribution`.
+Card and page views include a measured footer with uploader/maker links (the 🔗
+and username form one link). Timed footers highlight during the final 0.1 seconds
+of the lyrics and reset on seeks or offset changes. Static footers participate
+in scroll sizing. Folia fullscreen/cinema displays the same provider and links
+in the bottom control capsule, including while the transport controls collapse.
+
+Contributor links open in a new tab and accept only HTTP(S) URLs.
+
+## Server cache
+
+Apply `Server/migrations/0005_lyrics_cache.sql` before using the D1 cache
+(`npx wrangler d1 migrations apply beautiful-lyrics-feedback --remote`, using
+ your configured database name). Without the migration, lyrics still resolve
+from providers. Unexpired higher-quality rows cannot be overwritten by a lower
+quality concurrent result; expired rows may be replaced at any quality tier.

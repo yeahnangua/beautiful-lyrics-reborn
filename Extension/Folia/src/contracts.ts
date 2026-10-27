@@ -1,3 +1,4 @@
+import type { SpicyAttribution } from "../../../Universal/Types/Lyrics.ts";
 // The host passes discrete snapshots and actions; precise clocks stay in the mounted React root.
 export interface LyricWord { text: string; startTime: number; endTime: number; syllables?: { text: string; startTime: number; endTime: number }[] }
 export interface BackgroundVocal { text: string; startTime: number; endTime: number; words: LyricWord[]; agentId?: string }
@@ -6,6 +7,7 @@ export interface LyricLine {
   backgroundVocal?: BackgroundVocal; backgroundVocals?: BackgroundVocal[];
 }
 export type LyricsState = {
+  attribution?: SpicyAttribution;
   status: 'loading' | 'missing' | 'instrumental' | 'static' | 'synced';
   lines: LyricLine[];
   staticLines: string[];

@@ -1,3 +1,4 @@
+import type { SpicyAttribution } from "../../Universal/Types/Lyrics";
 export type LyricsSource = {
   Provider: string;
   Transport: "direct" | "lyrically";
@@ -188,12 +189,4 @@ export type RequestDiagnostics = {
 
 export type SourceBlock = { provider: string; lyricsType: BeautifulLyrics["Type"] };
 
-export type Contributor = { id: string; username: string; url: string };
-export type SpicyAttribution = {
-  provider: "spicylyrics";
-  /** The source reported by the Spicy Lyrics API: "spicy_lyrics" | "apple_music" | "spotify" | "unknown" */
-  source: string;
-  /** Present when the upstream source is "spicy_lyrics"; undefined for apple_music or spotify. */
-  uploader?: Contributor;
-  maker?: Contributor;
-};
+export type { Contributor, SpicyAttribution } from "../../Universal/Types/Lyrics";

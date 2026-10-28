@@ -26,6 +26,7 @@ type TimeMetadata = {
 }
 export type TextMetadata = {
 	Text: string;
+  IsAttribution?: true;
 }
 type VocalMetadata = (
 	TimeMetadata
@@ -75,6 +76,7 @@ export type SyllableVocal = (
 	}
 )
 export type SyllableVocalSet = {
+  IsAttribution?: true;
 	Type: "Vocal";
 
 	OppositeAligned: boolean;

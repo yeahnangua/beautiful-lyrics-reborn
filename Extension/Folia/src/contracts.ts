@@ -8,6 +8,7 @@ export interface LyricLine {
 }
 export type LyricsState = {
   attribution?: SpicyAttribution;
+  hasAttributionLine?: boolean;
   status: 'loading' | 'missing' | 'instrumental' | 'static' | 'synced';
   lines: LyricLine[];
   staticLines: string[];

@@ -338,9 +338,9 @@ const LoadSongDetails = () => {
 }
 
 // Handle our Lyrics
-// Version 10 discards karaoke lyrics cached before zero-duration separators were preserved.
+// Version 11 fetches Worker-generated attribution lyrics instead of the old footer.
 const ProviderLyricsStore = GetExpireStore<ProviderLyrics | false>(
-	"Player_ProviderLyrics", 10,
+	"Player_ProviderLyrics", 11,
 	{
 		Duration: 2,
 		Unit: "Days"
@@ -348,7 +348,7 @@ const ProviderLyricsStore = GetExpireStore<ProviderLyrics | false>(
 	true
 )
 const TransformedLyricsStore = GetExpireStore<TransformedLyrics | false>(
-	"Player_TransformedLyrics", 10,
+	"Player_TransformedLyrics", 11,
 	{
 		Duration: 2,
 		Unit: "Days"
@@ -407,7 +407,7 @@ const BuildLyricsRequestURL = (songId: string, songDuration: number, track = Spo
 	}
 
 	if (Number.isFinite(songDuration) && songDuration > 0) {
-		url.searchParams.set("duration", String(Math.round(songDuration)))
+		url.searchParams.set("duration", String(songDuration))
 	}
 
 	return url.toString()

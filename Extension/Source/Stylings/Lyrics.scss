@@ -434,34 +434,14 @@
 	inherits: true;
 }
 
-/* Attribution is measured as part of the lyric stack. */
-.VocalsGroup.AttributionLine {
-	flex-shrink: 0;
-	padding: 0.5em 0;
-}
-.Lyrics .AttributionLine .AttributionText {
-	width: 100%;
-	display: block;
-	font-size: clamp(0.9rem, 1.6cqw, 1.4rem);
-	font-weight: 400;
-	line-height: 1.5;
-	opacity: var(--vocal-idle-opacity);
-	color: white;
-	direction: ltr;
-	text-align: center;
-	overflow-wrap: anywhere;
-}
-.Lyrics .AttributionLine .AttributionText.Active {
-	opacity: var(--vocal-active-opacity);
-	color: #bef264;
-	text-shadow: 0 0 0.4em currentColor;
-}
-.AttributionText a {
+/* Contributor links inherit the same lyric gradient and sizing as their line. */
+.Lyric a {
 	color: inherit;
-	text-decoration: underline;
+	text-decoration: none;
 	cursor: pointer;
 }
-.AttributionText a:focus-visible {
+.Lyric a:hover { text-decoration: underline; }
+.Lyric a:focus-visible {
 	outline: 2px solid currentColor;
 	outline-offset: 2px;
 }

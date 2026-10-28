@@ -29,6 +29,35 @@ for(const mode of modes) test(`${mode}: renders, pauses, seeks, resizes and rele
   expect(await page.locator('canvas').count()).toBe(0);
   expect(errors).toEqual([]);
 });
+for (const mode of ['classic','cadenza','partita','tilt','diorama','sonnet','tempera','lumiere']) {
+  test(`${mode}: lyric gaps stay blank instead of showing instrumental`, async ({page}) => {
+    await page.goto('/');
+    await page.getByRole('button',{name:'Visual settings',exact:true}).click();
+    await page.getByLabel('Lyrics mode',{exact:true}).selectOption(mode);
+    await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click();
+    await page.evaluate(() => {
+      const fixture=(window as any).testFolia;
+      fixture.update({playing:false,lyrics:{status:'synced',direction:'ltr',staticLines:[],lines:[
+        {fullText:'First lyric',startTime:10,endTime:12,words:[{text:'First lyric',startTime:10,endTime:12}]},
+        {fullText:'Next lyric',startTime:30,endTime:32,words:[{text:'Next lyric',startTime:30,endTime:32}]},
+      ]}});
+    });
+    for (const time of [5,20,40]) {
+      await page.evaluate(time => (window as any).testFolia.setTime(time),time);
+      // Allow the compiled renderer's empty-state transition to finish.
+      await page.waitForTimeout(600);
+      await expect(page.locator('.folia-visual-surface')).not.toContainText(/Instrumental|纯音乐|ui\.waitingForMusic/);
+      await expect(page.locator('.folia-empty')).toHaveCount(0);
+    }
+    await page.evaluate(() => (window as any).testFolia.setTime(31));
+    // Canvas modes paint lyrics without DOM text; DOM modes use CSS word spacing.
+    if (['classic','cadenza','partita','tilt'].includes(mode)) {
+      await expect(page.locator('.folia-visual-surface')).toContainText(/Next\s*lyric/);
+    }
+    await page.evaluate(() => (window as any).testFolia.update({lyrics:{status:'instrumental',direction:'ltr',lines:[],staticLines:[]}}));
+    await expect(page.locator('.folia-empty')).toHaveText('Instrumental');
+  });
+}
 test('static, loading, missing, instrumental, RTL and settings persistence',async({page})=>{
   await page.goto('/');
   await expect(page.locator('.folia-app')).toBeVisible();
@@ -121,5 +150,27 @@ test('attribution: collapsed controls retain contributor links for synced/static
     const fixture=(window as any).testFolia;
     fixture.update({key:'spotify:track:next',lyrics:{status:'loading',direction:'ltr',lines:[],staticLines:[]}});
   });
+  await expect(page.locator('.folia-attribution')).toHaveCount(0);
+});
+
+test('Worker attribution is an ordinary final lyric without a second provider caption', async ({page}) => {
+  await page.goto('/');
+  await expect(page.locator('.folia-app')).toBeVisible();
+  await page.evaluate(() => {
+    const fixture=(window as any).testFolia;
+    fixture.update({playing:false, duration:80, lyrics:{status:'synced', direction:'ltr', staticLines:[],
+      hasAttributionLine:true, attribution:{provider:'spicylyrics',source:'apple_music'},
+      lines:[{id:'credit',agentId:'lead',fullText:'Lyrics via spicylyrics',startTime:79.9,endTime:80,
+        words:[{text:'Lyrics via spicylyrics',startTime:79.9,endTime:80}]}]}});
+    fixture.setTime(79.95);
+  });
+  await expect(page.locator('.folia-attribution')).toHaveCount(0);
+  await expect(page.locator('.folia-visual-surface')).toContainText('Lyrics via spicylyrics');
+  await page.evaluate(() => {
+    const fixture=(window as any).testFolia;
+    fixture.update({lyrics:{status:'static',direction:'ltr',lines:[],staticLines:['Last lyric','Lyrics via spicylyrics'],
+      hasAttributionLine:true,attribution:{provider:'spicylyrics',source:'apple_music'}}});
+  });
+  await expect(page.locator('.folia-static p')).toHaveText(['Last lyric','Lyrics via spicylyrics']);
   await expect(page.locator('.folia-attribution')).toHaveCount(0);
 });

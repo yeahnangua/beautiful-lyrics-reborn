@@ -84,3 +84,19 @@ test('Folia retains provider/uploader/maker attribution for every lyric type and
   }
   assert.equal(convertLyrics(undefined,true).attribution,undefined);
 });
+
+
+test('Folia consumes the Worker attribution as its final timed lyric', () => {
+  const Attribution={provider:'spicylyrics',source:'apple_music'};
+  const lyrics={Type:'Line',StartTime:0,EndTime:265.437,Attribution,Content:[
+    {Type:'Vocal',Text:'last words',StartTime:230,EndTime:240,OppositeAligned:false},
+    {Type:'Vocal',Text:'Lyrics via spicylyrics',StartTime:265.337,EndTime:265.437,OppositeAligned:false,IsAttribution:true}
+  ]};
+  const result=convertLyrics(lyrics,true);
+  assert.equal(result.hasAttributionLine,true);
+  assert.equal(result.lines.length,2);
+  assert.equal(result.lines.at(-1).fullText,'Lyrics via spicylyrics');
+  assert.equal(activeLineIndex(result.lines,265.33),-1);
+  assert.equal(activeLineIndex(result.lines,265.35),1);
+  assert.equal(activeLineIndex(result.lines,265.437),-1);
+});

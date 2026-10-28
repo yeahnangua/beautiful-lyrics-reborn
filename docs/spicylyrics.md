@@ -40,13 +40,24 @@ key is added.
 Spicy Lyrics' terms require that the provider name always be shown with the
 lyrics, and — when the `source` is a community sync — that the uploader and maker
 be linked as well. The server preserves this information in `Attribution`.
-Card and page views include a measured footer with uploader/maker links (the 🔗
-and username form one link). Timed footers highlight during the final 0.1 seconds
-of the lyrics and reset on seeks or offset changes. Static footers participate
-in scroll sizing. Folia fullscreen/cinema displays the same provider and links
-in the bottom control capsule, including while the transport controls collapse.
+The Worker inserts the credit text as the final ordinary lyric before returning
+JSON: a `Vocal` entry in `Content`, or a text entry in static `Lines`. The entry
+is marked `IsAttribution` so clients can preserve contributor links without
+adding a second footer. Timed entries run from `duration - 0.1` to `duration`,
+using the exact song duration in seconds, rather than the last sung lyric's end.
+If no valid duration is available, the existing lyrics end time is used.
+Static lyrics retain their untimed format.
 
-Contributor links open in a new tab and accept only HTTP(S) URLs.
+Card and page views use the normal lyric font, alignment, gradient, blur and
+scrolling. Contributor links are inline and do not seek playback when clicked.
+Folia visualizers consume the same final lyric; canvas modes retain community
+profile links in the control capsule, without repeating the provider caption.
+Contributor links accept only HTTP(S) URLs.
+
+The final row is projected after reading the server cache, so old cached Spicy
+results gain the row immediately and repeated responses never accumulate rows.
+The stored provider payload and content fingerprint exclude this generated row.
+Client cache version 11 refreshes responses created before this change.
 
 ## Server cache
 

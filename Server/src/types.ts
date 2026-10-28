@@ -14,6 +14,7 @@ export type LyricsProvenance = {
 };
 export type TextMetadata = {
   Text: string;
+  IsAttribution?: true;
 };
 
 export type TimeMetadata = {
@@ -56,6 +57,7 @@ export type SyllableVocal = TimeMetadata & {
 };
 
 export type SyllableVocalSet = {
+  IsAttribution?: true;
   Type: "Vocal";
   OppositeAligned: boolean;
   Lead: SyllableVocal;

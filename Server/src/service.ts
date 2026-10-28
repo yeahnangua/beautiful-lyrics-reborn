@@ -46,7 +46,7 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
         try {
           // These paths can only return one type. Mixed-type paths must still run.
           const onlyType = ["qq music", "kugou direct", "netease direct", ].includes(name)
-            ? "Syllable" : undefined;
+            ? (stage === "line" ? "Line" : "Syllable") : undefined;
           if (onlyType && isSourceBlocked(blocks, providerName(name), onlyType)) {
             attempt.outcome = "blocked";
             attempt.blockAction = "skipped";
@@ -152,6 +152,9 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
         if (metadata) {
           const knownTrack = metadata;
           candidates.push(
+            run("qq music", scope => providers.qqmusic.getLineLyrics(knownTrack, scope), line),
+            run("kugou direct", scope => providers.kugou.getLineLyrics(knownTrack, scope), line),
+            run("netease direct", scope => providers.netease.getLineLyrics(knownTrack, scope), line),
             run("lrclib", scope => providers.lrclib.getLyrics(knownTrack, scope), line)
           );
         }

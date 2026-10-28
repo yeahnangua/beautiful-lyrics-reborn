@@ -26,8 +26,9 @@ https://lyrics.txw.qzz.io
 - The statistics page includes provider performance, weighted latency percentiles, cache reuse and fullscreen usage. Aggregate plugin metrics are always enabled; no song, lyric, account, token or persistent user identifier is sent. See [loading and statistics details](docs/fullscreen-loading-and-statistics.md).
 - Reborn lyrics provider flow:
   1. The first available syllable lyrics from direct Spicy Lyrics, QQ Music QRC, KuGou KRC, NetEase YRC; syllable providers are queried concurrently.
-  2. The first available line lyrics from Spotify or LRCLIB, including saved
-     line results from Spicy Lyrics; line providers are queried concurrently.
+  2. The first available line lyrics from direct Spotify, QQ Music LRC, KuGou LRC,
+     NetEase LRC, or LRCLIB, including saved line results
+     from Spicy Lyrics; line providers are queried concurrently.
   3. Static fallbacks from Spicy Lyrics, Spotify, and LRCLIB.
 
 Lyrics preserve the quality order syllable > line > static. The syllable phase
@@ -37,7 +38,8 @@ line lyrics. Saved static results are used only after both phases miss or time o
 The Lyrically/Paxsenix proxy has been removed; no requests are sent to
 `lyrics.paxsenix.org`. Its Apple Music, Deezer, YouTube, Genius, Spotify proxy,
 and KuGou/NetEase proxy paths are no longer queried. The direct KuGou and
-NetEase providers match the title, artist, and duration before retrieving KRC or YRC.
+NetEase providers match the title, artist, and duration before retrieving KRC, YRC,
+or LRC. QQ Music uses the same matching checks for its QRC and LRC requests.
 KuGou decodes native word timings and skips unverified UGC candidates.
 A missing or restricted result
 leaves the other providers available. Upstream availability and rate limits can

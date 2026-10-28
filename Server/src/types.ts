@@ -98,8 +98,8 @@ export type RequestContext = {
 export type ProviderClients = {
   // amlldb: AmllDbProvider;
   qqmusic: QqMusicProvider;
-  kugou: SyllableLyricsProvider;
-  netease: SyllableLyricsProvider;
+  kugou: TimedLyricsProvider;
+  netease: TimedLyricsProvider;
   spicylyrics: SpicyLyricsProvider;
   spotify: SpotifyProvider;
   lrclib: LrclibProvider;
@@ -132,11 +132,12 @@ export type SpicyLyricsProvider = {
   getLyrics(track: TrackMetadata, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
 };
 
-export type QqMusicProvider = {
+export type TimedLyricsProvider = {
   getSyllableLyrics(track: TrackMetadata, context?: RequestContext): Promise<SyllableSyncedLyrics | undefined>;
+  getLineLyrics(track: TrackMetadata, context?: RequestContext): Promise<LineSyncedLyrics | undefined>;
 };
 
-export type SyllableLyricsProvider = QqMusicProvider;
+export type QqMusicProvider = TimedLyricsProvider;
 
 export type UpstreamEvent = {
   endpoint: string;

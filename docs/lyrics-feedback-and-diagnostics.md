@@ -27,7 +27,7 @@
 ```
 
 - `Provider`：`qqmusic`、`kugou`、`netease`、`musixmatch`、`applemusic`、`spotify`、`deezer`、`youtube`、`genius`、`lrclib`。
-- `Transport`：`direct` 或 `lyrically`。Spotify 代理与直连接口、酷狗/网易云逐字与逐行回退都保留各自路径。
+- `Transport`：当前来源均为 `direct`。Lyrically 代理已移除，`lyrically` 值仅用于兼容历史缓存、反馈和统计记录。
 - `TrackId` 是上游歌曲 ID、hash、视频 ID 或 Genius 歌词页面路径；酷狗直连提供 `LyricsId`。没有可用字段时省略，绝不以一次新请求补猜旧歌词来源。
 - `MatchedTitle` 是上游实际匹配标题，能获取时保留。
 - `RequestId` 标识最初取得这份歌词的请求，缓存读取不生成新 ID。

@@ -6,7 +6,6 @@ import { extensionReleaseResponse } from "./extension-release";
 // import { amllDbProvider } from "./providers/amlldb";
 import { kugouProvider } from "./providers/kugou";
 import { lrclibProvider } from "./providers/lrclib";
-import { lyricallyProvider } from "./providers/lyrically";
 import { musixmatchProvider } from "./providers/musixmatch";
 import { neteaseProvider } from "./providers/netease";
 import { qqMusicProvider } from "./providers/qqmusic";
@@ -26,7 +25,6 @@ const defaultService = createLyricsService({
   netease: neteaseProvider,
   musixmatch: musixmatchProvider,
   spicylyrics: spicyLyricsProvider,
-  lyrically: lyricallyProvider,
   spotify: spotifyProvider,
   lrclib: lrclibProvider
 });

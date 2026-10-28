@@ -47,7 +47,7 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
         try {
           // These paths can only return one type. Mixed-type paths must still run.
           const onlyType = ["qq music", "kugou direct", "netease direct", "musixmatch direct"].includes(name)
-            ? "Syllable" : name === "genius" ? "Static" : undefined;
+            ? "Syllable" : undefined;
           if (onlyType && isSourceBlocked(blocks, providerName(name), onlyType)) {
             attempt.outcome = "blocked";
             attempt.blockAction = "skipped";
@@ -116,11 +116,7 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
           run("spicylyrics", scope => providers.spicylyrics.getLyrics({ id: trackId, name: "", artists: [] }, scope), syllable),
           run("qq music", withMetadata((t, scope) => providers.qqmusic.getSyllableLyrics(t, scope)), syllable),
           run("kugou direct", withMetadata((t, scope) => providers.kugou.getSyllableLyrics(t, scope)), syllable),
-          run("netease direct", withMetadata((t, scope) => providers.netease.getSyllableLyrics(t, scope)), syllable),
-          run("apple music", withMetadata((t, scope) => providers.lyrically.getAppleMusicLyrics(t, scope)), syllable),
-          run("kugou", withMetadata((t, scope) => providers.lyrically.getKugouLyrics(t, true, scope)), syllable),
-          run("netease", withMetadata((t, scope) => providers.lyrically.getNeteaseLyrics(t, true, scope)), syllable),
-          run("deezer", withMetadata((t, scope) => providers.lyrically.getDeezerLyrics(t, scope)), syllable)
+          run("netease direct", withMetadata((t, scope) => providers.netease.getSyllableLyrics(t, scope)), syllable)
         );
         // Musixmatch requests concurrently, but only wins once all preferred
         // syllable sources are exhausted (including their shared deadline).
@@ -175,20 +171,15 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
       const line = requestScope(10_000, context);
       const lineCandidates: Promise<Candidate>[] = [];
       try {
-        const track = metadata ?? { id: trackId, name: "", artists: [] };
         const candidates = lineCandidates;
         candidates.push(...[...available].filter(([, lyrics]) => lyrics.Type !== "Static")
           .map(result => Promise.resolve(result)));
         candidates.push(
-          run("spotify proxy", scope => providers.lyrically.getLyrics(track, scope), line),
           run("spotify", scope => providers.spotify.getLyrics(trackId, accessToken, clientContext, scope), line)
         );
         if (metadata) {
           const knownTrack = metadata;
           candidates.push(
-            run("kugou", scope => providers.lyrically.getKugouLyrics(knownTrack, false, scope), line),
-            run("netease", scope => providers.lyrically.getNeteaseLyrics(knownTrack, false, scope), line),
-            run("youtube", scope => providers.lyrically.getYouTubeLyrics(knownTrack, scope), line),
             run("lrclib", scope => providers.lrclib.getLyrics(knownTrack, scope), line)
           );
         }
@@ -200,18 +191,12 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
       }
       if (context.signal?.aborted) return undefined;
 
-      const staticOrder = ["spicylyrics", "spotify proxy", "spotify", "deezer", "youtube", "genius", "lrclib", "apple music", "kugou", "netease"];
+      const staticOrder = ["spicylyrics", "spotify", "lrclib"];
       for (const source of staticOrder) {
         const lyrics = available.get(source);
         if (lyrics?.Type === "Static") return finish([source, lyrics]);
       }
-      if (!metadata) return undefined;
-      stage = "static";
-      const fallback = requestScope(5_000, context);
-      try {
-        return finish(await run("genius", scope => providers.lyrically.getGeniusLyrics(metadata!, scope), fallback)
-          .catch(() => undefined));
-      } finally { fallback.cancel(); fallback.dispose(); }
+      return undefined;
     }
   };
 }

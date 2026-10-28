@@ -3,7 +3,7 @@
 Beautiful Lyrics Reborn is a community-maintained revival of the original
 Beautiful Lyrics Spicetify extension. It keeps the fullscreen/card/page lyric
 experience alive and adds a new Cloudflare Worker lyrics service for Spicy Lyrics,
-Spotify, QQ Music, KuGou, NetEase, Musixmatch, Lyrically/Paxsenix, and LRCLIB fallbacks.
+Spotify, QQ Music, KuGou, NetEase, Musixmatch, and LRCLIB fallbacks.
 
 This repository contains both pieces:
 
@@ -26,20 +26,19 @@ https://lyrics.txw.qzz.io
 - The statistics page includes provider performance, weighted latency percentiles, cache reuse and fullscreen usage. Aggregate plugin metrics are always enabled; no song, lyric, account, token or persistent user identifier is sent. See [loading and statistics details](docs/fullscreen-loading-and-statistics.md).
 - Reborn lyrics provider flow:
   1. The first available syllable lyrics from direct Spicy Lyrics, QQ Music QRC, KuGou KRC, NetEase YRC,
-     or Musixmatch RichSync, plus Lyrically/Paxsenix Apple Music, Kugou,
-     NetEase, and Deezer; syllable providers are queried concurrently.
-  2. The first available line lyrics from Lyrically/Paxsenix Spotify proxy,
-     Kugou, Spotify, Deezer, YouTube, or LRCLIB; Line providers are queried concurrently.
-  3. Static fallbacks from Spicy Lyrics, Lyrically/Paxsenix Spotify proxy, Spotify,
-     Deezer, YouTube, Genius, and LRCLIB.
+     or Musixmatch RichSync; syllable providers are queried concurrently.
+  2. The first available line lyrics from Spotify or LRCLIB, including saved
+     line results from Spicy Lyrics; line providers are queried concurrently.
+  3. Static fallbacks from Spicy Lyrics, Spotify, and LRCLIB.
 
 Lyrics preserve the quality order syllable > line > static. The syllable phase
 (including metadata) has a 15-second budget, followed by up to 10 seconds for
-line lyrics. Static results are used only after both phases miss or time out;
-a final static lookup has at most 5 seconds.
+line lyrics. Saved static results are used only after both phases miss or time out.
 
-The direct KuGou, NetEase, and Musixmatch providers do not use Paxsenix. KuGou and
-NetEase match the title, artist, and duration before retrieving KRC or YRC.
+The Lyrically/Paxsenix proxy has been removed; no requests are sent to
+`lyrics.paxsenix.org`. Its Apple Music, Deezer, YouTube, Genius, Spotify proxy,
+and KuGou/NetEase proxy paths are no longer queried. The direct KuGou and
+NetEase providers match the title, artist, and duration before retrieving KRC or YRC.
 KuGou decodes native word timings and skips unverified UGC candidates.
 Musixmatch acquires and caches an anonymous token, sends the Spotify track URI
 to improve matching, and

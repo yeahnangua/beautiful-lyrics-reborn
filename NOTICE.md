@@ -44,11 +44,14 @@ Upstream files: CustomApps/lyrics-plus/ProviderNetease.js,
 CustomApps/lyrics-plus/ProviderMusixmatch.js, CustomApps/lyrics-plus/Settings.js.
 
 Affected files in this repository: Server/src/providers/netease.ts,
-Server/src/providers/musixmatch.ts, Server/src/convert/richsync.ts.
+Server/src/providers/musixmatch.ts, Server/src/convert/richsync.ts,
+Server/src/convert/mxm.ts.
 
 Adaptations dated 2026-09-19 use TypeScript and native fetch for Cloudflare
 Workers, query NetEase directly for YRC, validate lyric availability and timing,
 share anonymous Musixmatch token requests, and emit Beautiful Lyrics objects.
+The 2026-10-28 update adds direct NetEase LRC and Musixmatch timed-subtitle
+fallbacks, including conversion of MXM subtitle timestamps.
 Copyright in the upstream portions remains with the Spicetify contributors.
 These adaptations retain the upstream GNU Lesser General Public License v2.1;
 the complete license is included in LICENSES/Spicetify-LGPL-2.1.txt. They are

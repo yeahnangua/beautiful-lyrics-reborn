@@ -1,8 +1,10 @@
 import { contextFetch, getFetchContext } from "./request";
 import OpenCC from "opencc-js";
+import { convertLrcToLineLyrics } from "../convert/lrc";
+import { decodeBase64Text } from "../convert/base64";
 import { decryptQrc } from "qrc-decoder";
 import { convertQrcXmlToSyllableLyrics } from "../convert/karaoke";
-import type { QqMusicProvider, SyllableSyncedLyrics, TrackMetadata } from "../types";
+import type { QqMusicProvider, BeautifulLyrics, TrackMetadata } from "../types";
 import { withLyricRequestRetries } from "./request";
 import { withSource, recordMatch } from "./matched-title";
 
@@ -236,7 +238,7 @@ async function searchSongs(fetchImpl: FetchLike, query: string): Promise<QqMusic
   return songs;
 }
 
-async function getQrcLyrics(fetchImpl: FetchLike, songId: number): Promise<SyllableSyncedLyrics | undefined> {
+async function getTimedLyrics(fetchImpl: FetchLike, songId: number, word: boolean, durationSeconds?: number): Promise<BeautifulLyrics | undefined> {
   const payload = await postMusicu<QqMusicLyricResponse>(
     fetchImpl,
     {
@@ -245,7 +247,7 @@ async function getQrcLyrics(fetchImpl: FetchLike, songId: number): Promise<Sylla
         module: "music.musichallSong.PlayLyricInfo",
         param: {
           crypt: 0,
-          qrc: 1,
+          qrc: word ? 1 : 0,
           songID: songId
         }
       }
@@ -254,16 +256,17 @@ async function getQrcLyrics(fetchImpl: FetchLike, songId: number): Promise<Sylla
   );
 
   const lyricData = payload?.["music.musichallSong.PlayLyricInfo.GetPlayLyricInfo"]?.data;
-  if (lyricData?.qrc !== 1 || lyricData.lyric === undefined || lyricData.lyric.length === 0) {
+  if (!lyricData?.lyric || (word && lyricData.qrc !== 1)) {
     return undefined;
   }
 
-  return convertQrcXmlToSyllableLyrics(decryptQrcHex(lyricData.lyric));
+  return word ? convertQrcXmlToSyllableLyrics(decryptQrcHex(lyricData.lyric))
+    : convertLrcToLineLyrics(decodeBase64Text(lyricData.lyric) ?? lyricData.lyric, durationSeconds);
 }
 
-function createQqMusicProviderImplementation(fetchImpl: FetchLike = fetch): QqMusicProvider {
+function createQqMusicProviderImplementation(fetchImpl: FetchLike, word: boolean) {
   return {
-    async getSyllableLyrics(track: TrackMetadata): Promise<SyllableSyncedLyrics | undefined> {
+    async getLyrics(track: TrackMetadata) {
       if (track.name.length === 0 || firstArtist(track).length === 0) {
         return undefined;
       }
@@ -276,7 +279,7 @@ function createQqMusicProviderImplementation(fetchImpl: FetchLike = fetch): QqMu
         const source = { Provider: "qqmusic", Transport: "direct", TrackId: String(song.id), MatchedTitle: songTitle(song) } as const;
         recordMatch(getFetchContext(fetchImpl), source);
         logMatchedSong(song);
-        const lyrics = await getQrcLyrics(fetchImpl, song.id!);
+        const lyrics = await getTimedLyrics(fetchImpl, song.id!, word, track.durationSeconds);
         if (lyrics !== undefined) return withSource(lyrics, source);
       }
       return undefined;
@@ -288,6 +291,9 @@ export const qqMusicProvider = createQqMusicProvider();
 
 export function createQqMusicProvider(fetchImpl: typeof fetch = fetch): QqMusicProvider {
   return {
-    getSyllableLyrics: (track, context) => createQqMusicProviderImplementation(contextFetch(fetchImpl, context)).getSyllableLyrics(track, context),
+    getSyllableLyrics: (track, context) => createQqMusicProviderImplementation(contextFetch(fetchImpl, context), true).getLyrics(track)
+      .then(lyrics => lyrics?.Type === "Syllable" ? lyrics : undefined),
+    getLineLyrics: (track, context) => createQqMusicProviderImplementation(contextFetch(fetchImpl, context), false).getLyrics(track)
+      .then(lyrics => lyrics?.Type === "Line" ? lyrics : undefined),
   };
 }

@@ -1,17 +1,20 @@
 // Adapted from Spicetify lyrics-plus/ProviderMusixmatch.js and Settings.js (LGPL-2.1).
 // Changed 2026-09-19: native fetch, shared anonymous tokens, bounded requests,
 // authentication refresh, and Beautiful Lyrics richsync conversion.
+// Changed 2026-10-28: timed MXM subtitles for direct line fallback.
 // See NOTICE.md and LICENSES/Spicetify-LGPL-2.1.txt.
 import { convertRichsyncToSyllableLyrics } from "../convert/richsync";
+import { convertMxmToLineLyrics } from "../convert/mxm";
 import { withLyricRequestRetries, contextFetch, abortable } from "./request";
 import { withSource, recordMatch } from "./matched-title";
-import type { SyllableLyricsProvider, TrackMetadata, RequestContext } from "../types";
+import type { TimedLyricsProvider, TrackMetadata, RequestContext } from "../types";
 
 type Message<T> = { header?: { status_code?: number }; body?: T };
 type MacroCalls = {
-  "matcher.track.get"?: { message?: Message<{ track?: { track_id?: number; track_name?: string; has_richsync?: number; instrumental?: number; restricted?: number } }> };
+  "matcher.track.get"?: { message?: Message<{ track?: { track_id?: number; track_name?: string; has_richsync?: number; has_subtitles?: number; instrumental?: number; restricted?: number } }> };
   "track.lyrics.get"?: { message?: Message<{ lyrics?: { restricted?: number } }> };
   "track.richsync.get"?: { message?: Message<{ richsync?: { richsync_body?: string; restricted?: number } }> };
+  "track.subtitles.get"?: { message?: Message<{ subtitle_list?: { subtitle?: { subtitle_body?: string; restricted?: number } }[] }> };
 };
 
 const baseUrl = "https://apic-appmobile.musixmatch.com/ws/1.1/";
@@ -23,7 +26,7 @@ const headers = {
   "X-User-Agent": "Musixmatch/2025120901 CFNetwork/3860.300.31 Darwin/25.2.0"
 };
 
-export function createMusixmatchProvider(fetchImpl: typeof fetch = fetch): SyllableLyricsProvider {
+export function createMusixmatchProvider(fetchImpl: typeof fetch = fetch): TimedLyricsProvider {
   let cachedToken: { value: string; expires: number } | undefined;
   let tokenRequest: Promise<string | undefined> | undefined;
   let tokenRetryAt = 0;
@@ -86,47 +89,62 @@ export function createMusixmatchProvider(fetchImpl: typeof fetch = fetch): Sylla
     return result;
   }
 
-  return {
-    async getSyllableLyrics(track, context) {
-      const tokenForCaller = () => context?.signal ? abortable(getToken, context.signal) : getToken();
-      if (!track.name.trim() || !track.artists[0]?.trim()) {
-        return undefined;
+  async function getTimedLyrics(track: TrackMetadata, word: boolean, context?: RequestContext) {
+    const tokenForCaller = () => context?.signal ? abortable(getToken, context.signal) : getToken();
+    if (!track.name.trim() || !track.artists[0]?.trim()) {
+      return undefined;
+    }
+    let token = await tokenForCaller();
+    if (token === undefined) {
+      return undefined;
+    }
+    let response = await request<{ macro_calls?: MacroCalls }>("macro.subtitles.get", parameters(track, token), context);
+    if (response?.header?.status_code === 401) {
+      if (cachedToken?.value === token) {
+        cachedToken = undefined;
       }
-      let token = await tokenForCaller();
+      token = await tokenForCaller();
       if (token === undefined) {
         return undefined;
       }
-      let response = await request<{ macro_calls?: MacroCalls }>("macro.subtitles.get", parameters(track, token), context);
-      if (response?.header?.status_code === 401) {
-        if (cachedToken?.value === token) {
-          cachedToken = undefined;
-        }
-        token = await tokenForCaller();
-        if (token === undefined) {
-          return undefined;
-        }
-        response = await request<{ macro_calls?: MacroCalls }>("macro.subtitles.get", parameters(track, token), context);
-      }
-      if (response?.header?.status_code !== 200) {
-        if (response?.header?.status_code === 401 && cachedToken?.value === token) {
-          cachedToken = undefined;
-          tokenRetryAt = Date.now() + 60_000;
-        }
-        return undefined;
-      }
-      const calls = response.body?.macro_calls;
-      const match = calls?.["matcher.track.get"]?.message;
-      const metadata = match?.body?.track;
-      const richsync = calls?.["track.richsync.get"]?.message;
-      if (metadata) recordMatch(context, { Provider: "musixmatch", Transport: "direct",
-        ...(metadata.track_id ? { TrackId: String(metadata.track_id) } : {}), ...(metadata.track_name ? { MatchedTitle: metadata.track_name } : {}) });
-      if (match?.header?.status_code !== 200 || !metadata?.has_richsync || metadata.instrumental ||
-        metadata.restricted || calls?.["track.lyrics.get"]?.message?.body?.lyrics?.restricted ||
-        richsync?.header?.status_code !== 200 || richsync.body?.richsync?.restricted) {
-        return undefined;
-      }
-      return withSource(convertRichsyncToSyllableLyrics(richsync.body?.richsync?.richsync_body), { Provider: "musixmatch", Transport: "direct", ...(metadata.track_id ? { TrackId: String(metadata.track_id) } : {}), ...(metadata.track_name ? { MatchedTitle: metadata.track_name } : {}) });
+      response = await request<{ macro_calls?: MacroCalls }>("macro.subtitles.get", parameters(track, token), context);
     }
+    if (response?.header?.status_code !== 200) {
+      if (response?.header?.status_code === 401 && cachedToken?.value === token) {
+        cachedToken = undefined;
+        tokenRetryAt = Date.now() + 60_000;
+      }
+      return undefined;
+    }
+    const calls = response.body?.macro_calls;
+    const match = calls?.["matcher.track.get"]?.message;
+    const metadata = match?.body?.track;
+    const richsync = calls?.["track.richsync.get"]?.message;
+    if (metadata) recordMatch(context, { Provider: "musixmatch", Transport: "direct",
+      ...(metadata.track_id ? { TrackId: String(metadata.track_id) } : {}), ...(metadata.track_name ? { MatchedTitle: metadata.track_name } : {}) });
+    if (match?.header?.status_code !== 200 || !metadata || metadata.instrumental ||
+      metadata.restricted || calls?.["track.lyrics.get"]?.message?.body?.lyrics?.restricted) {
+      return undefined;
+    }
+    if (!word) {
+      const subtitles = calls?.["track.subtitles.get"]?.message;
+      if (!metadata.has_subtitles || subtitles?.header?.status_code !== 200) return undefined;
+      for (const entry of subtitles.body?.subtitle_list ?? []) {
+        if (entry.subtitle?.restricted) continue;
+        const lyrics = convertMxmToLineLyrics(entry.subtitle?.subtitle_body, track.durationSeconds);
+        if (lyrics) return withSource(lyrics, { Provider: "musixmatch", Transport: "direct",
+          ...(metadata.track_id ? { TrackId: String(metadata.track_id) } : {}), ...(metadata.track_name ? { MatchedTitle: metadata.track_name } : {}) });
+      }
+      return undefined;
+    }
+    if (!metadata.has_richsync || richsync?.header?.status_code !== 200 || richsync.body?.richsync?.restricted) return undefined;
+    return withSource(convertRichsyncToSyllableLyrics(richsync.body?.richsync?.richsync_body), { Provider: "musixmatch", Transport: "direct", ...(metadata.track_id ? { TrackId: String(metadata.track_id) } : {}), ...(metadata.track_name ? { MatchedTitle: metadata.track_name } : {}) });
+  }
+  return {
+    getSyllableLyrics: (track, context) => getTimedLyrics(track, true, context)
+      .then(lyrics => lyrics?.Type === "Syllable" ? lyrics : undefined),
+    getLineLyrics: (track, context) => getTimedLyrics(track, false, context)
+      .then(lyrics => lyrics?.Type === "Line" ? lyrics : undefined)
   };
 }
 

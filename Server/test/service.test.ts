@@ -10,20 +10,25 @@ function createProviders(): ProviderClients {
   return {
     /*
     amlldb: {
-      getSyllableLyrics: vi.fn().mockResolvedValue(undefined)
+      getSyllableLyrics: vi.fn().mockResolvedValue(undefined),
+      getLineLyrics: vi.fn().mockResolvedValue(undefined)
     },
     */
     qqmusic: {
-      getSyllableLyrics: vi.fn().mockResolvedValue(undefined)
+      getSyllableLyrics: vi.fn().mockResolvedValue(undefined),
+      getLineLyrics: vi.fn().mockResolvedValue(undefined)
     },
     kugou: {
-      getSyllableLyrics: vi.fn().mockResolvedValue(undefined)
+      getSyllableLyrics: vi.fn().mockResolvedValue(undefined),
+      getLineLyrics: vi.fn().mockResolvedValue(undefined)
     },
     netease: {
-      getSyllableLyrics: vi.fn().mockResolvedValue(undefined)
+      getSyllableLyrics: vi.fn().mockResolvedValue(undefined),
+      getLineLyrics: vi.fn().mockResolvedValue(undefined)
     },
     musixmatch: {
-      getSyllableLyrics: vi.fn().mockResolvedValue(undefined)
+      getSyllableLyrics: vi.fn().mockResolvedValue(undefined),
+      getLineLyrics: vi.fn().mockResolvedValue(undefined)
     },
     spicylyrics: {
       getLyrics: vi.fn().mockResolvedValue(undefined)
@@ -137,7 +142,8 @@ describe("lyrics service", () => {
     expect(await createLyricsService(providers).getLyrics("track", "token", track, undefined, { diagnostics })).toBeUndefined();
     expect(legacyRequest).not.toHaveBeenCalled();
     expect(diagnostics.attempts.map(attempt => attempt.provider).sort()).toEqual([
-      "spicylyrics", "qq music", "kugou direct", "netease direct", "musixmatch direct", "spotify", "lrclib"
+      "spicylyrics", "qq music", "kugou direct", "netease direct", "musixmatch direct", "spotify", "lrclib",
+      "qq music", "kugou direct", "netease direct", "musixmatch direct"
     ].sort());
     expect(diagnostics.attempts.some(attempt => attempt.stage === "static")).toBe(false);
   });
@@ -1040,6 +1046,66 @@ describe("bounded quality phases", () => {
     await vi.waitFor(() => expect(p.qqmusic.getSyllableLyrics).toHaveBeenCalled());
     controller.abort(); expect(await result).toBeUndefined();
     expect(p.spotify.getLyrics).not.toHaveBeenCalled();
+  });
+});
+
+describe("direct line fallback", () => {
+  const track = { id: "track", name: "Song", artists: ["Artist"] };
+  const line = { Type: "Line" as const, StartTime: 1, EndTime: 2, Content: [] };
+  const sources = ["qqmusic", "kugou", "netease", "musixmatch"] as const;
+
+  it.each(sources)("uses %s lines when Spotify and LRCLIB fail", async source => {
+    const providers = createProviders();
+    vi.mocked(providers.spotify.getLyrics).mockRejectedValue(new Error("Rate limited"));
+    vi.mocked(providers.lrclib.getLyrics).mockRejectedValue(new Error("Rate limited"));
+    vi.mocked(providers[source].getLineLyrics).mockResolvedValue(line);
+    const diagnostics: RequestDiagnostics = { id: "line-test", track, startedAt: "test", durationMs: 0, outcome: "pending", attempts: [] };
+    const result = await createLyricsService(providers).getLyrics("track", "token", track, undefined, { diagnostics });
+    expect(result).toMatchObject({ Type: "Line", Source: { Provider: source, Transport: "direct" } });
+    expect(diagnostics.attempts).toContainEqual(expect.objectContaining({
+      stage: "line", outcome: "success", selected: true, source: expect.objectContaining({ Provider: source })
+    }));
+  });
+
+  it.each(sources)("keeps %s line fallback when its syllables are blocked", async source => {
+    const providers = createProviders();
+    vi.mocked(providers[source].getLineLyrics).mockResolvedValue(line);
+    const result = await createLyricsService(providers).getLyrics("track", "token", track, undefined,
+      { sourceBlocks: [{ provider: source, lyricsType: "Syllable" }] });
+    expect(result?.Type).toBe("Line");
+    expect(providers[source].getSyllableLyrics).not.toHaveBeenCalled();
+    expect(providers[source].getLineLyrics).toHaveBeenCalled();
+  });
+
+  it.each(sources)("skips blocked %s lines and preserves other line sources", async source => {
+    const providers = createProviders();
+    vi.mocked(providers[source].getLineLyrics).mockResolvedValue(line);
+    vi.mocked(providers.lrclib.getLyrics).mockResolvedValue(line);
+    const result = await createLyricsService(providers).getLyrics("track", "token", track, undefined,
+      { sourceBlocks: [{ provider: source, lyricsType: "Line" }] });
+    expect(result?.Source?.Provider).toBe("lrclib");
+    expect(providers[source].getLineLyrics).not.toHaveBeenCalled();
+  });
+
+  it("never starts line requests when a syllable source wins", async () => {
+    const providers = createProviders();
+    vi.mocked(providers.qqmusic.getSyllableLyrics).mockResolvedValue(wordLyrics("word"));
+    expect((await createLyricsService(providers).getLyrics("track", "token", track))?.Type).toBe("Syllable");
+    for (const source of sources) expect(providers[source].getLineLyrics).not.toHaveBeenCalled();
+  });
+
+  it("bounds all new line sources by the shared 10-second deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const providers = createProviders();
+      for (const source of sources) vi.mocked(providers[source].getLineLyrics).mockReturnValue(new Promise(() => {}));
+      const result = createLyricsService(providers).getLyrics("track", "token", track);
+      let settled = false; void result.then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(9_999); expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1); expect(await result).toBeUndefined();
+      for (const source of sources) expect(vi.mocked(providers[source].getLineLyrics).mock.calls[0]![1]?.signal?.aborted).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
   });
 });
 

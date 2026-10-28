@@ -4,10 +4,12 @@ import { contextFetch, getFetchContext } from "./request";
 // Changed 2026-09-19: HTTPS, native fetch, strict matching, bounded requests,
 // and multiple candidates when a matching lyric file is unavailable.
 import OpenCC from "opencc-js";
+import { convertLrcToLineLyrics } from "../convert/lrc";
+import { decodeBase64Text } from "../convert/base64";
 import { convertKrcToSyllableLyrics, decodeKrc } from "../convert/krc";
 import { withLyricRequestRetries } from "./request";
 import { withSource, recordMatch } from "./matched-title";
-import type { SyllableLyricsProvider, TrackMetadata } from "../types";
+import type { TimedLyricsProvider, TrackMetadata, RequestContext } from "../types";
 
 type Candidate = {
   id: string;
@@ -46,14 +48,14 @@ function matches(value: unknown, track: TrackMetadata): value is Candidate {
       Math.abs(candidate.duration / 1000 - track.durationSeconds) <= 8);
 }
 
-function createKugouProviderImplementation(fetchImpl: typeof fetch = fetch): SyllableLyricsProvider {
+function createKugouProviderImplementation(fetchImpl: typeof fetch, word: boolean) {
   async function getJson<T>(url: URL, signal: AbortSignal): Promise<T | undefined> {
     const response = await fetchImpl(url.toString(), { headers, signal });
     return response.ok ? await response.json() as T : undefined;
   }
 
   return {
-    async getSyllableLyrics(track, context) {
+    async getLyrics(track: TrackMetadata, context?: RequestContext) {
       if (!track.name.trim() || !track.artists[0]?.trim()) {
         return undefined;
       }
@@ -79,27 +81,31 @@ function createKugouProviderImplementation(fetchImpl: typeof fetch = fetch): Syl
           const lyricUrl = new URL("https://lyrics.kugou.com/download");
           lyricUrl.search = new URLSearchParams({
             ver: "1", client: "pc", id: candidate.id, accesskey: candidate.accesskey,
-            fmt: "krc", charset: "utf8"
+            fmt: word ? "krc" : "lrc", charset: "utf8"
           }).toString();
           const payload = await getJson<{ status?: number; content?: string }>(lyricUrl, signal);
           if (payload?.status !== 200) {
             continue;
           }
-          const lyrics = convertKrcToSyllableLyrics(await decodeKrc(payload.content));
+          const lyrics = word ? convertKrcToSyllableLyrics(await decodeKrc(payload.content))
+            : convertLrcToLineLyrics(decodeBase64Text(payload.content), track.durationSeconds);
           if (lyrics !== undefined) {
             return withSource(lyrics, source);
           }
         }
         return undefined;
-      }, "kugou direct", context);
+      }, "kugou direct " + (word ? "syllable" : "line"), context);
     }
   };
 }
 
 export const kugouProvider = createKugouProvider();
 
-export function createKugouProvider(fetchImpl: typeof fetch = fetch): SyllableLyricsProvider {
+export function createKugouProvider(fetchImpl: typeof fetch = fetch): TimedLyricsProvider {
   return {
-    getSyllableLyrics: (track, context) => createKugouProviderImplementation(contextFetch(fetchImpl, context)).getSyllableLyrics(track, context),
+    getSyllableLyrics: (track, context) => createKugouProviderImplementation(contextFetch(fetchImpl, context), true).getLyrics(track, context)
+      .then(lyrics => lyrics?.Type === "Syllable" ? lyrics : undefined),
+    getLineLyrics: (track, context) => createKugouProviderImplementation(contextFetch(fetchImpl, context), false).getLyrics(track, context)
+      .then(lyrics => lyrics?.Type === "Line" ? lyrics : undefined),
   };
 }

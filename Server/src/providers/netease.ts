@@ -3,10 +3,11 @@ import { contextFetch, getFetchContext } from "./request";
 // Adapted on 2026-09-19 for native fetch, direct NetEase endpoints, and YRC timing.
 // See NOTICE.md and LICENSES/Spicetify-LGPL-2.1.txt for attribution and license.
 import OpenCC from "opencc-js";
+import { convertLrcToLineLyrics } from "../convert/lrc";
 import { convertYrcToSyllableLyrics } from "../convert/karaoke";
 import { withLyricRequestRetries } from "./request";
 import { withSource, recordMatch } from "./matched-title";
-import type { SyllableLyricsProvider, TrackMetadata } from "../types";
+import type { TimedLyricsProvider, TrackMetadata, RequestContext } from "../types";
 
 type Song = {
   id?: number;
@@ -20,7 +21,7 @@ type Song = {
 };
 
 type SearchResponse = { code?: number; result?: { songs?: Song[] } };
-type LyricResponse = { code?: number; pureMusic?: boolean; yrc?: { lyric?: string } };
+type LyricResponse = { code?: number; pureMusic?: boolean; yrc?: { lyric?: string }; lrc?: { lyric?: string } };
 
 const simplify = OpenCC.Converter({ from: "tw", to: "cn" });
 const headers = {
@@ -56,14 +57,14 @@ function matches(song: Song, track: TrackMetadata): boolean {
   );
 }
 
-function createNeteaseProviderImplementation(fetchImpl: typeof fetch = fetch): SyllableLyricsProvider {
+function createNeteaseProviderImplementation(fetchImpl: typeof fetch, word: boolean) {
   async function getJson<T>(url: URL, signal: AbortSignal): Promise<T | undefined> {
     const response = await fetchImpl(url.toString(), { headers, signal });
     return response.ok ? (await response.json()) as T : undefined;
   }
 
   return {
-    async getSyllableLyrics(track, context) {
+    async getLyrics(track: TrackMetadata, context?: RequestContext) {
       if (!track.name.trim() || !track.artists[0]?.trim()) {
         return undefined;
       }
@@ -99,26 +100,30 @@ function createNeteaseProviderImplementation(fetchImpl: typeof fetch = fetch): S
           lyricUrl.search = new URLSearchParams({ id: String(song.id), lv: "-1", yv: "-1" }).toString();
           const payload = await getJson<LyricResponse>(lyricUrl, signal);
           if (payload?.code !== 200) {
-            return undefined;
+            continue;
           }
           if (payload.pureMusic) {
             continue;
           }
-          const lyrics = convertYrcToSyllableLyrics(payload.yrc?.lyric);
+          const lyrics = word ? convertYrcToSyllableLyrics(payload.yrc?.lyric)
+            : convertLrcToLineLyrics(payload.lrc?.lyric, track.durationSeconds);
           if (lyrics !== undefined) {
             return withSource(lyrics, source);
           }
         }
         return undefined;
-      }, "netease direct", context);
+      }, "netease direct " + (word ? "syllable" : "line"), context);
     }
   };
 }
 
 export const neteaseProvider = createNeteaseProvider();
 
-export function createNeteaseProvider(fetchImpl: typeof fetch = fetch): SyllableLyricsProvider {
+export function createNeteaseProvider(fetchImpl: typeof fetch = fetch): TimedLyricsProvider {
   return {
-    getSyllableLyrics: (track, context) => createNeteaseProviderImplementation(contextFetch(fetchImpl, context)).getSyllableLyrics(track, context),
+    getSyllableLyrics: (track, context) => createNeteaseProviderImplementation(contextFetch(fetchImpl, context), true).getLyrics(track, context)
+      .then(lyrics => lyrics?.Type === "Syllable" ? lyrics : undefined),
+    getLineLyrics: (track, context) => createNeteaseProviderImplementation(contextFetch(fetchImpl, context), false).getLyrics(track, context)
+      .then(lyrics => lyrics?.Type === "Line" ? lyrics : undefined),
   };
 }

@@ -27,8 +27,9 @@ https://lyrics.txw.qzz.io
 - Reborn lyrics provider flow:
   1. The first available syllable lyrics from direct Spicy Lyrics, QQ Music QRC, KuGou KRC, NetEase YRC,
      or Musixmatch RichSync; syllable providers are queried concurrently.
-  2. The first available line lyrics from Spotify or LRCLIB, including saved
-     line results from Spicy Lyrics; line providers are queried concurrently.
+  2. The first available line lyrics from direct Spotify, QQ Music LRC, KuGou LRC,
+     NetEase LRC, Musixmatch subtitles, or LRCLIB, including saved line results
+     from Spicy Lyrics; line providers are queried concurrently.
   3. Static fallbacks from Spicy Lyrics, Spotify, and LRCLIB.
 
 Lyrics preserve the quality order syllable > line > static. The syllable phase
@@ -38,11 +39,13 @@ line lyrics. Saved static results are used only after both phases miss or time o
 The Lyrically/Paxsenix proxy has been removed; no requests are sent to
 `lyrics.paxsenix.org`. Its Apple Music, Deezer, YouTube, Genius, Spotify proxy,
 and KuGou/NetEase proxy paths are no longer queried. The direct KuGou and
-NetEase providers match the title, artist, and duration before retrieving KRC or YRC.
+NetEase providers match the title, artist, and duration before retrieving KRC, YRC,
+or LRC. QQ Music uses the same matching checks for its QRC and LRC requests.
 KuGou decodes native word timings and skips unverified UGC candidates.
 Musixmatch acquires and caches an anonymous token, sends the Spotify track URI
 to improve matching, and
-uses RichSync only when the track has word timing. A missing or restricted result
+uses RichSync only when the track has word timing, with timed subtitles as a
+line fallback. A missing or restricted result
 leaves the other providers available. Upstream availability and rate limits can
 vary by server IP; no user credentials are bundled with these providers.
 

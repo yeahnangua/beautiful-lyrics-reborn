@@ -1,3 +1,5 @@
+import { SetLyricText } from "../LyricText.ts"
+import type { SpicyAttribution } from "@Universal/Types/Lyrics.ts"
 // Packages
 import { Maid, Giveable } from '@Universal/Modules/Maid.ts'
 
@@ -13,7 +15,7 @@ export default class StaticVocals implements BaseVocals, Giveable {
 
 	// Constructor
 	public constructor(
-		lineContainer: HTMLElement, lyricMetadata: TextMetadata
+		lineContainer: HTMLElement, lyricMetadata: TextMetadata, attribution?: SpicyAttribution
 	) {
 		// Store our lyric-metadata
 		this.LyricMetadata = lyricMetadata
@@ -31,7 +33,7 @@ export default class StaticVocals implements BaseVocals, Giveable {
 		const syllableSpan = this.Maid.Give(document.createElement('span'))
 		syllableSpan.classList.add('Lyric')
 		syllableSpan.classList.add('Static')
-		syllableSpan.innerText = lyricMetadata.Text
+		SetLyricText(syllableSpan, lyricMetadata.Text, attribution)
 		container.appendChild(syllableSpan)
 
 		// Finally, add our vocals to our line

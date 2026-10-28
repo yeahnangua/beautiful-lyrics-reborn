@@ -39,7 +39,7 @@ export function Controls({ player, time, actions, panel }: { player: PlayerSnaps
           <label className="folia-volume"><Volume2 size={17} /><input aria-label={t('volume')} type="range" min={0} max={1} step={0.01} value={player.volume} onChange={event => actions.setVolume(Number(event.target.value))} /></label>
         </div>
       </div>
-      {player.lyrics.attribution && <Attribution attribution={player.lyrics.attribution} />}
+      {player.lyrics.attribution && <Attribution attribution={player.lyrics.attribution} hideProvider={player.lyrics.hasAttributionLine} />}
       <Progress time={time} duration={player.duration} disabled={!player.canSeek} seek={actions.seek} />
     </motion.div>
   </>;
@@ -62,13 +62,14 @@ function Progress({ time, duration, disabled, seek }: { time: MotionValue<number
     onBlur={event => { if (dragging.current) { dragging.current = false; seek(Number(event.currentTarget.value)); } }} /><span>{timeText(duration)}</span></div>;
 }
 
-function Attribution({ attribution }: { attribution: SpicyAttribution }) {
+function Attribution({ attribution, hideProvider }: { attribution: SpicyAttribution; hideProvider?: boolean }) {
   const contributors = attribution.source === 'spicy_lyrics' ? [attribution.uploader, attribution.maker].filter(value => value !== undefined) : [];
+  if (hideProvider && contributors.length === 0) return null;
   return <div className="folia-attribution" dir="ltr">
-    <span>Lyrics via {attribution.provider}</span>
+    {!hideProvider && <span>Lyrics via {attribution.provider}</span>}
     {contributors.map((contributor, index) => {
       const href = contributorUrl(contributor.url);
-      return <React.Fragment key={`${contributor.id}:${index}`}><span>{index === 0 ? ' · ' : ' / '}</span>
+      return <React.Fragment key={`${contributor.id}:${index}`}><span>{index === 0 ? (hideProvider ? '' : ' · ') : ' / '}</span>
         {href ? <a href={href} target="_blank" rel="noopener noreferrer">🔗 {contributor.username}</a> : <span>{contributor.username}</span>}
       </React.Fragment>;
     })}

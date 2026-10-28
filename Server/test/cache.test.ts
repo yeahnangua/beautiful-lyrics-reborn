@@ -167,6 +167,24 @@ describe("worker route integration", () => {
     expect(second.LyricsHash).toBe(first.LyricsHash);
   });
 
+  it("adds the final attribution lyric on cache hits without storing duplicate generated rows", async () => {
+    const original = { ...stored(), Attribution: { provider: "spicylyrics" as const, source: "apple_music" } };
+    const getLyrics = vi.fn().mockResolvedValue(original);
+    const worker = createWorker({ getLyrics });
+    for (const duration of [265.437, 266.12]) {
+      const req = new Request(`https://lyrics.test/lyrics/track?track_name=Song&artist_name=Artist&duration=${duration}`,
+        { headers: { Authorization: "Bearer token" } }) as unknown as Request<unknown, IncomingRequestCfProperties>;
+      const result = await json(await worker.fetch!(req, env(), context) as Response);
+      expect(result.Content).toEqual([syllable.Content[0], expect.objectContaining({
+        IsAttribution: true, Lead: expect.objectContaining({ StartTime: duration - 0.1, EndTime: duration })
+      })]);
+    }
+    expect(getLyrics).toHaveBeenCalledTimes(1);
+    const cached = await createLyricsCache(db).get("track", []);
+    expect(cached).toMatchObject({ Content: syllable.Content });
+    expect(cached && "Content" in cached && cached.Content.some(group => "IsAttribution" in group)).toBe(false);
+  });
+
   it("caches with only LYRICS_CACHE_DB configured", async () => {
     const getLyrics = vi.fn().mockImplementation(async () => stored());
     const worker = createWorker({ getLyrics });

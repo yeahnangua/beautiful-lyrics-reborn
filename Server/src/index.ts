@@ -1,3 +1,4 @@
+import { appendAttributionLyric } from "./attribution";
 import { feedbackResponse, type FeedbackEnv } from "./feedback";
 import { PluginFetch as fetch } from "../../Universal/Modules/Http";
 import { hashLyrics, saveDiagnostics, cleanupFeedback } from "./diagnostics";
@@ -353,7 +354,7 @@ export function createWorker(service: LyricsService): ExportedHandler<WorkerEnv>
         return emptyLyricsResponse();
       }
 
-      return jsonResponse(lyrics);
+      return jsonResponse(appendAttributionLyric(lyrics, metadata?.durationSeconds));
     }
   };
 }

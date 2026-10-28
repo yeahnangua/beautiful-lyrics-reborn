@@ -19,7 +19,6 @@ import { LyricsScroller, VocalGroups } from "./LyricsRenderer/LyricsScroller.ts"
 
 // Our Components
 import InterludeVisual from "./LyricsRenderer/Components/Interlude.ts"
-import AttributionVocals from "./LyricsRenderer/Components/AttributionVocals.ts"
 import StaticVocals from "./LyricsRenderer/Components/StaticVocals.ts"
 import LineVocals from "./LyricsRenderer/Components/LineVocals.ts"
 import SyllableVocals from "./LyricsRenderer/Components/SyllableVocals.ts"
@@ -47,16 +46,6 @@ export default class LyricsRenderer implements Giveable {
 		// Now set our natural-alignment
 		lyricsContainer.classList.add(`NaturallyAligned${transformedLyrics.NaturalAlignment}`)
 
-		const appendAttribution = () => {
-			if (!transformedLyrics.Attribution) return undefined
-			const container = this.Maid.Give(document.createElement("div"))
-			container.classList.add("VocalsGroup", "AttributionLine")
-			const vocal = this.Maid.Give(new AttributionVocals(container, transformedLyrics.Attribution,
-				transformedLyrics.Type === "Static" ? undefined : transformedLyrics.EndTime))
-			lyricsContainer.appendChild(container)
-			return { GroupContainer: container, Vocals: [vocal] }
-		}
-
 		// Now handle creating our vocals
 		if (transformedLyrics.Type === "Static") {
 			// Populate our lines (not technically VocalGroups since we're static)
@@ -73,7 +62,7 @@ export default class LyricsRenderer implements Giveable {
 						Vocals: [
 							this.Maid.Give(
 								new StaticVocals(
-									lineContainer, line
+									lineContainer, line, line.IsAttribution ? transformedLyrics.Attribution : undefined
 								)
 							)
 						]
@@ -83,10 +72,6 @@ export default class LyricsRenderer implements Giveable {
 				// Parent our container
 				lyricsContainer.appendChild(lineContainer)
 			}
-
-			const attribution = appendAttribution()
-			if (attribution) lines.push(attribution)
-
 			// Create our scroller
 			this.Maid.Give(new LyricsScroller(scrollContainer, lyricsContainer, lines, false))
 		} else {
@@ -97,7 +82,7 @@ export default class LyricsRenderer implements Giveable {
 			if (transformedLyrics.Type === "Line") {
 				for (const vocalGroup of transformedLyrics.Content) {
 					// Create our container
-					const vocalGroupContainer = this.Maid.Give(document.createElement("button"))
+					const vocalGroupContainer = this.Maid.Give(document.createElement(vocalGroup.Type === "Vocal" && vocalGroup.IsAttribution ? "div" : "button"))
 					vocalGroupContainer.classList.add("VocalsGroup")
 
 					// Determine our how we populate/manipulate this container
@@ -114,7 +99,7 @@ export default class LyricsRenderer implements Giveable {
 								Vocals: [
 									this.Maid.Give(
 										new LineVocals(
-											vocalGroupContainer, vocalGroup
+											vocalGroupContainer, vocalGroup, vocalGroup.IsAttribution ? transformedLyrics.Attribution : undefined
 										)
 									)
 								]
@@ -137,7 +122,7 @@ export default class LyricsRenderer implements Giveable {
 			} else {
 				for (const vocalGroup of transformedLyrics.Content) {
 					// Create our container
-					const vocalGroupContainer = this.Maid.Give(document.createElement("button"))
+					const vocalGroupContainer = this.Maid.Give(document.createElement(vocalGroup.Type === "Vocal" && vocalGroup.IsAttribution ? "div" : "button"))
 					vocalGroupContainer.classList.add("VocalsGroup")
 
 					// Determine our how we populate/manipulate this container
@@ -150,7 +135,13 @@ export default class LyricsRenderer implements Giveable {
 						// Now add our lead/background vocals
 						const vocals = []
 						let startTime = vocalGroup.Lead.StartTime
-						vocals.push(
+						if (vocalGroup.IsAttribution) {
+							vocals.push(this.Maid.Give(new LineVocals(vocalGroupContainer, {
+								Type: "Vocal", OppositeAligned: false, IsAttribution: true,
+								Text: vocalGroup.Lead.Syllables.map(part => part.Text).join(""),
+								StartTime: vocalGroup.Lead.StartTime, EndTime: vocalGroup.Lead.EndTime
+							}, transformedLyrics.Attribution)))
+						} else vocals.push(
 							this.Maid.Give(
 								new SyllableVocals(
 									vocalGroupContainer, vocalGroup.Lead.Syllables, false
@@ -190,13 +181,6 @@ export default class LyricsRenderer implements Giveable {
 					lyricsContainer.appendChild(vocalGroupContainer)
 				}
 			}
-
-			const attribution = appendAttribution()
-			if (attribution) {
-				vocalGroups.push(attribution)
-				vocalGroupStartTimes.push(Math.max(0, transformedLyrics.EndTime - 0.1))
-			}
-
 			// Now create our scroller
 			const scroller = this.Maid.Give(
 				new LyricsScroller(

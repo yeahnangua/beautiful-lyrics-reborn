@@ -101,7 +101,6 @@ export type ProviderClients = {
   kugou: SyllableLyricsProvider;
   netease: SyllableLyricsProvider;
   spicylyrics: SpicyLyricsProvider;
-  lyrically: LyricallyProvider;
   spotify: SpotifyProvider;
   lrclib: LrclibProvider;
 };
@@ -138,16 +137,6 @@ export type QqMusicProvider = {
 };
 
 export type SyllableLyricsProvider = QqMusicProvider;
-
-export type LyricallyProvider = {
-  getAppleMusicLyrics(track: TrackMetadata, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
-  getKugouLyrics(track: TrackMetadata, word: boolean, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
-  getNeteaseLyrics(track: TrackMetadata, word: boolean, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
-  getLyrics(track: TrackMetadata, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
-  getYouTubeLyrics(track: TrackMetadata, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
-  getDeezerLyrics(track: TrackMetadata, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
-  getGeniusLyrics(track: TrackMetadata, context?: RequestContext): Promise<StaticSyncedLyrics | undefined>;
-};
 
 export type UpstreamEvent = {
   endpoint: string;

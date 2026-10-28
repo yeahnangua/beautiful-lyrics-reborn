@@ -5,14 +5,14 @@ export const lyricsTypes = ["Syllable", "Line", "Static"] as const;
 export const validSpotifyId = (value: string): boolean => /^[a-zA-Z0-9]+$/.test(value) && value.length <= 100;
 
 export function providerName(name: string): string {
-  const aliases: Record<string, string> = { "qq music": "qqmusic", "apple music": "applemusic", "spotify proxy": "spotify" };
+  const aliases: Record<string, string> = { "qq music": "qqmusic" };
   return aliases[name] ?? name.replace(/ direct$/, "");
 }
 
 export function candidateSource(name: string, lyrics: BeautifulLyrics): LyricsSource {
   return lyrics.Source ?? {
     Provider: providerName(name),
-    Transport: ["apple music", "kugou", "netease", "deezer", "spotify proxy", "youtube", "genius"].includes(name) ? "lyrically" : "direct"
+    Transport: "direct"
   };
 }
 

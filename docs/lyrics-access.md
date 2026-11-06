@@ -78,7 +78,8 @@ or database records. Account profiles are not requested. Probe lyrics are
 discarded after verification, and rate-limit keys contain only digests. The existing
 `METRICS` binding records `auth:session` and `auth:lyrics` events with operation,
 outcome, HTTP status, and duration, without identity dimensions. No D1 migration
-is required.
+is required. Automatic invocation logs are disabled so custom session headers
+are not stored in request-detail events; application logs remain available.
 
 ## Publishing
 

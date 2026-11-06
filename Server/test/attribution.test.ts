@@ -1,3 +1,5 @@
+import { lyricsAuthFixture } from "./lyrics-auth-fixture";
+const auth = await lyricsAuthFixture("test");
 import { describe, it, expect, vi } from "vitest";
 import { appendAttributionLyric } from "../src/attribution";
 import { createWorker } from "../src/index";
@@ -55,8 +57,8 @@ describe("attribution as the final lyric", () => {
     const worker = createWorker({ getLyrics });
     for (const duration of [265.437, 266.12]) {
       const request = new Request(`https://lyrics.test/lyrics/track?track_name=Song&artist_name=Artist&duration=${duration}`,
-        { headers: { Authorization: "Bearer test" } });
-      const response = await worker.fetch!(request as never, {}, {} as ExecutionContext);
+        { headers: { ...auth.headers } });
+      const response = await worker.fetch!(request as never, auth.env, {} as ExecutionContext);
       const result = await response.json() as BeautifulLyrics;
       expect(result).toMatchObject({ Content: [expect.anything(), { IsAttribution: true, EndTime: duration }] });
     }

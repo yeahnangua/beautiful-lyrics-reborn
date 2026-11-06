@@ -89,6 +89,13 @@ npm run dev
 
 The local Worker listens on `http://localhost:8787`.
 
+Lyrics access requires a Spotify-verified, short-lived session obtained
+automatically by the extension. Configure an independent `LYRICS_SESSION_SECRET`
+and keep the two lyrics rate-limit bindings enabled. The existing Spotify bearer
+alone no longer authorizes a lyrics request, including cached results. See
+[lyrics access and release checks](docs/lyrics-access.md) before publishing;
+old extensions need to reload/update when enforcement is released.
+
 Run checks:
 
 ```bash

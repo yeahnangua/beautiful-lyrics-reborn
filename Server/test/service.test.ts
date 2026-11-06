@@ -1,3 +1,5 @@
+import { lyricsAuthFixture } from "./lyrics-auth-fixture";
+const workerAuth = await lyricsAuthFixture();
 import { contentEqual } from "./lyrics-content";
 import { describe, expect, it, vi } from "vitest";
 import worker, { createWorker } from "../src/index";
@@ -725,7 +727,7 @@ describe("lyrics service", () => {
 
 
 describe("worker route", () => {
-  const env = {};
+  const env = workerAuth.env;
   const context = {} as ExecutionContext;
 
   it("returns 401 when authorization is missing", async () => {
@@ -756,7 +758,7 @@ describe("worker route", () => {
     const response = await injectedWorker.fetch?.(
       new Request("http://localhost:8787/lyrics/track", {
         headers: {
-          Authorization: "Bearer token"
+          ...workerAuth.headers
         }
       }),
       env,
@@ -783,7 +785,7 @@ describe("worker route", () => {
         "http://localhost:8787/lyrics/track?track_name=Song&artist_name=Artist&album_name=Album&duration=123&isrc=ISRC",
         {
           headers: {
-            Authorization: "Bearer token"
+            ...workerAuth.headers
           }
         }
       ),
@@ -816,7 +818,7 @@ describe("worker route", () => {
     const injectedWorker = createWorker(service);
     await injectedWorker.fetch?.(
       new Request("http://localhost:8787/lyrics/track?track_name=Song&artist_name=Artist&apple_id=123&apple_title=Song%20(Live)", {
-        headers: { Authorization: "Bearer token" }
+        headers: { ...workerAuth.headers }
       }),
       env,
       context
@@ -835,7 +837,7 @@ describe("worker route", () => {
     const response = await injectedWorker.fetch?.(
       new Request("http://localhost:8787/lyrics/track", {
         headers: {
-          Authorization: "Bearer token",
+          ...workerAuth.headers,
           "X-Spotify-App-Platform": "Linux_x86_64",
           "X-Spotify-App-Version": "1.2.99.999"
         }

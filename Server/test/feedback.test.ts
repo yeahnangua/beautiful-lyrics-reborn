@@ -1,3 +1,6 @@
+import { lyricsAuthFixture } from "./lyrics-auth-fixture";
+const auth = await lyricsAuthFixture("PRIVATE");
+const tokenAuth = await lyricsAuthFixture();
 import { readFile, readdir } from "node:fs/promises";
 import { Miniflare } from "miniflare";
 import { beforeAll, afterAll, beforeEach, describe, it, expect, vi } from "vitest";
@@ -54,7 +57,7 @@ beforeAll(async () => {
 }, 20000);
 afterAll(async () => { await mf?.dispose(); });
 beforeEach(async () => {
-  env = { FEEDBACK_DB: db, ADMIN_PASSWORD: "test-password", ADMIN_SESSION_SECRET: "test-session-key-with-at-least-32-bytes" };
+  env = { ...auth.env, FEEDBACK_DB: db, ADMIN_PASSWORD: "test-password", ADMIN_SESSION_SECRET: "test-session-key-with-at-least-32-bytes" };
   await db.batch(["source_block_history", "source_blocks", "lyric_reports", "lyric_requests", "rate_limits", "admin_sessions", "diagnostic_daily_budget"].map(table => db.prepare(`DELETE FROM ${table}`)));
 });
 
@@ -118,7 +121,7 @@ describe("source-block administration with real D1", () => {
     await call("/admin/api/source-blocks", "PUT", { ...rule, lyricsType: "Line", enabled: false }, cookie);
     const getLyrics = vi.fn<LyricsService["getLyrics"]>(async () => structuredClone(original));
     const handler = createWorker({ getLyrics });
-    const fetch = (path: string) => handler.fetch!(new Request(base + path, { headers: { Authorization: "Bearer token" } }), env, {} as ExecutionContext) as Promise<Response>;
+    const fetch = (path: string) => handler.fetch!(new Request(base + path, { headers: { ...tokenAuth.headers } }), env, {} as ExecutionContext) as Promise<Response>;
     const response = await fetch("/lyrics-policy/" + rule.spotifyId);
     expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(await response.json()).toEqual({ blocks: [{ provider: "qqmusic", lyricsType: "Syllable" }] });
@@ -259,7 +262,7 @@ describe("feedback with real local D1", () => {
     expect((await call("/reports", "POST", payload())).status).toBe(503);
     const pending: Promise<unknown>[] = [];
     const handler = createWorker({ getLyrics: async () => structuredClone(original) });
-    const response = await handler.fetch!(new Request(base + "/lyrics/track", { headers: { Authorization: "Bearer PRIVATE" } }), {}, { waitUntil: (promise: Promise<unknown>) => pending.push(promise) } as unknown as ExecutionContext);
+    const response = await handler.fetch!(new Request(base + "/lyrics/track", { headers: { ...auth.headers } }), auth.env, { waitUntil: (promise: Promise<unknown>) => pending.push(promise) } as unknown as ExecutionContext);
     const lyrics = await response.json() as BeautifulLyrics;
     expect(lyrics.LyricsHash).toMatch(/^[a-f0-9]{64}$/);
     expect(lyrics.RequestId).toMatch(/^[a-f0-9-]{36}$/);
@@ -269,7 +272,7 @@ describe("feedback with real local D1", () => {
   it("schedules full request logs through waitUntil", async () => {
     const pending: Promise<unknown>[] = [];
     const handler = createWorker({ getLyrics: async () => structuredClone(original) });
-    const response = await handler.fetch!(new Request(base + "/lyrics/track", { headers: { Authorization: "Bearer PRIVATE" } }), env,
+    const response = await handler.fetch!(new Request(base + "/lyrics/track", { headers: { ...auth.headers } }), env,
       { waitUntil: (promise: Promise<unknown>) => pending.push(promise) } as unknown as ExecutionContext);
     const lyrics = await response.json() as BeautifulLyrics;
     expect(pending).toHaveLength(1);
@@ -298,7 +301,7 @@ describe("feedback with real local D1", () => {
       return structuredClone(original);
     } });
     const responses = await Promise.all(Array.from({ length: 12 }, () => handler.fetch!(
-      new Request(base + "/lyrics/track", { headers: { Authorization: "Bearer PRIVATE" } }), staleEnv, {} as ExecutionContext)));
+      new Request(base + "/lyrics/track", { headers: { ...auth.headers } }), staleEnv, {} as ExecutionContext)));
     const lyrics = await Promise.all(responses.map(response => response.json() as Promise<BeautifulLyrics>));
     for (const lyric of lyrics) expect((await loadDiagnostics(db, lyric.RequestId!))?.attempts).toEqual(attempts);
     expect((await db.prepare("SELECT count(*) AS n FROM lyric_requests").first<{ n: number }>())?.n).toBe(12);
@@ -402,7 +405,7 @@ describe("feedback with real local D1", () => {
     const controller = new AbortController();
     if (outcome === "cancelled") controller.abort();
     const response = await handler.fetch!(new Request(base + "/lyrics/track?track_name=Song&artist_name=Artist", {
-      headers: { Authorization: "Bearer PRIVATE" }, signal: controller.signal
+      headers: { ...auth.headers }, signal: controller.signal
     }), env, {} as ExecutionContext);
     expect(response.status).toBe(outcome === "failed" ? 502 : 200);
     const row = await db.prepare("SELECT outcome,data FROM lyric_requests").first<{ outcome: string; data: string }>();
@@ -414,7 +417,7 @@ describe("feedback with real local D1", () => {
     env.FEEDBACK_DB = broken;
     expect((await call("/reports", "POST", payload())).status).toBe(503);
     const handler = createWorker({ getLyrics: async () => structuredClone(original) });
-    const response = await handler.fetch!(new Request(base + "/lyrics/track", { headers: { Authorization: "Bearer PRIVATE" } }), env, {} as ExecutionContext);
+    const response = await handler.fetch!(new Request(base + "/lyrics/track", { headers: { ...auth.headers } }), env, {} as ExecutionContext);
     expect(response.status).toBe(200);
   });
   it("hashes lyrics and timing independently of provenance", async () => {

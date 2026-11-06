@@ -97,6 +97,15 @@ jobs:
           npm run typecheck
           npx wrangler deploy --dry-run
 
+      - name: Check lyrics authentication before publishing
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        working-directory: Server
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          LYRICS_AUTH_COMPATIBILITY_VERIFIED: ${{ vars.LYRICS_AUTH_COMPATIBILITY_VERIFIED }}
+        run: node Tasks/CheckLyricsAuth.mjs
+
       - name: Commit release bundle
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         run: |
@@ -119,6 +128,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           FEEDBACK_DATABASE_ID: ${{ secrets.FEEDBACK_DATABASE_ID }}
           LYRICS_CACHE_DATABASE_ID: ${{ secrets.LYRICS_CACHE_DATABASE_ID }}
+          LYRICS_AUTH_COMPATIBILITY_VERIFIED: ${{ vars.LYRICS_AUTH_COMPATIBILITY_VERIFIED }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
             echo "::error::Configure CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID to publish the update pointer and assets."

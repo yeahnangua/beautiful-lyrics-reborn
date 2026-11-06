@@ -19,6 +19,25 @@ name = "METRICS_LIMITER"
 namespace_id = "823601"
 simple = { limit = 120, period = 60 }
 
+# Authenticated lyrics access. Keep these namespaces separate from telemetry.
+[[ratelimits]]
+name = "LYRICS_SESSION_LIMITER"
+namespace_id = "823602"
+simple = { limit = 60, period = 60 }
+
+[[ratelimits]]
+name = "LYRICS_TOKEN_LIMITER"
+namespace_id = "823603"
+simple = { limit = 60, period = 60 }
+
+[[ratelimits]]
+name = "LYRICS_IP_LIMITER"
+namespace_id = "823606"
+simple = { limit = 300, period = 60 }
+
+# Required, independent signing secret (at least 32 random bytes):
+# wrangler secret put LYRICS_SESSION_SECRET
+
 [observability.logs]
 enabled = true
 invocation_logs = true

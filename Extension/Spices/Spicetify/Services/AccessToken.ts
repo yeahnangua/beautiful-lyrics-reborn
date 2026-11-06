@@ -11,7 +11,7 @@ export function createAccessTokenProvider(
     token !== undefined && typeof token.accessToken === "string" && token.accessToken.length > 0 &&
     Number.isFinite(token.expiresAtTime) && token.expiresAtTime > Date.now() + 2_000;
 
-  return function getToken(): Promise<string> {
+  function getToken(): Promise<string> {
     if (valid(cached)) return Promise.resolve(cached.accessToken);
     if (pending) return pending;
     cached = undefined;
@@ -46,7 +46,13 @@ export function createAccessTokenProvider(
       throw new Error("Spotify token unavailable");
     })().finally(() => { pending = undefined; });
     return pending;
-  };
+  }
+  return Object.assign(getToken, {
+    invalidate(rejectedToken: string): void {
+      // A late rejection must not discard a newer token or its pending request.
+      if (cached?.accessToken === rejectedToken) cached = undefined;
+    }
+  });
 }
 
 /** Recent desktop clients moved credentials from Session into AuthorizationAPI. */

@@ -18,6 +18,8 @@ import { dashboardHtml } from "./dashboard";
 import { createLyricsCache, cleanupLyricsCache } from "./cache";
 import { loadSourcePolicy, validSpotifyId } from "./source-policy";
 import { metricsResponse, recordRequestMetrics, detailedStatistics, type MetricsEnv } from "./metrics";
+import { createLyricsAuth, lyricsCorsHeaders, lyricsResponseHeaders, type LyricsAuthEnv } from "./lyrics-auth";
+import { LyricsSessionPath } from "../../Universal/Modules/LyricsSession";
 
 const defaultService = createLyricsService({
   // amlldb: amllDbProvider,
@@ -30,34 +32,24 @@ const defaultService = createLyricsService({
   lrclib: lrclibProvider
 });
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers":
-    "Authorization, Content-Type, User-Agent, X-Spotify-App-Platform, X-Spotify-App-Version"
-};
+const corsHeaders = lyricsCorsHeaders;
 
 function emptyLyricsResponse(): Response {
   return new Response("", {
     status: 200,
-    headers: corsHeaders
+    headers: lyricsResponseHeaders
   });
 }
 
-function jsonResponse(value: unknown): Response {
+function jsonResponse(value: unknown, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(value), {
     status: 200,
     headers: {
       ...corsHeaders,
+      ...headers,
       "Content-Type": "application/json; charset=utf-8"
     }
   });
-}
-
-function extractBearerToken(request: Request): string | undefined {
-  const authorization = request.headers.get("Authorization");
-  const match = /^Bearer\s+(.+)$/i.exec(authorization ?? "");
-  return match?.[1];
 }
 
 function nonEmptyParameter(url: URL, name: string): string | undefined {
@@ -136,7 +128,7 @@ function extractTrackMetadata(url: URL, trackId: string): TrackMetadata | undefi
   return trackMetadata;
 }
 
-export type WorkerEnv = FeedbackEnv & MetricsEnv & {
+export type WorkerEnv = FeedbackEnv & MetricsEnv & LyricsAuthEnv & {
   RELEASE_ASSETS?: Fetcher;
   STATS?: AnalyticsEngineDataset;
   STATS_ACCOUNT_ID?: string;
@@ -199,7 +191,7 @@ async function statsResponse(env: WorkerEnv, url: URL): Promise<Response> {
   return result;
 }
 
-export function createWorker(service: LyricsService): ExportedHandler<WorkerEnv> {
+export function createWorker(service: LyricsService, auth = createLyricsAuth()): ExportedHandler<WorkerEnv> {
   return {
     scheduled(_event, env, ctx) {
       ctx.waitUntil(Promise.all([
@@ -208,13 +200,14 @@ export function createWorker(service: LyricsService): ExportedHandler<WorkerEnv>
       ]));
     },
     async fetch(request: Request, env: WorkerEnv, ctx?: ExecutionContext): Promise<Response> {
+      if (new URL(request.url).pathname === LyricsSessionPath) return auth.session(request, env);
       if (new URL(request.url).pathname === "/metrics") return metricsResponse(request, env);
       const feedback = await feedbackResponse(request, env);
       if (feedback) return feedback;
       if (request.method === "OPTIONS") {
         return new Response(null, {
           status: 204,
-          headers: corsHeaders
+          headers: lyricsResponseHeaders
         });
       }
 
@@ -262,26 +255,22 @@ export function createWorker(service: LyricsService): ExportedHandler<WorkerEnv>
         });
       }
 
-      const accessToken = extractBearerToken(request);
-      if (accessToken === undefined) {
-        return new Response("Missing Spotify bearer token", {
-          status: 401,
-          headers: corsHeaders
-        });
-      }
+      const authorized = await auth.authorize(request, env);
+      if (authorized instanceof Response) return authorized;
+      const { accessToken } = authorized;
 
       const trackIdMatch = routeMatch[1];
       if (trackIdMatch === undefined) {
         return new Response("Not found", {
           status: 404,
-          headers: corsHeaders
+          headers: lyricsResponseHeaders
         });
       }
 
       let trackId: string;
       try { trackId = decodeURIComponent(trackIdMatch); }
-      catch { return new Response("Invalid track ID", { status: 400, headers: corsHeaders }); }
-      if (!/^[a-zA-Z0-9]+$/.test(trackId) || trackId.length > 100) return new Response("Invalid track ID", { status: 400, headers: corsHeaders });
+      catch { return new Response("Invalid track ID", { status: 400, headers: lyricsResponseHeaders }); }
+      if (!/^[a-zA-Z0-9]+$/.test(trackId) || trackId.length > 100) return new Response("Invalid track ID", { status: 400, headers: lyricsResponseHeaders });
       const metadata = extractTrackMetadata(url, trackId);
       const started = Date.now();
       const diagnostics: RequestDiagnostics = {
@@ -346,7 +335,7 @@ export function createWorker(service: LyricsService): ExportedHandler<WorkerEnv>
           else await pending;
         }
       }
-      if (failed) return new Response("Lyrics request failed", { status: 502, headers: corsHeaders });
+      if (failed) return new Response("Lyrics request failed", { status: 502, headers: lyricsResponseHeaders });
 
       recordOutcome(env, lyrics);
 
@@ -354,7 +343,7 @@ export function createWorker(service: LyricsService): ExportedHandler<WorkerEnv>
         return emptyLyricsResponse();
       }
 
-      return jsonResponse(appendAttributionLyric(lyrics, metadata?.durationSeconds));
+      return jsonResponse(appendAttributionLyric(lyrics, metadata?.durationSeconds), lyricsResponseHeaders);
     }
   };
 }

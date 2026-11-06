@@ -1,3 +1,5 @@
+import { lyricsAuthFixture } from "./lyrics-auth-fixture";
+const auth = await lyricsAuthFixture();
 import { readFile, readdir } from "node:fs/promises";
 import { Miniflare } from "miniflare";
 import { beforeAll, afterAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -142,9 +144,24 @@ describe("cache lifetime", () => {
 });
 
 describe("worker route integration", () => {
-  const env = () => ({ FEEDBACK_DB: feedbackDb, LYRICS_CACHE_DB: db } as unknown as WorkerEnv);
+  const env = () => ({ ...auth.env, FEEDBACK_DB: feedbackDb, LYRICS_CACHE_DB: db } as unknown as WorkerEnv);
   const context = {} as ExecutionContext;
-  const request = () => new Request("https://lyrics.test/lyrics/track", { headers: { Authorization: "Bearer token" } }) as unknown as Request<unknown, IncomingRequestCfProperties>;
+
+  it("never exposes a warm cache to an arbitrary bearer or a copied session with another bearer", async () => {
+    await createLyricsCache(db).put("track", stored());
+    const prepare = vi.fn((query: string) => db.prepare(query));
+    const getLyrics = vi.fn();
+    const worker = createWorker({ getLyrics });
+    const protectedEnv = { ...env(), LYRICS_CACHE_DB: { prepare } as unknown as D1Database };
+    for (const headers of [{ Authorization: "Bearer bogus" }, { ...auth.headers, Authorization: "Bearer bogus" }]) {
+      const response = await worker.fetch!(new Request("https://lyrics.test/lyrics/track", { headers }), protectedEnv, context);
+      expect(response.status).toBe(401);
+      expect(response.headers.get("CDN-Cache-Control")).toBe("no-store");
+    }
+    expect(prepare).not.toHaveBeenCalled();
+    expect(getLyrics).not.toHaveBeenCalled();
+  });
+  const request = () => new Request("https://lyrics.test/lyrics/track", { headers: { ...auth.headers } }) as unknown as Request<unknown, IncomingRequestCfProperties>;
 
   async function json(response: Response | undefined): Promise<Record<string, unknown>> {
     expect(response).toBeDefined();
@@ -173,7 +190,7 @@ describe("worker route integration", () => {
     const worker = createWorker({ getLyrics });
     for (const duration of [265.437, 266.12]) {
       const req = new Request(`https://lyrics.test/lyrics/track?track_name=Song&artist_name=Artist&duration=${duration}`,
-        { headers: { Authorization: "Bearer token" } }) as unknown as Request<unknown, IncomingRequestCfProperties>;
+        { headers: { ...auth.headers } }) as unknown as Request<unknown, IncomingRequestCfProperties>;
       const result = await json(await worker.fetch!(req, env(), context) as Response);
       expect(result.Content).toEqual([syllable.Content[0], expect.objectContaining({
         IsAttribution: true, Lead: expect.objectContaining({ StartTime: duration - 0.1, EndTime: duration })
@@ -188,7 +205,7 @@ describe("worker route integration", () => {
   it("caches with only LYRICS_CACHE_DB configured", async () => {
     const getLyrics = vi.fn().mockImplementation(async () => stored());
     const worker = createWorker({ getLyrics });
-    const onlyCache = { LYRICS_CACHE_DB: db } as WorkerEnv;
+    const onlyCache = { ...auth.env, LYRICS_CACHE_DB: db } as WorkerEnv;
     await json(await worker.fetch!(request(), onlyCache, context) as Response);
     await json(await worker.fetch!(request(), onlyCache, context) as Response);
     expect(getLyrics).toHaveBeenCalledTimes(1);
@@ -196,7 +213,7 @@ describe("worker route integration", () => {
   it("does not use the feedback database as a cache when the cache binding is absent", async () => {
     const getLyrics = vi.fn().mockImplementation(async () => stored());
     const worker = createWorker({ getLyrics });
-    const onlyFeedback = { FEEDBACK_DB: feedbackDb } as WorkerEnv;
+    const onlyFeedback = { ...auth.env, FEEDBACK_DB: feedbackDb } as WorkerEnv;
     await json(await worker.fetch!(request(), onlyFeedback, context) as Response);
     await json(await worker.fetch!(request(), onlyFeedback, context) as Response);
     expect(getLyrics).toHaveBeenCalledTimes(2);
@@ -235,7 +252,7 @@ describe("worker route integration", () => {
     const getLyrics = vi.fn().mockResolvedValue(stored());
     const worker = createWorker({ getLyrics });
 
-    const body = await json(await worker.fetch!(request(), { FEEDBACK_DB: feedbackDb, LYRICS_CACHE_DB: broken } as unknown as WorkerEnv, context) as Response);
+    const body = await json(await worker.fetch!(request(), { ...auth.env, FEEDBACK_DB: feedbackDb, LYRICS_CACHE_DB: broken } as unknown as WorkerEnv, context) as Response);
     expect(body.Type).toBe("Syllable");
     expect(getLyrics).toHaveBeenCalledTimes(1);
   });

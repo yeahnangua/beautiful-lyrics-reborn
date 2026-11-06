@@ -14,7 +14,7 @@ import {
 	GlobalMaid,
 	OnSpotifyReady,
 	SpotifyPlayer, SpotifyPlatform, SpotifyURI, SpotifyRequestBuilder,
-	GetSpotifyAccessToken
+	FetchLyrics
 } from "../Session.ts"
 import { GetExpireStore, type ExpirationSettings } from '../Cache.ts'
 
@@ -470,8 +470,7 @@ PlayerMaid.Give(() => {
 const FetchProviderLyrics = async (
 	songId: string, lyricsRequestURL: string, parent: AbortSignal, remainingRetries = 1
 ): Promise<ProviderLyrics | false> => {
-	const [accessToken, appleMusicTrack] = await Abortable(parent, () =>
-		Promise.all([GetSpotifyAccessToken(), ResolveAppleMusicId(lyricsRequestURL, parent)]))
+	const appleMusicTrack = await Abortable(parent, () => ResolveAppleMusicId(lyricsRequestURL, parent))
 	const requestUrl = new URL(lyricsRequestURL)
 	if (appleMusicTrack) {
 		requestUrl.searchParams.set("apple_id", appleMusicTrack.id)
@@ -481,10 +480,9 @@ const FetchProviderLyrics = async (
 	let providerLyrics: ProviderLyrics | false | undefined
 	try {
 		providerLyrics = await Abortable(scope.Signal, async () => {
-			const response = await fetch(requestUrl.toString(), {
+			const response = await FetchLyrics(requestUrl.toString(), {
 				method: "GET", cache: "no-store", signal: scope.Signal,
 				headers: {
-					Authorization: `Bearer ${accessToken}`,
 					"X-Spotify-App-Platform": SpotifyPlatform.PlatformData.app_platform,
 					"X-Spotify-App-Version": SpotifyPlatform.version
 				}

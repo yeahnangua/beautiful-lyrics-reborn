@@ -213,7 +213,7 @@ async function setupLyricsPrefetch({queue=['B','C'],cache=new Map(),readCache=id
    BuildLyricsRequestURL:id=>'https://example.test/lyrics/'+id,TransformProviderLyrics:async value=>({...value,Language:'eng'}),
    SongLyricsLoadedSignal:{Fire:()=>published.push(state.state())},ShouldRefreshCachedLyrics:async()=>false,
    SpotifyPlatform:{PlatformData:{app_platform:'test'},version:'test'},GetSpotifyAccessToken:async()=> 'token',ResolveAppleMusicId:async()=>undefined,
-   fetch:(url,{signal})=>{const pending=deferred();requests.push({id:new URL(url).pathname.split('/').at(-1),signal,resolve:value=>pending.resolve(Response.json(value)),reject:pending.reject});return pending.promise;},
+   FetchLyrics:(url,{signal})=>{const pending=deferred();requests.push({id:new URL(url).pathname.split('/').at(-1),signal,resolve:value=>pending.resolve(Response.json(value)),reject:pending.reject});return pending.promise;},
    Abortable,CreateAbortScope,LyricsCacheExpiration:()=>{},Delay:async()=>{}},
   '({prefetch:PrefetchUpcomingLyrics,load:(id,queue)=>{Song=id===undefined?undefined:{Type:"Streamed",Id:id,Duration:180};SpotifyPlayer.data={nextItems:queue.map(track)};LoadSongLyrics()},state:()=>({SongLyrics,SongProviderLyrics,SongLyricsFromCache,HaveSongLyricsLoaded})})');
  return {...state,player,requests,published,cached,metrics,destroy:()=>cleanup.forEach(fn=>fn())};
@@ -323,11 +323,11 @@ test('actual loader removes only blocked track caches, retains unaffected/restor
   const fetch=async(url,options)=>{
    requests.push(url);
    if(url.includes('/lyrics-policy/'))return {ok:true,json:async()=>({blocks:await blocks})};
-   assert.equal(options.headers.Authorization,'Bearer token');return Response.json(fresh);
+   assert.equal(options.headers['X-Spotify-App-Platform'],'Win32_x86_64');return Response.json(fresh);
   };
   const shouldRefresh=evaluate(policyCode,{fetch,Abortable,CreateAbortScope},'ShouldRefreshCachedLyrics');
   const state=evaluate('let Song=initialSong,SongLyrics,SongProviderLyrics,SongLyricsFromCache=false,HaveSongLyricsLoaded=false;'+loader,
-   {initialSong:{Type:'Streamed',Id:'songA'},PlayerMaid:{Give(){}},SpotifyPlayer:{data:{nextItems:[]}},ShouldRefreshCachedLyrics:shouldRefresh,fetch,
+   {initialSong:{Type:'Streamed',Id:'songA'},PlayerMaid:{Give(){}},SpotifyPlayer:{data:{nextItems:[]}},ShouldRefreshCachedLyrics:shouldRefresh,FetchLyrics:fetch,
     ProviderLyricsStore:{GetItem:async()=>structuredClone(raw),DeleteItem:async id=>{deleted.push('raw:'+id)},SetItem:async(id,value)=>{cached.push(value)}},
     TransformedLyricsStore:{GetItem:async()=>({...raw,Language:'eng'}),DeleteItem:async id=>{deleted.push('transformed:'+id)},SetItem:async()=>{}},
     BuildLyricsRequestURL:()=> 'https://lyrics.txw.qzz.io/lyrics/songA',TransformProviderLyrics:async value=>{transforms.push(value);return {...structuredClone(value),Language:'eng'}},SongLyricsLoadedSignal:{Fire:()=>ready.resolve()},

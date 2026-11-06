@@ -1,4 +1,5 @@
 import { createAccessTokenProvider, getPlatformToken } from "./AccessToken.ts"
+import { createLyricsSessionClient } from "./LyricsSession.ts"
 import { PluginFetch as fetch } from "@Universal/Modules/Http.ts"
 // Imported Types
 import type SpicetifyTypes from "../Types/App/Spicetify.ts"
@@ -141,6 +142,12 @@ export const GetSpotifyAccessToken = createAccessTokenProvider(
 	() => SpotifyInternalFetch.get("sp://oauth/v2/token"),
 	() => getPlatformToken(SpotifyPlatform)
 )
+
+export const FetchLyrics = createLyricsSessionClient({
+	getSpotifyToken: GetSpotifyAccessToken,
+	getSpotifyClient: () => ({ appPlatform: SpotifyPlatform.PlatformData.app_platform, appVersion: SpotifyPlatform.version }),
+	invalidateSpotifyToken: token => GetSpotifyAccessToken.invalidate(token)
+})
 
 // Allows for Spotify API requests to be made without CosmosASYNC (which doesn't support all endpoints anymore)
 export const SpotifyFetch = (url: string): Promise<Response> => {

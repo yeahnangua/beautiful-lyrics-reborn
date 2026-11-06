@@ -1,8 +1,9 @@
 # Lyrics authentication verification — 2026-11-06
 
-The implementation now verifies Spotify credentials through the desktop lyrics
-service. Real-client and Cloudflare checks passed. Publication through the normal
-release workflow is the remaining step; production is still 5.2.3 at this check.
+Version 5.3.0 was published through the normal release workflow on 2026-11-06 at
+19:03 China time. Production verifies Spotify credentials through the desktop
+lyrics service and immediately requires signed sessions for every lyrics request.
+Real-client, production and release-asset checks passed.
 
 ## Completed checks
 
@@ -14,9 +15,13 @@ release workflow is the remaining step; production is still 5.2.3 at this check.
 | Server TypeScript, extension Deno and Folia TypeScript checks | Passed |
 | Extension release build with Deno 2 and Node.js 24 | 5.3.0 built |
 | Wrangler deployment dry run with all three authentication limiters | Passed |
-| Existing public update manifest and referenced bundle | Both returned HTTP 200 |
+| Public update manifest, main bundle and fullscreen bundle | HTTP 200; both SHA-256 hashes match the published manifest |
+| Production session and authenticated lyrics request from the real Spotify renderer | Both HTTP 200 |
+| Anonymous, missing-session, forged-session and token-mismatch requests | All HTTP 401 with stable error codes and no-store headers |
+| Updated Mac plugin and existing local lyrics cache | 5.3.0 loaded; provider and transformed caches remain valid |
 
-Git was fast-forwarded to `b96b611`. The original uncommitted changes to
+Git was initially fast-forwarded to `b96b611` and, after release, to the generated
+bundle commit `7018dff`. The original uncommitted changes to
 `Server/src/extension-release.ts` and `Server/test/extension-release.test.ts`
 still match their saved patch exactly and are excluded from this change.
 
@@ -42,8 +47,22 @@ credentials received 401 without any upstream request.
 At 18:32 China time, the real Spotify renderer completed the browser flow:
 session issuance 200, protected verification request 200, forged session 401,
 599 seconds of session lifetime remaining, and no-store response headers.
-The temporary Worker uses a separate hostname, secret and rate-limit namespaces;
-it has no production route or database bindings.
+The temporary Worker used a separate hostname, secret and rate-limit namespaces,
+with no production route or database bindings. It and its hostname and secret
+were removed after compatibility validation.
+
+At 19:05 China time, the production session endpoint returned 200 using the real
+desktop bearer. The protected lyrics endpoint returned line lyrics from Spotify
+with HTTP 200 and no-store headers. A repeated authorized request returned 200
+with the same lyrics hash. Requests for the same track without credentials,
+without a session, with a forged session, and with a mismatched bearer all
+returned 401. Their error codes were `missing_spotify_token` or `invalid_session`.
+
+The Mac loader fetched the public manifest without credentials and loaded 5.3.0.
+The current track's provider and transformed lyric caches remained present,
+unexpired and at cache version 11. Playback remained paused during these checks;
+playback, preloading, source filtering and cancellation are also covered by the
+automated test suites above.
 
 ## Authentication decision
 
@@ -62,11 +81,32 @@ requests returned 400. Website cookies are not part of the chosen protocol.
 
 ## Publishing and cleanup
 
-Before publishing, configure the independent production `LYRICS_SESSION_SECRET`
-and the `LYRICS_AUTH_COMPATIBILITY_VERIFIED=true` deployment acknowledgement, then
-run the existing release workflow. After publication, verify the public update
-assets, anonymous rejection and lyrics loading in the updated plugin. Remove
-the temporary verification Worker, hostname and secret, and restore the Mac's
-normal Spotify process with its loopback debugging port closed.
+The independent production `LYRICS_SESSION_SECRET` and the
+`LYRICS_AUTH_COMPATIBILITY_VERIFIED=true` deployment acknowledgement were configured
+after real-client compatibility passed. The
+[release workflow](https://github.com/yeahnangua/beautiful-lyrics-reborn/actions/runs/42205876673)
+completed successfully, including the tests, compatibility gate, generated-bundle
+commit, Worker/assets deployment and published-release verification. Implementation
+commits are `0db0663` and `44fd291`; the published bundle commit is `7018dff`.
+
+The public manifest identifies:
+
+| Asset | SHA-256 |
+| --- | --- |
+| Main bundle | `f834b9c58575e583dc0efc74094deb6016ccdbafb8aadcc3013176c50692df73` |
+| Fullscreen bundle | `8ed9f7eda0a50dbb877e27dc7e9ccb7b74574b34c3077b28a409fe864d72b469` |
+
+Production settings were read back to verify all three native limiter bindings
+and the signing-secret binding. Application logs are enabled; automatic invocation
+logs are disabled so request-detail events do not retain the lyrics session header.
+
+The temporary validation Worker, custom hostname and secret have been deleted.
+The Mac was returned to a normal running Spotify process, with port 9222 confirmed
+closed. Spicetify is 2.46.4, and the original theme, color scheme, extension list
+and custom-app settings still match the backup.
+
+Old plugin versions must reload or update to use the enforced protocol. A client
+with a valid, lyrics-capable Spotify credential can still imitate the public
+plugin protocol; this does not prove that a request came from official plugin code.
 
 See [the protocol and release instructions](lyrics-access.md).

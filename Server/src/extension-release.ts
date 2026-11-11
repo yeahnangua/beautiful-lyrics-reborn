@@ -26,6 +26,13 @@ export async function extensionReleaseResponse(request: Request, assets?: Fetche
   if (!latest) {
     headers.set("Cache-Control", "public, max-age=31536000, immutable");
     headers.set("CDN-Cache-Control", "public, max-age=31536000, immutable");
+    // Keep the asset cache result separate from any outer CDN cache status.
+    for (const name of ["CF-Cache-Status", "Age"]) {
+      const value = response.headers.get(name);
+      if (value !== null) headers.set(name, value);
+    }
+    headers.set("X-Assets-Cache-Status", response.headers.get("CF-Cache-Status") ?? "UNKNOWN");
+    headers.set("Access-Control-Expose-Headers", "CF-Cache-Status, Age, X-Assets-Cache-Status");
   }
   return new Response(response.body, { headers });
 }

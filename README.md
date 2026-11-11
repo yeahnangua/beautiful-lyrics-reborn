@@ -3,7 +3,7 @@
 Beautiful Lyrics Reborn is a community-maintained revival of the original
 Beautiful Lyrics Spicetify extension. It keeps the fullscreen/card/page lyric
 experience alive and adds a new Cloudflare Worker lyrics service for Spicy Lyrics,
-Spotify, QQ Music, KuGou, NetEase, and LRCLIB fallbacks.
+Spotify, QQ Music, KuGou, NetEase, Apple Music via Paxsenix, and LRCLIB fallbacks.
 
 This repository contains both pieces:
 
@@ -25,19 +25,24 @@ https://lyrics.txw.qzz.io
 - Online releases load the complete fullscreen runtime only when fullscreen/cinema is opened, with verified persistent caching. Offline bundles remain self-contained.
 - The statistics page includes provider performance, weighted latency percentiles, cache reuse and fullscreen usage. Aggregate plugin metrics are always enabled; no song, lyric, account, token or persistent user identifier is sent. See [loading and statistics details](docs/fullscreen-loading-and-statistics.md).
 - Reborn lyrics provider flow:
-  1. The first available syllable lyrics from direct Spicy Lyrics, QQ Music QRC, KuGou KRC, NetEase YRC; syllable providers are queried concurrently.
+  1. The first available syllable lyrics from direct Spicy Lyrics, QQ Music QRC, KuGou KRC, NetEase YRC,
+     Apple Music via Paxsenix; syllable providers are queried concurrently.
   2. The first available line lyrics from direct Spotify, QQ Music LRC, KuGou LRC,
      NetEase LRC, or LRCLIB, including saved line results
-     from Spicy Lyrics; line providers are queried concurrently.
+     from Spicy Lyrics and Apple Music; line providers are queried concurrently.
   3. Static fallbacks from Spicy Lyrics, Spotify, and LRCLIB.
 
 Lyrics preserve the quality order syllable > line > static. The syllable phase
 (including metadata) has a 15-second budget, followed by up to 10 seconds for
 line lyrics. Saved static results are used only after both phases miss or time out.
 
-The Lyrically/Paxsenix proxy has been removed; no requests are sent to
-`lyrics.paxsenix.org`. Its Apple Music, Deezer, YouTube, Genius, Spotify proxy,
-and KuGou/NetEase proxy paths are no longer queried. The direct KuGou and
+Only the Apple Music path on Lyrically/Paxsenix is enabled. The extension resolves
+the Apple Music track ID through iTunes on the user's device and sends `apple_id`
+and `apple_title` to the Worker. With a valid ID, the Worker requests
+`https://lyrics.paxsenix.org/apple-music/lyrics?id=...&v=2` in the syllable phase
+and retains any line lyrics for fallback. Without an ID, this source is skipped;
+the Worker does not search iTunes. Paxsenix Deezer, YouTube, Genius, Spotify,
+KuGou, and NetEase paths remain disabled. The direct KuGou and
 NetEase providers match the title, artist, and duration before retrieving KRC, YRC,
 or LRC. QQ Music uses the same matching checks for its QRC and LRC requests.
 KuGou decodes native word timings and skips unverified UGC candidates.

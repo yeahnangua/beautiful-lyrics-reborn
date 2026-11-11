@@ -5,6 +5,7 @@ import { hashLyrics, saveDiagnostics, cleanupFeedback, logLyricsQuery } from "./
 import type { RequestDiagnostics } from "./types";
 import { extensionReleaseResponse } from "./extension-release";
 // import { amllDbProvider } from "./providers/amlldb";
+import { appleMusicProvider } from "./providers/applemusic";
 import { kugouProvider } from "./providers/kugou";
 import { lrclibProvider } from "./providers/lrclib";
 import { neteaseProvider } from "./providers/netease";
@@ -26,6 +27,7 @@ const defaultService = createLyricsService({
   kugou: kugouProvider,
   netease: neteaseProvider,
   spicylyrics: spicyLyricsProvider,
+  applemusic: appleMusicProvider,
   spotify: spotifyProvider,
   lrclib: lrclibProvider
 });

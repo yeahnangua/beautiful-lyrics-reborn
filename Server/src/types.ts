@@ -103,6 +103,7 @@ export type ProviderClients = {
   kugou: TimedLyricsProvider;
   netease: TimedLyricsProvider;
   spicylyrics: SpicyLyricsProvider;
+  applemusic: AppleMusicProvider;
   spotify: SpotifyProvider;
   lrclib: LrclibProvider;
 };
@@ -132,6 +133,10 @@ export type LrclibProvider = {
 
 export type SpicyLyricsProvider = {
   getLyrics(track: TrackMetadata, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
+};
+
+export type AppleMusicProvider = {
+  getLyrics(track: TrackMetadata, context?: RequestContext): Promise<LineSyncedLyrics | SyllableSyncedLyrics | undefined>;
 };
 
 export type TimedLyricsProvider = {
@@ -167,7 +172,7 @@ export type ProviderAttempt = {
   lyricsType?: BeautifulLyrics["Type"];
   source?: LyricsSource;
   error?: string;
-  reason?: "not_configured" | "metadata_unavailable" | "token_unavailable";
+  reason?: "not_configured" | "metadata_unavailable" | "token_unavailable" | "apple_music_id_unavailable";
   matches?: LyricsSource[];
   retries: number;
   upstream: UpstreamEvent[];

@@ -12,7 +12,7 @@ export function providerName(name: string): string {
 export function candidateSource(name: string, lyrics: BeautifulLyrics): LyricsSource {
   return lyrics.Source ?? {
     Provider: providerName(name),
-    Transport: "direct"
+    Transport: providerName(name) === "applemusic" ? "lyrically" : "direct"
   };
 }
 

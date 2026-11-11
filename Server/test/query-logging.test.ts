@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createWorker } from "../src/index";
 import { createLyricsService } from "../src/service";
 import { logLyricsQuery } from "../src/diagnostics";
+import { createAppleMusicProvider } from "../src/providers/applemusic";
 import { createQqMusicProvider } from "../src/providers/qqmusic";
 import { createKugouProvider } from "../src/providers/kugou";
 import { createNeteaseProvider } from "../src/providers/netease";
@@ -15,7 +16,7 @@ const auth = await lyricsAuthFixture();
 const track = { id: "track", name: "Song", artists: ["Artist"] };
 const qqKey = "music.musichallSong.PlayLyricInfo.GetPlayLyricInfo";
 
-function providers(qqLyric?: string): ProviderClients {
+function providers(qqLyric?: string, appleLyrics?: unknown): ProviderClients {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     switch (url.hostname) {
@@ -33,10 +34,16 @@ function providers(qqLyric?: string): ProviderClients {
         : { code: 200, lrc: { lyric: "metadata without timestamps" } });
       case "spclient.wg.spotify.com": return new Response("UPSTREAM_SECRET", { status: 404 });
       case "lrclib.net": return Response.json([]);
+      case "lyrics.paxsenix.org": {
+        expect(url.pathname).toBe("/apple-music/lyrics");
+        expect(url.searchParams.get("id")).toBe("183919743");
+        return Response.json(appleLyrics ?? { syncType: "Line", lyrics: [] });
+      }
       default: throw new Error("Unexpected upstream host");
     }
   }) as typeof fetch;
   return {
+    applemusic: createAppleMusicProvider(fetchMock),
     spicylyrics: createSpicyLyricsProvider(fetchMock),
     qqmusic: createQqMusicProvider(fetchMock),
     kugou: createKugouProvider(fetchMock),
@@ -46,9 +53,11 @@ function providers(qqLyric?: string): ProviderClients {
   };
 }
 
-async function query(upstream: ProviderClients) {
+async function query(upstream: ProviderClients, appleMusicId?: string) {
   const worker = createWorker(createLyricsService(upstream));
-  return worker.fetch!(new Request("https://lyrics.test/lyrics/track?track_name=Song&artist_name=Artist", {
+  const url = new URL("https://lyrics.test/lyrics/track?track_name=Song&artist_name=Artist");
+  if (appleMusicId) url.searchParams.set("apple_id", appleMusicId);
+  return worker.fetch!(new Request(url, {
     headers: { ...auth.headers }
   }), { ...auth.env, SPICY_LYRICS_KEY: "SPICY_SECRET" }, {} as ExecutionContext);
 }
@@ -60,6 +69,22 @@ beforeEach(() => {
 afterEach(() => { setSpicyLyricsApiKey(undefined); vi.restoreAllMocks(); });
 
 describe("Worker lyrics query logs", () => {
+  it("shows the restored Apple Music result in the message and structured query details", async () => {
+    const response = await query(providers(undefined, { syncType: "Syllable", lyrics: [
+      { text: [{ text: "APPLE_LYRIC_BODY_SECRET", timestamp: 1000, endtime: 2000 }] }
+    ] }), "183919743");
+    expect(await response.json()).toMatchObject({ Type: "Syllable",
+      Source: { Provider: "applemusic", Transport: "lyrically", TrackId: "183919743", MatchedTitle: "Song" } });
+    expect(console.log).toHaveBeenCalledTimes(1);
+    const text = vi.mocked(console.log).mock.calls[0]![0] as string;
+    const record = JSON.parse(text);
+    expect(record).toMatchObject({ provider: "applemusic", outcome: "success",
+      message: expect.stringContaining("Song — Artist | 已找到歌词 | 来源：applemusic | 逐字") });
+    expect(record.queries).toContainEqual(expect.objectContaining({ provider: "applemusic", found: true, selected: true,
+      requests: [expect.objectContaining({ endpoint: "lyrics.paxsenix.org/apple-music/lyrics", operation: "lyrics", status: 200, result: "found" })] }));
+    expect(text).not.toContain("APPLE_LYRIC_BODY_SECRET");
+  });
+
   it.each([
     { result: { songCount: 0 }, expected: "no_results" },
     { result: {}, expected: "missing_song_list" }
@@ -92,8 +117,9 @@ describe("Worker lyrics query logs", () => {
       event: "lyrics-query", level: "info", track, outcome: "none",
       message: expect.stringMatching(/^\[lyrics-query\] Song — Artist \| 未找到歌词 \| 来源：无 \| \d+ms$/)
     });
-    expect(record.queries).toHaveLength(9);
+    expect(record.queries).toHaveLength(10);
     expect(record.queries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ provider: "applemusic", outcome: "none", reason: "apple_music_id_unavailable", requests: [] }),
       expect.objectContaining({ provider: "spicylyrics", outcome: "failed", requests: [expect.objectContaining({ status: 403, result: "http_error" })] }),
       expect.objectContaining({ provider: "qqmusic", stage: "line", outcome: "failed", matches: [{ id: "123", title: "Song" }], requests: [
         expect.objectContaining({ operation: "search", query: "Song", resultCount: 1, matchedCount: 1 }),

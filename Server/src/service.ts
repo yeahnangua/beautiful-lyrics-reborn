@@ -115,7 +115,8 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
           run("spicylyrics", scope => providers.spicylyrics.getLyrics({ id: trackId, name: "", artists: [] }, scope), syllable),
           run("qq music", withMetadata((t, scope) => providers.qqmusic.getSyllableLyrics(t, scope)), syllable),
           run("kugou direct", withMetadata((t, scope) => providers.kugou.getSyllableLyrics(t, scope)), syllable),
-          run("netease direct", withMetadata((t, scope) => providers.netease.getSyllableLyrics(t, scope)), syllable)
+          run("netease direct", withMetadata((t, scope) => providers.netease.getSyllableLyrics(t, scope)), syllable),
+          run("applemusic", withMetadata((t, scope) => providers.applemusic.getLyrics(t, scope)), syllable)
         );
         let winner = await first(candidates, lyrics => lyrics.Type === "Syllable");
         if (winner && isLiveTitle(matchedTitle(winner[1]) ?? metadata?.name ?? "")) {

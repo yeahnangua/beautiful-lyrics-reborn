@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "version": "5.3.1",
-  "sha256": "84842de13eb80f40e34d4b23fc1e19833f4d20a8689ce7973fe7e33e81f42fce",
-  "file": "beautiful-lyrics-reborn.84842de13eb80f40.mjs",
+  "sha256": "fbfbd4e1b93d4f0b82b3361238c5af736f3ba2884de924752fcbcb1b1f1a6ad8",
+  "file": "beautiful-lyrics-reborn.fbfbd4e1b93d4f0b.mjs",
   "fullscreen": {
     "api": 1,
-    "sha256": "4eb25c024df23b3981dc456d9de4f3d9ad191426a0fd6e7324c7f2389d69dd4f",
-    "file": "beautiful-lyrics-reborn-fullscreen.4eb25c024df23b39.mjs"
+    "sha256": "c42ba9c393dc83c14d209dc33a44c50eac3f7f59021e621184fb48a12c5b394d",
+    "file": "beautiful-lyrics-reborn-fullscreen.c42ba9c393dc83c1.mjs"
   }
 }

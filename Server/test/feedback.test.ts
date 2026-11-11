@@ -5,17 +5,19 @@ import { readFile, readdir } from "node:fs/promises";
 import { Miniflare } from "miniflare";
 import { beforeAll, afterAll, beforeEach, describe, it, expect, vi } from "vitest";
 import { feedbackResponse } from "../src/feedback";
-import { cleanupFeedback, saveDiagnostics, loadDiagnostics, hashLyrics } from "../src/diagnostics";
+import { cleanupFeedback, saveDiagnostics, saveOriginDiagnostics, loadDiagnostics, hashLyrics } from "../src/diagnostics";
 import { createWorker, type WorkerEnv } from "../src/index";
 import type { RequestDiagnostics, BeautifulLyrics } from "../src/types";
 import { loadSourcePolicy } from "../src/source-policy";
 import type { LyricsService } from "../src/service";
+import { packOrigin, unpackOrigin } from "../src/origin-storage";
 
 let mf: Miniflare;
 let db: D1Database;
 let env: WorkerEnv;
 const base = "https://lyrics.test";
 const original: BeautifulLyrics = { Type: "Static", Lines: [{ Text: "  lyric <script>alert(1)</script>  " }] };
+const providerLyrics = (): BeautifulLyrics => ({ ...structuredClone(original), Source: { Provider: "netease", Transport: "direct" } });
 function payload(extra: Record<string, unknown> = {}) {
   return { submissionId: crypto.randomUUID(), track: { id: "track", name: "Song", artists: ["Artist"] },
     playbackPosition: 10, lyricsOffset: .2, extensionVersion: "5.2.2", fromCache: false, original, displayed: original, ...extra };
@@ -58,6 +60,7 @@ beforeAll(async () => {
 afterAll(async () => { await mf?.dispose(); });
 beforeEach(async () => {
   env = { ...auth.env, FEEDBACK_DB: db, ADMIN_PASSWORD: "test-password", ADMIN_SESSION_SECRET: "test-session-key-with-at-least-32-bytes" };
+  await db.exec("DELETE FROM lyric_origin_runs;");
   await db.batch(["source_block_history", "source_blocks", "lyric_reports", "lyric_requests", "rate_limits", "admin_sessions", "diagnostic_daily_budget"].map(table => db.prepare(`DELETE FROM ${table}`)));
 });
 
@@ -115,11 +118,11 @@ describe("source-block administration with real D1", () => {
     const filtered = await (await call("/admin/api/source-blocks?spotifyId=" + rule.spotifyId + "&enabled=false", "GET", undefined, cookie)).json() as any;
     expect(filtered.items).toHaveLength(1);expect(filtered.items[0]).toMatchObject({ ...rule, enabled: false });
   });
-  it("serves only enabled policy pairs without private notes, applies them per track, and fails open for lyrics", async () => {
+  it("serves enabled policy pairs without notes and rejects lyrics when policy cannot be read", async () => {
     const cookie = await login();
     await call("/admin/api/source-blocks", "PUT", rule, cookie);
     await call("/admin/api/source-blocks", "PUT", { ...rule, lyricsType: "Line", enabled: false }, cookie);
-    const getLyrics = vi.fn<LyricsService["getLyrics"]>(async () => structuredClone(original));
+    const getLyrics = vi.fn<LyricsService["getLyrics"]>(async () => providerLyrics());
     const handler = createWorker({ getLyrics });
     const fetch = (path: string) => handler.fetch!(new Request(base + path, { headers: { ...tokenAuth.headers } }), env, {} as ExecutionContext) as Promise<Response>;
     const response = await fetch("/lyrics-policy/" + rule.spotifyId);
@@ -132,10 +135,10 @@ describe("source-block administration with real D1", () => {
     expect(getLyrics.mock.calls[1]?.[4]).toMatchObject({ sourceBlocks: [] });
     env.FEEDBACK_DB = { prepare: () => { throw Error("PRIVATE DATABASE ERROR"); } } as unknown as D1Database;
     expect((await fetch("/lyrics-policy/" + rule.spotifyId)).status).toBe(503);
-    expect((await fetch("/lyrics/" + rule.spotifyId)).status).toBe(200);
-    expect(getLyrics.mock.calls[2]?.[4]).toMatchObject({ sourceBlocks: [], diagnostics: { sourcePolicyStatus: "unavailable" } });
+    expect((await fetch("/lyrics/" + rule.spotifyId)).status).toBe(503);
+    expect(getLyrics).toHaveBeenCalledTimes(2);
     env = {};
-    expect(await (await fetch("/lyrics-policy/" + rule.spotifyId)).json()).toEqual({ blocks: [] });
+    expect((await fetch("/lyrics-policy/" + rule.spotifyId)).status).toBe(503);
   });
 });
 
@@ -257,25 +260,26 @@ describe("feedback with real local D1", () => {
     await cleanupFeedback(db);
     expect((await db.prepare("SELECT * FROM report_snapshots").all()).results).toEqual([]);
   });
-  it("fails explicitly without D1 while lyrics continue without scheduling a write", async () => {
+  it("fails explicitly without the policy database without querying lyrics or scheduling a write", async () => {
     delete env.FEEDBACK_DB;
     expect((await call("/reports", "POST", payload())).status).toBe(503);
     const pending: Promise<unknown>[] = [];
-    const handler = createWorker({ getLyrics: async () => structuredClone(original) });
-    const response = await handler.fetch!(new Request(base + "/lyrics/track", { headers: { ...auth.headers } }), auth.env, { waitUntil: (promise: Promise<unknown>) => pending.push(promise) } as unknown as ExecutionContext);
-    const lyrics = await response.json() as BeautifulLyrics;
-    expect(lyrics.LyricsHash).toMatch(/^[a-f0-9]{64}$/);
-    expect(lyrics.RequestId).toMatch(/^[a-f0-9-]{36}$/);
+    const getLyrics = vi.fn(async () => providerLyrics());
+    const handler = createWorker({ getLyrics });
+    const response = await handler.fetch!(new Request(base + "/lyrics/track", { headers: { ...auth.headers } }), env, { waitUntil: (promise: Promise<unknown>) => pending.push(promise) } as unknown as ExecutionContext);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: "source_policy_unavailable" });
+    expect(getLyrics).not.toHaveBeenCalled();
     expect(pending).toHaveLength(0);
     await Promise.all(pending);
   });
   it("schedules full request logs through waitUntil", async () => {
     const pending: Promise<unknown>[] = [];
-    const handler = createWorker({ getLyrics: async () => structuredClone(original) });
+    const handler = createWorker({ getLyrics: async () => providerLyrics() });
     const response = await handler.fetch!(new Request(base + "/lyrics/track", { headers: { ...auth.headers } }), env,
       { waitUntil: (promise: Promise<unknown>) => pending.push(promise) } as unknown as ExecutionContext);
     const lyrics = await response.json() as BeautifulLyrics;
-    expect(pending).toHaveLength(1);
+    expect(pending.length).toBeGreaterThan(0);
     await Promise.all(pending);
     expect((await loadDiagnostics(db, lyrics.RequestId!))?.outcome).toBe("success");
   });
@@ -298,19 +302,24 @@ describe("feedback with real local D1", () => {
     const attempts = Array.from({ length: 30 }, () => structuredClone(record().attempts[0]!));
     const handler = createWorker({ getLyrics: async (_id, _token, _metadata, _client, context) => {
       context!.diagnostics!.attempts = structuredClone(attempts);
-      return structuredClone(original);
+      return providerLyrics();
     } });
     const responses = await Promise.all(Array.from({ length: 12 }, () => handler.fetch!(
       new Request(base + "/lyrics/track", { headers: { ...auth.headers } }), staleEnv, {} as ExecutionContext)));
     const lyrics = await Promise.all(responses.map(response => response.json() as Promise<BeautifulLyrics>));
-    for (const lyric of lyrics) expect((await loadDiagnostics(db, lyric.RequestId!))?.attempts).toEqual(attempts);
+    for (const lyric of lyrics) {
+      const request = await loadDiagnostics(db, lyric.RequestId!);
+      expect(request?.attempts).toEqual([]);
+      expect(request?.origin?.attempts).toEqual(attempts);
+    }
     expect((await db.prepare("SELECT count(*) AS n FROM lyric_requests").first<{ n: number }>())?.n).toBe(12);
     expect((await db.prepare("SELECT count FROM diagnostic_daily_budget WHERE day=?").bind(day).first<{ count: number }>())?.count).toBe(1000);
     const { id } = await (await call("/reports", "POST", payload({ requestId: lyrics[0]!.RequestId, lyricsHash: lyrics[0]!.LyricsHash }))).json() as { id: string };
     const detail = await (await call("/admin/api/reports/" + id, "GET", undefined, await login())).json() as any;
     expect(detail.original).toEqual(original);
     expect(detail.diagnosticsAvailable).toBe(true);
-    expect(detail.diagnostics.attempts).toEqual(attempts);
+    expect(detail.diagnostics.attempts).toEqual([]);
+    expect(detail.diagnostics.origin.attempts).toEqual(attempts);
   });
   it("reduces actual D1 rows written while retaining ID lookups and time query indexes", async () => {
     const log = record();
@@ -412,11 +421,15 @@ describe("feedback with real local D1", () => {
     expect(row?.outcome).toBe(outcome);
     expect(row?.data).not.toContain("PRIVATE");
   });
-  it("does not let storage failures fail a lyric response", async () => {
+  it("does not let diagnostic write failures fail lyrics after a successful policy read", async () => {
     const broken = { prepare: () => { throw Error("db offline"); } } as unknown as D1Database;
     env.FEEDBACK_DB = broken;
     expect((await call("/reports", "POST", payload())).status).toBe(503);
-    const handler = createWorker({ getLyrics: async () => structuredClone(original) });
+    env.FEEDBACK_DB = {
+      prepare: (sql: string) => db.prepare(sql),
+      batch: async () => { throw Error("diagnostics offline"); }
+    } as unknown as D1Database;
+    const handler = createWorker({ getLyrics: async () => providerLyrics() });
     const response = await handler.fetch!(new Request(base + "/lyrics/track", { headers: { ...auth.headers } }), env, {} as ExecutionContext);
     expect(response.status).toBe(200);
   });
@@ -426,5 +439,50 @@ describe("feedback with real local D1", () => {
     expect(await hashLyrics(original)).not.toBe(await hashLyrics({ Type: "Static", Lines: [{ Text: "different" }] }));
     const line: BeautifulLyrics = { Type: "Line", StartTime: 1, EndTime: 2, Content: [] };
     expect(await hashLyrics(line)).not.toBe(await hashLyrics({ ...line, StartTime: 1.1 }));
+  });
+  it.each([
+    ["origin", "request", "report"], ["origin", "report", "request"],
+    ["request", "origin", "report"], ["request", "report", "origin"],
+    ["report", "origin", "request"], ["report", "request", "origin"]
+  ])("retains origin diagnostics when commits arrive as %j, %j, %j", async (...order) => {
+    const requestId = crypto.randomUUID(), originId = crypto.randomUUID();
+    const origin = record({ id: originId, originRunId: originId, triggerRequestId: requestId,
+      startedAt: new Date(Date.now() - 15 * 86400_000).toISOString() });
+    const request = record({ id: requestId, originRunId: originId, cache: "hit", attempts: [] });
+    let reportId = "";
+    for (const operation of order) {
+      if (operation === "origin") await saveOriginDiagnostics(db, origin);
+      if (operation === "request") await saveDiagnostics(db, request);
+      if (operation === "report") {
+        const response = await call("/reports", "POST", payload({ requestId }));
+        expect(response.status).toBe(201);
+        reportId = (await response.json() as { id: string }).id;
+      }
+    }
+    expect(await loadDiagnostics(db, requestId)).toMatchObject({ attempts: [], origin, originStatus: "available" });
+    const stored = await db.prepare("SELECT diagnostics,origin_run_id FROM lyric_reports WHERE id=?")
+      .bind(reportId).first<{ diagnostics: string; origin_run_id: string }>();
+    expect(stored?.origin_run_id).toBe(originId);
+    expect(await unpackOrigin(JSON.parse(stored!.diagnostics).origin)).toEqual(origin);
+    await cleanupFeedback(db);
+    expect(await loadDiagnostics(db, requestId)).toMatchObject({ originStatus: "unavailable" });
+    const detail = await (await call("/admin/api/reports/" + reportId, "GET", undefined, await login())).json() as any;
+    expect(detail.diagnostics.origin).toEqual(origin);
+    expect(detail.diagnostics.originStatus).toBe("available");
+  });
+  it("accepts feedback attributed to the existing lrc.red provider", async () => {
+    const response = await call("/reports", "POST", payload({ source: { Provider: "lrc.red", Transport: "direct", TrackId: "USABC2400001" } }));
+    expect(response.status).toBe(201);
+    const row = await db.prepare("SELECT provider FROM lyric_reports").first<{ provider: string }>();
+    expect(row?.provider).toBe("lrc.red");
+  });
+  it("round-trips complete Unicode diagnostics and keeps older plaintext origins readable", async () => {
+    const origin = record({ track: { id: "track", name: "成都 🎵", artists: ["赵雷"] } });
+    origin.attempts = Array.from({ length: 20 }, () => structuredClone(origin.attempts[0]!));
+    const packed = await packOrigin(origin);
+    expect(packed.length).toBeLessThan(JSON.stringify(origin).length / 2);
+    expect(await unpackOrigin(JSON.parse(packed))).toEqual(origin);
+    expect(await unpackOrigin(origin)).toEqual(origin);
+    await expect(unpackOrigin({ encoding: "gzip-base64", data: "broken" })).rejects.toThrow();
   });
 });

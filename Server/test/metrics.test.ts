@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { metricsResponse, validateEvents, recordRequestMetrics, statisticsQueries, detailedStatistics } from '../src/metrics';
+import { metricsResponse, validateEvents, recordRequestMetrics, recordProviderMetrics, statisticsQueries, detailedStatistics } from '../src/metrics';
 import type { RequestDiagnostics } from '../src/types';
 const batch={schema:1,events:[{kind:'lyrics_load',version:'5.2.3',durationMs:25,source:'prefetch',outcome:'success',lyricsType:'Line'}]};
 describe('anonymous metrics',()=>{
@@ -24,7 +24,9 @@ describe('anonymous metrics',()=>{
    {provider:'spotify',stage:'line',startedAt:'date',durationMs:40,outcome:'success',selected:true,lyricsType:'Line',retries:1,upstream:[]},
   ]};
   recordRequestMetrics({METRICS:{writeDataPoint} as any},record,{Type:'Line',Content:[],StartTime:0,EndTime:1});
-  expect(writeDataPoint.mock.calls).toHaveLength(4);expect(writeDataPoint.mock.calls[3]?.[0].doubles[2]).toBe(1);
+  expect(writeDataPoint.mock.calls).toHaveLength(1);
+  recordProviderMetrics({METRICS:{writeDataPoint} as any},record);
+  expect(writeDataPoint.mock.calls).toHaveLength(5);expect(writeDataPoint.mock.calls[4]?.[0].doubles[2]).toBe(1);
   expect(JSON.stringify(writeDataPoint.mock.calls)).not.toContain('secret');
  });
  it('queries counts and latencies using sample weights and tolerates unconfigured data',async()=>{

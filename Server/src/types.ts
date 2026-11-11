@@ -189,7 +189,16 @@ export type RequestDiagnostics = {
   durationMs: number;
   outcome: "pending" | "success" | "none" | "failed" | "cancelled";
   /** Whether this request was answered from the stored lyrics cache. */
-  cache?: "hit" | "miss";
+  cache?: "hit" | "miss" | "bypass" | "unknown";
+  edgeCacheStatus?: string;
+  cacheGeneratedAt?: string;
+  cacheVersion?: number;
+  originRunId?: string;
+  /** Set only on an origin run; never included in cached lyric content. */
+  triggerRequestId?: string;
+  /** Hydrated for admin/feedback, not duplicated in every request row. */
+  origin?: RequestDiagnostics;
+  originStatus?: "available" | "unavailable";
   source?: LyricsSource;
   lyricsHash?: string;
   attempts: ProviderAttempt[];

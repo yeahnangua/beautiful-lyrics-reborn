@@ -1,6 +1,7 @@
 import type { BeautifulLyrics, RequestDiagnostics } from "./types";
 import { PluginFetch as fetch } from "../../Universal/Modules/Http";
 import { candidateSource } from "./source-policy";
+import { lyricsCacheMetricVersion } from "./cache-version";
 
 export type MetricsEnv = {
   METRICS?: AnalyticsEngineDataset;
@@ -86,7 +87,18 @@ export function recordRequestMetrics(env: MetricsEnv, record: RequestDiagnostics
   if (!env.METRICS) return;
   try {
     const type = lyrics?.Type ?? "none";
-    env.METRICS.writeDataPoint({ indexes: ["server:request"], blobs: ["server", "request", "v1", record.outcome, type, record.cache ?? "none"], doubles: [record.durationMs] });
+    env.METRICS.writeDataPoint({ indexes: ["server:request"],
+      blobs: ["server", "request", "v1", record.outcome, type, record.cache ?? "none", lyricsCacheMetricVersion],
+      doubles: [record.durationMs] });
+  } catch { console.warn("Metrics write failed"); }
+}
+/** Source health counts real executions, never requests served by a shared fill. */
+export function recordProviderMetrics(env: MetricsEnv, record: RequestDiagnostics): void {
+  if (!env.METRICS || record.cache === "hit") return;
+  try {
+    env.METRICS.writeDataPoint({ indexes: ["server:origin"],
+      blobs: ["server", "origin", "v1", record.outcome, "", "", lyricsCacheMetricVersion],
+      doubles: [record.durationMs, record.attempts.reduce((total, attempt) => total + attempt.upstream.length, 0)] });
     for (const attempt of record.attempts) {
       if (attempt.stage === "metadata") continue;
       const source = attempt.source ?? candidateSource(attempt.provider, { Type: "Static", Lines: [] });
@@ -118,12 +130,13 @@ export const statisticsQueries = (days: number) => {
     client: `SELECT blob2 AS kind, blob4 AS source, blob5 AS outcome, blob6 AS lyricsType, blob7 AS view, blob8 AS mode, sum(_sample_interval) AS count, ${latency}, min(timestamp) AS since FROM lyrics_metrics WHERE ${range} AND blob1='client' GROUP BY kind, source, outcome, lyricsType, view, mode`,
     trend: `SELECT toDate(timestamp) AS day, blob1 AS origin, blob2 AS kind, blob4 AS dimension, sum(_sample_interval) AS count FROM lyrics_metrics WHERE ${range} AND ((blob1='server' AND blob2='request') OR (blob1='client' AND blob2 IN ('session','fullscreen_first','lyrics_load','fullscreen_load'))) GROUP BY day, origin, kind, dimension ORDER BY day`,
     latency: `SELECT blob1 AS origin, blob2 AS kind, ${latency} FROM lyrics_metrics WHERE ${range} AND ((blob1='server' AND blob2='request' AND blob4!='cancelled') OR (blob1='client' AND blob2 IN ('lyrics_load','lyrics_display','fullscreen_load'))) GROUP BY origin, kind`,
-    cache: `SELECT blob6 AS cache, blob4 AS outcome, blob5 AS lyricsType, sum(_sample_interval) AS count, ${latency} FROM lyrics_metrics WHERE ${range} AND blob1='server' AND blob2='request' GROUP BY cache, outcome, lyricsType`,
+    cache: `SELECT blob6 AS cache, blob4 AS outcome, blob5 AS lyricsType, blob7 AS cacheVersion, sum(_sample_interval) AS count, ${latency} FROM lyrics_metrics WHERE ${range} AND blob1='server' AND blob2='request' GROUP BY cache, outcome, lyricsType, cacheVersion`,
+    origins: `SELECT blob7 AS cacheVersion, blob4 AS outcome, sum(_sample_interval) AS count, sum(double2 * _sample_interval) AS upstreamRequests, ${latency} FROM lyrics_metrics WHERE ${range} AND blob1='server' AND blob2='origin' GROUP BY cacheVersion, outcome`,
     providerLatency: `SELECT blob4 AS provider, blob5 AS transport, ${latency} FROM lyrics_metrics WHERE ${range} AND blob1='server' AND blob2='provider' AND blob7 IN ('success','none','failed','timeout') GROUP BY provider, transport`,
   };
 };
 export async function detailedStatistics(env: MetricsEnv, days: number) {
-  if (!env.METRICS) return { available: false, server: [], providers: [], client: [], trend: [], latency: [], providerLatency: [], cache: [] };
+  if (!env.METRICS) return { available: false, server: [], providers: [], client: [], trend: [], latency: [], providerLatency: [], cache: [], origins: [] };
   const queries = statisticsQueries(days);
   const entries = await Promise.all(Object.entries(queries).map(async ([key, sql]) => [key, await queryMetrics(env, sql)] as const));
   return { available: true, ...Object.fromEntries(entries) };

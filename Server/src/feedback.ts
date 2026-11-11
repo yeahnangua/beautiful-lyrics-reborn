@@ -1,5 +1,6 @@
 import { adminHtml } from "./admin";
-import { loadDiagnostics, sha256 } from "./diagnostics";
+import { hydrateOriginDiagnostics, loadDiagnostics, sha256 } from "./diagnostics";
+import { sourceProviders } from "./source-policy";
 import type { BeautifulLyrics, LyricsSource, TrackMetadata } from "./types";
 import { listSourceBlocks, putSourceBlock, sourceBlockDetail, SourceBlockError } from "./source-blocks";
 
@@ -59,7 +60,8 @@ function source(value: unknown): LyricsSource | undefined {
   if (value === undefined) return undefined;
   const input = object(value);
   const Provider = text(input.Provider, 50);
-  if (!/^[a-z0-9_-]+$/.test(Provider) || !["direct", "lyrically"].includes(String(input.Transport))) throw new HttpError(400, "Invalid source");
+  if ((!sourceProviders.includes(Provider as typeof sourceProviders[number]) && !/^[a-z0-9_-]+$/.test(Provider))
+    || !["direct", "lyrically"].includes(String(input.Transport))) throw new HttpError(400, "Invalid source");
   const result: LyricsSource = { Provider, Transport: input.Transport as LyricsSource["Transport"] };
   for (const key of ["TrackId", "LyricsId", "MatchedTitle"] as const) {
     if (input[key] !== undefined) result[key] = text(input[key], key === "MatchedTitle" ? 500 : 300);
@@ -179,7 +181,8 @@ async function reportDetail(db: D1Database, id: string) {
   if (!row) throw new HttpError(404, "Report not found");
   const snapshots = await db.prepare("SELECT original,displayed FROM report_snapshots WHERE report_id=?").bind(id).first<{ original: string; displayed: string }>();
   const history = await db.prepare("SELECT created_at,status,note FROM report_history WHERE report_id=? ORDER BY created_at,id").bind(id).all();
-  const diagnostics = row.diagnostics ? JSON.parse(row.diagnostics) : row.request_id ? await loadDiagnostics(db, row.request_id) : null;
+  const diagnostics = row.diagnostics ? await hydrateOriginDiagnostics(db, JSON.parse(row.diagnostics))
+    : row.request_id ? await loadDiagnostics(db, row.request_id) : null;
   return { id: row.id, createdAt: row.created_at, ...JSON.parse(row.data), status: row.status,
     original: snapshots ? JSON.parse(snapshots.original) : null, displayed: snapshots ? JSON.parse(snapshots.displayed) : null,
     diagnostics, diagnosticsAvailable: diagnostics !== null, history: history.results };
@@ -208,10 +211,10 @@ export async function feedbackResponse(request: Request, env: FeedbackEnv): Prom
       const id = crypto.randomUUID();
       const diagnostics = payload.requestId ? await loadDiagnostics(db, payload.requestId) : null;
       await db.batch([
-        db.prepare(`INSERT INTO lyric_reports(id,submission_id,created_at,spotify_id,song,artists,provider,category,request_id,data,diagnostics)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(submission_id) DO NOTHING`).bind(id, payload.submissionId, new Date().toISOString(), payload.track.id,
+        db.prepare(`INSERT INTO lyric_reports(id,submission_id,created_at,spotify_id,song,artists,provider,category,request_id,data,diagnostics,origin_run_id)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(submission_id) DO NOTHING`).bind(id, payload.submissionId, new Date().toISOString(), payload.track.id,
           payload.track.name, payload.track.artists.join(", "), payload.source?.Provider ?? "unknown", payload.category, payload.requestId || null,
-          JSON.stringify(data), diagnostics ? JSON.stringify(diagnostics) : null),
+          JSON.stringify(data), diagnostics ? JSON.stringify(diagnostics) : null, diagnostics?.originRunId ?? null),
         db.prepare(`INSERT INTO report_snapshots(report_id,original,displayed) SELECT id,?,? FROM lyric_reports WHERE submission_id=?
           ON CONFLICT(report_id) DO NOTHING`).bind(JSON.stringify(original), JSON.stringify(displayed), payload.submissionId),
         // Close the race where logging committed after the first lookup but before this batch.
@@ -220,7 +223,16 @@ export async function feedbackResponse(request: Request, env: FeedbackEnv): Prom
           (SELECT json_group_array(json(data)) FROM (SELECT data FROM provider_attempts WHERE request_id=? ORDER BY ordinal)),'[]'))) END
           FROM lyric_requests WHERE id=?) WHERE submission_id=? AND diagnostics IS NULL
           AND EXISTS(SELECT 1 FROM lyric_requests WHERE id=?)`)
-          .bind(payload.requestId, payload.requestId, payload.submissionId, payload.requestId)
+          .bind(payload.requestId, payload.requestId, payload.submissionId, payload.requestId),
+        // Resolve both races inside this transaction: request diagnostics may
+        // arrive before the report, and origin diagnostics may arrive first.
+        db.prepare("UPDATE lyric_reports SET origin_run_id=COALESCE(origin_run_id,json_extract(diagnostics,'$.originRunId')) " +
+          "WHERE submission_id=? AND diagnostics IS NOT NULL").bind(payload.submissionId),
+        db.prepare("UPDATE lyric_reports SET diagnostics=json_set(diagnostics,'$.origin'," +
+          "json((SELECT data FROM lyric_origin_runs WHERE id=origin_run_id)),'$.originStatus','available') " +
+          "WHERE submission_id=? AND origin_run_id IS NOT NULL AND diagnostics IS NOT NULL " +
+          "AND (json_type(diagnostics,'$.origin') IS NULL OR json_type(diagnostics,'$.origin')='null') " +
+          "AND EXISTS(SELECT 1 FROM lyric_origin_runs WHERE id=origin_run_id)").bind(payload.submissionId)
       ]);
       const saved = await db.prepare("SELECT id FROM lyric_reports WHERE submission_id=?").bind(payload.submissionId).first<{ id: string }>();
       if (!saved) throw new Error("Missing committed report");

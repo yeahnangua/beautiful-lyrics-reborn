@@ -64,7 +64,7 @@ describe("attribution as the final lyric", () => {
     expect(appendAttributionLyric(line, 0.05)).toMatchObject({ Content: [expect.anything(), { StartTime: 0, EndTime: 0.05 }] });
   });
   it("Worker inserts the line in its JSON response without mutating a reusable provider result", async () => {
-    const getLyrics = vi.fn().mockResolvedValue(structuredClone(line));
+    const getLyrics = vi.fn().mockResolvedValue({ ...structuredClone(line), Source: { Provider: "spicylyrics", Transport: "direct" } });
     const worker = createWorker({ getLyrics });
     for (const duration of [265.437, 266.12]) {
       const request = new Request(`https://lyrics.test/lyrics/track?track_name=Song&artist_name=Artist&duration=${duration}`,

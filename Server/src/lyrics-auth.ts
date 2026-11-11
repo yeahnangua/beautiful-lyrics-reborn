@@ -16,7 +16,7 @@ export const lyricsCorsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers":
     `Authorization, Content-Type, User-Agent, X-Spotify-App-Platform, X-Spotify-App-Version, ${LyricsSessionHeader}`,
-  "Access-Control-Expose-Headers": "Retry-After"
+  "Access-Control-Expose-Headers": "Retry-After, X-Lyrics-Cache"
 };
 export const lyricsResponseHeaders = {
   ...lyricsCorsHeaders,

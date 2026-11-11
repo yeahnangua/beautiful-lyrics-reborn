@@ -61,13 +61,14 @@ Client cache version 11 refreshes responses created before this change.
 
 ## Server cache
 
-Lyrics use a dedicated D1 database named `lyrics-cache`, bound as
-`LYRICS_CACHE_DB`. Apply `Server/cache-migrations/0001_lyrics_cache.sql` to that
-database; feedback/diagnostics stay in `FEEDBACK_DB`. `node Tasks/Deploy.mjs`
-resolves the cache database UUID by name (or uses `LYRICS_CACHE_DATABASE_ID`),
-applies each database's own migrations, and then deploys. See
-[lyrics-cache.md](lyrics-cache.md) for manual setup.
+Lyrics use Workers Cache on the private `LyricsOrigin` entrypoint. The public
+entrypoint authenticates every request and reads source policy before accessing
+the cache. `FEEDBACK_DB` retains source rules, feedback and diagnostics; there is
+no lyrics D1 binding or migration. `node Tasks/Deploy.mjs` applies only feedback
+migrations before deploying. See [lyrics-cache.md](lyrics-cache.md).
 
-Without the cache binding or migration, lyrics still resolve from providers.
-Unexpired higher-quality rows cannot be overwritten by a lower-quality
-concurrent result; expired rows may be replaced at any quality tier.
+Ordinary deployments share cached content. Changes affecting content or source
+selection require an explicit `lyricsCacheVersion` bump. Requests retain their
+quality preference, but CDN fills do not provide the former D1 atomic comparison
+between concurrent results. `LYRICS_CACHE_MODE=off` bypasses caching while retaining
+authentication and mandatory source policy checks.

@@ -1,7 +1,7 @@
 import { appendAttributionLyric } from "./attribution";
 import { feedbackResponse, type FeedbackEnv } from "./feedback";
 import { PluginFetch as fetch } from "../../Universal/Modules/Http";
-import { hashLyrics, saveDiagnostics, cleanupFeedback, logLyricsQuery } from "./diagnostics";
+import { saveDiagnostics, cleanupFeedback, logLyricsQuery } from "./diagnostics";
 import type { RequestDiagnostics } from "./types";
 import { extensionReleaseResponse } from "./extension-release";
 // import { amllDbProvider } from "./providers/amlldb";
@@ -12,17 +12,20 @@ import { lrcRedProvider } from "./providers/lrcred";
 import { neteaseProvider } from "./providers/netease";
 import { qqMusicProvider } from "./providers/qqmusic";
 import { spotifyProvider } from "./providers/spotify";
-import { spicyLyricsProvider, setSpicyLyricsApiKey } from "./providers/spicylyrics";
+import { spicyLyricsProvider } from "./providers/spicylyrics";
 import { createLyricsService, type LyricsService } from "./service";
 import type { BeautifulLyrics, SpotifyClientContext, TrackMetadata } from "./types";
 import { dashboardHtml } from "./dashboard";
-import { createLyricsCache, cleanupLyricsCache } from "./cache";
+import { cacheIdentity, cacheStatus, createOriginRequest, originBudgetMs, readOriginResponse, type OriginBinding, type OriginContext } from "./cache";
+import { createLyricsOrigin, keepAlive } from "./lyrics-origin";
+import { Abortable, CreateAbortScope } from "../../Universal/Modules/Async";
+import { lyricsCacheVersion } from "./cache-version";
 import { loadSourcePolicy, validSpotifyId } from "./source-policy";
 import { metricsResponse, recordRequestMetrics, detailedStatistics, type MetricsEnv } from "./metrics";
 import { createLyricsAuth, lyricsCorsHeaders, lyricsResponseHeaders, type LyricsAuthEnv } from "./lyrics-auth";
 import { LyricsSessionPath } from "../../Universal/Modules/LyricsSession";
 
-const defaultService = createLyricsService({
+export const defaultService = createLyricsService({
   // amlldb: amllDbProvider,
   qqmusic: qqMusicProvider,
   kugou: kugouProvider,
@@ -36,10 +39,10 @@ const defaultService = createLyricsService({
 
 const corsHeaders = lyricsCorsHeaders;
 
-function emptyLyricsResponse(): Response {
+function emptyLyricsResponse(headers: Record<string, string> = {}): Response {
   return new Response("", {
     status: 200,
-    headers: lyricsResponseHeaders
+    headers: { ...lyricsResponseHeaders, ...headers }
   });
 }
 
@@ -136,7 +139,7 @@ export type WorkerEnv = FeedbackEnv & MetricsEnv & LyricsAuthEnv & {
   STATS_ACCOUNT_ID?: string;
   STATS_API_TOKEN?: string;
   SPICY_LYRICS_KEY?: string;
-  LYRICS_CACHE_DB?: D1Database;
+  LYRICS_CACHE_MODE?: "workers-cache" | "off";
 };
 
 function recordOutcome(env: WorkerEnv, lyrics: BeautifulLyrics | undefined): void {
@@ -187,19 +190,21 @@ async function statsResponse(env: WorkerEnv, url: URL): Promise<Response> {
 
   let metrics;
   try { metrics = await detailedStatistics(env, days); }
-  catch { metrics = { available: false, server: [], providers: [], client: [], trend: [], latency: [], providerLatency: [], cache: [] }; }
+  catch { metrics = { available: false, server: [], providers: [], client: [], trend: [], latency: [], providerLatency: [], cache: [], origins: [] }; }
   const result = jsonResponse({ days, total, ...stats, metrics });
   result.headers.set("Cache-Control", "no-store");
   return result;
 }
 
-export function createWorker(service: LyricsService, auth = createLyricsAuth()): ExportedHandler<WorkerEnv> {
+export type WorkerOptions = { origin?: (env: WorkerEnv, ctx?: ExecutionContext) => OriginBinding };
+
+export function createWorker(service: LyricsService, auth = createLyricsAuth(), options: WorkerOptions = {}): ExportedHandler<WorkerEnv> {
+  // The standalone handler is also usable in Node tests. The deployment adapter
+  // supplies the real ctx.exports binding; this direct transport has no cache.
+  const directOrigin = createLyricsOrigin(service);
   return {
     scheduled(_event, env, ctx) {
-      ctx.waitUntil(Promise.all([
-        cleanupFeedback(env.FEEDBACK_DB).catch(() => console.warn("Feedback cleanup failed")),
-        cleanupLyricsCache(env.LYRICS_CACHE_DB).catch(() => console.warn("Lyrics cache cleanup failed"))
-      ]));
+      ctx.waitUntil(cleanupFeedback(env.FEEDBACK_DB).catch(() => console.warn("Feedback cleanup failed")));
     },
     async fetch(request: Request, env: WorkerEnv, ctx?: ExecutionContext): Promise<Response> {
       if (new URL(request.url).pathname === LyricsSessionPath) return auth.session(request, env);
@@ -223,6 +228,7 @@ export function createWorker(service: LyricsService, auth = createLyricsAuth()):
         catch { return new Response("Invalid track ID", { status: 400, headers }); }
         if (!validSpotifyId(spotifyId)) return new Response("Invalid track ID", { status: 400, headers });
         try {
+          if (!env.FEEDBACK_DB) throw new Error("Missing source policy database");
           const response = jsonResponse({ blocks: await loadSourcePolicy(env.FEEDBACK_DB, spotifyId) });
           response.headers.set("Cache-Control", "no-store");
           return response;
@@ -277,48 +283,97 @@ export function createWorker(service: LyricsService, auth = createLyricsAuth()):
       const started = Date.now();
       const diagnostics: RequestDiagnostics = {
         id: crypto.randomUUID(), track: metadata ?? { id: trackId, name: "", artists: [] },
-        startedAt: new Date(started).toISOString(), durationMs: 0, outcome: "pending", attempts: []
+        startedAt: new Date(started).toISOString(), durationMs: 0, outcome: "pending", attempts: [], cacheVersion: lyricsCacheVersion
       };
       let lyrics: BeautifulLyrics | undefined;
       let failed = false;
-      const cache = createLyricsCache(env.LYRICS_CACHE_DB);
       try {
+        request.signal.throwIfAborted();
         let sourceBlocks: Awaited<ReturnType<typeof loadSourcePolicy>> = [];
         try {
-          sourceBlocks = await loadSourcePolicy(env.FEEDBACK_DB, trackId);
-          diagnostics.sourcePolicyStatus = env.FEEDBACK_DB ? "applied" : "unconfigured";
+          if (!env.FEEDBACK_DB) throw new Error("Missing source policy database");
+          const policyScope = CreateAbortScope(2000, request.signal);
+          try {
+            sourceBlocks = await Abortable(policyScope.Signal, () => loadSourcePolicy(env.FEEDBACK_DB, trackId));
+          } finally { policyScope.Destroy(); }
+          diagnostics.sourcePolicyStatus = "applied";
         } catch {
+          request.signal.throwIfAborted();
           diagnostics.sourcePolicyStatus = "unavailable";
+          diagnostics.outcome = "failed";
           console.warn("Lyrics source policy read failed");
+          return Response.json({ code: "source_policy_unavailable", message: "Lyrics source policy is temporarily unavailable." },
+            { status: 503, headers: { ...lyricsResponseHeaders, "Retry-After": "5" } });
         }
         diagnostics.sourceBlocks = sourceBlocks;
-        // A cache hit still had to pass the source policy check inside the cache.
-        const stored = env.LYRICS_CACHE_DB === undefined ? undefined : await cache.get(trackId, sourceBlocks).catch(() => {
-          console.warn("Lyrics cache read failed");
-          return undefined;
-        });
-        if (env.LYRICS_CACHE_DB !== undefined) diagnostics.cache = stored ? "hit" : "miss";
-        setSpicyLyricsApiKey(env.SPICY_LYRICS_KEY);
-        lyrics = stored ?? await service.getLyrics(trackId, accessToken, metadata, extractSpotifyClientContext(request),
-          { signal: request.signal, diagnostics, sourceBlocks });
-        diagnostics.outcome = request.signal.aborted ? "cancelled" : lyrics ? "success" : "none";
-        if (lyrics) {
-          // Metadata never participates in the content fingerprint.
-          const hash = await hashLyrics(lyrics);
-          lyrics.RequestId = diagnostics.id;
-          lyrics.RetrievedAt = diagnostics.startedAt;
-          lyrics.LyricsHash = hash;
-          diagnostics.lyricsHash = hash;
-          if (lyrics.Source) diagnostics.source = lyrics.Source;
-        }
+        const normalized = await cacheIdentity(trackId, metadata, sourceBlocks);
+        diagnostics.cache = env.LYRICS_CACHE_MODE === "off" ? "bypass" : "unknown";
+        const origin = options.origin?.(env, ctx) ?? {
+          fetch: async (internal: Request) => {
+            const response = await directOrigin(internal, env, ctx);
+            response.headers.set("CF-Cache-Status", "BYPASS");
+            return response;
+          },
+          purgeTrack: async () => {}
+        };
+        const scope = CreateAbortScope(originBudgetMs, request.signal);
+        try {
+          const clientContext = extractSpotifyClientContext(request);
+          const context: OriginContext = {
+            sourceBlocks: normalized.sourceBlocks, deadline: scope.Deadline, triggerRequestId: diagnostics.id,
+            ...(normalized.metadata ? { metadata: normalized.metadata } : {}),
+            ...(clientContext ? { clientContext } : {})
+          };
+          for (let attempt = 0; attempt < 2; attempt++) {
+            scope.Signal.throwIfAborted();
+            const bypass = env.LYRICS_CACHE_MODE === "off" || attempt > 0;
+            if (bypass) diagnostics.cache = "bypass";
+            // Parse and verify the body as part of the fill lifetime, even when
+            // this caller disconnects while another caller is waiting for it.
+            const pending = (async () => {
+              const response = await origin.fetch(createOriginRequest(normalized.identity, context, accessToken),
+                bypass ? { cache: "no-store" } : undefined);
+              const entry = await readOriginResponse(response, normalized.identity, sourceBlocks);
+              return { entry, status: bypass ? "bypass" as const : cacheStatus(response),
+                rawStatus: response.headers.get("CF-Cache-Status") };
+            })();
+            keepAlive(ctx, pending);
+            try {
+              const { entry, status, rawStatus } = await Abortable(scope.Signal, () => pending);
+              scope.Signal.throwIfAborted();
+              diagnostics.cache = status;
+              if (rawStatus) diagnostics.edgeCacheStatus = rawStatus;
+              diagnostics.originRunId = entry.originRunId;
+              diagnostics.cacheGeneratedAt = new Date(entry.generatedAt).toISOString();
+              diagnostics.outcome = entry.outcome;
+              failed = entry.outcome === "failed";
+              lyrics = entry.lyrics;
+              if (lyrics) {
+                lyrics.RequestId = diagnostics.id;
+                lyrics.RetrievedAt = diagnostics.startedAt;
+                lyrics.LyricsHash = entry.lyricsHash!;
+                diagnostics.lyricsHash = entry.lyricsHash!;
+                if (lyrics.Source) diagnostics.source = lyrics.Source;
+              }
+              break;
+            } catch {
+              scope.Signal.throwIfAborted();
+              if (attempt > 0 || env.LYRICS_CACHE_MODE === "off") throw new Error("Lyrics cache unavailable");
+              console.warn("Lyrics cache response unavailable; bypassing once");
+              const purge = Promise.resolve().then(() => origin.purgeTrack(trackId))
+                .catch(() => console.warn("Lyrics cache purge failed"));
+              keepAlive(ctx, purge);
+            }
+          }
+        } finally { scope.Destroy(); }
       } catch {
         diagnostics.outcome = request.signal.aborted ? "cancelled" : "failed";
-        failed = true;
+        failed = !request.signal.aborted;
+        lyrics = undefined;
       } finally {
-        // Allow scope cancellation handlers to settle before snapshotting attempts.
-        await Promise.resolve();
         diagnostics.durationMs = Date.now() - started;
-        logLyricsQuery(diagnostics, lyrics?.Type);
+        // Real queries log inside the origin. Only accepted hits log here.
+        if (diagnostics.cache === "hit" && diagnostics.outcome === "success") logLyricsQuery(diagnostics, lyrics?.Type);
         recordRequestMetrics(env, diagnostics, lyrics);
         // One waitUntil for all background writes keeps the response a single unit of work.
         const background: Promise<unknown>[] = [];
@@ -327,26 +382,22 @@ export function createWorker(service: LyricsService, auth = createLyricsAuth()):
           background.push(saveDiagnostics(env.FEEDBACK_DB, record)
             .catch(() => console.warn("Lyrics diagnostics write failed")));
         }
-        // Only fresh results are stored; a hit has already paid for itself.
-        if (lyrics !== undefined && diagnostics.cache === "miss") {
-          background.push(cache.put(trackId, lyrics)
-            .catch(() => console.warn("Lyrics cache write failed")));
-        }
         if (background.length > 0) {
           const pending = Promise.all(background);
           if (ctx?.waitUntil) ctx.waitUntil(pending);
           else await pending;
         }
       }
-      if (failed) return new Response("Lyrics request failed", { status: 502, headers: lyricsResponseHeaders });
+      const cacheHeaders = diagnostics.cache ? { "X-Lyrics-Cache": diagnostics.cache } : {};
+      if (failed) return new Response("Lyrics request failed", { status: 502, headers: { ...lyricsResponseHeaders, ...cacheHeaders } });
 
       recordOutcome(env, lyrics);
 
       if (lyrics === undefined) {
-        return emptyLyricsResponse();
+        return emptyLyricsResponse(cacheHeaders);
       }
 
-      return jsonResponse(appendAttributionLyric(lyrics, metadata?.durationSeconds), lyricsResponseHeaders);
+      return jsonResponse(appendAttributionLyric(lyrics, metadata?.durationSeconds), { ...lyricsResponseHeaders, ...cacheHeaders });
     }
   };
 }

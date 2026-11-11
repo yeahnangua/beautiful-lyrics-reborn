@@ -101,7 +101,7 @@ describe("Worker lyrics query logs", () => {
     const text = vi.mocked(console.log).mock.calls[0]![0] as string;
     const record = JSON.parse(text);
     expect(record).toMatchObject({ provider: "applemusic", outcome: "success",
-      message: expect.stringContaining("Song — Artist | 已找到歌词 | 来源：applemusic | 逐字") });
+      message: expect.stringContaining("Song — Artist | ✅ | 来源：applemusic | 逐字") });
     expect(record.queries).toContainEqual(expect.objectContaining({ provider: "applemusic", found: true, selected: true,
       requests: [expect.objectContaining({ endpoint: "lyrics.paxsenix.org/apple-music/lyrics", operation: "lyrics", status: 200, result: "found" })] }));
     expect(text).not.toContain("APPLE_LYRIC_BODY_SECRET");
@@ -137,7 +137,7 @@ describe("Worker lyrics query logs", () => {
     const record = JSON.parse(text);
     expect(record).toMatchObject({
       event: "lyrics-query", level: "info", track, outcome: "none",
-      message: expect.stringMatching(/^\[lyrics-query\] Song — Artist \| 未找到歌词 \| 来源：无 \| \d+ms$/)
+      message: expect.stringMatching(/^\[lyrics-query\] Song — Artist \| ❌ \| 来源：无 \| \d+ms$/)
     });
     expect(record.queries).toHaveLength(11);
     expect(record.queries).toEqual(expect.arrayContaining([
@@ -166,7 +166,7 @@ describe("Worker lyrics query logs", () => {
     const record = JSON.parse(text);
     expect(record).toMatchObject({
       outcome: "success", level: "info", provider: "qqmusic", lyricsType: "Line",
-      message: expect.stringMatching(/^\[lyrics-query\] Song — Artist \| 已找到歌词 \| 来源：qqmusic \| 逐行 \| \d+ms$/)
+      message: expect.stringMatching(/^\[lyrics-query\] Song — Artist \| ✅ \| 来源：qqmusic \| 逐行 \| \d+ms$/)
     });
     expect(record.queries).toContainEqual(expect.objectContaining({ provider: "qqmusic", stage: "line", selected: true, found: true }));
     expect(text).not.toContain("LYRIC_BODY_SECRET");

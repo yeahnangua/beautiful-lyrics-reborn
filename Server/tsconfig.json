@@ -10,5 +10,5 @@
     "lib": ["ES2022"],
     "skipLibCheck": true
   },
-  "include": ["src", "test", "vitest.config.ts"]
+  "include": ["src", "test", "vitest.config.ts", "worker-configuration.d.ts"]
 }

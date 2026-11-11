@@ -1,4 +1,4 @@
-import type { RequestContext, UpstreamEvent } from "../types";
+import type { RequestContext, UpstreamDetails, UpstreamEvent } from "../types";
 import { Abortable, CreateAbortScope } from "../../../Universal/Modules/Async";
 import { WithUserAgent } from "../../../Universal/Modules/Http";
 
@@ -27,6 +27,20 @@ export function requestScope(milliseconds: number, context: RequestContext = {})
 const fetchContexts = new WeakMap<typeof fetch, RequestContext>();
 export function getFetchContext(fetchImpl: typeof fetch): RequestContext {
   return fetchContexts.get(fetchImpl) ?? {};
+}
+/** Add safe business results after a provider parses its latest response. */
+export function recordUpstreamResult(context: RequestContext | undefined, details: UpstreamDetails): void {
+  const event = context?.trace?.upstream.at(-1);
+  if (!event) return;
+  const { codes, ...result } = details;
+  Object.assign(event, result);
+  if (codes) {
+    const defined = Object.fromEntries(Object.entries(codes).filter(([, code]) => Number.isFinite(code)));
+    if (Object.keys(defined).length > 0) event.codes = defined;
+  }
+  if (event.outcome === "success" && (details.result === "api_error" || details.result === "invalid_payload")) {
+    event.outcome = "failed";
+  }
 }
 export function contextFetch(fetchImpl: typeof fetch, context: RequestContext = {}): typeof fetch {
   const wrapped: typeof fetch = async (input, init) => {
@@ -86,7 +100,6 @@ export async function withLyricRequestRetries<T>(
       if (context.signal?.aborted || Date.now() >= (context.deadline ?? Infinity) || retry === 2 ||
           !(error instanceof Error && error.name === "TimeoutError")) throw error;
       if (context.trace) context.trace.retries++;
-      console.warn(`[lyrics request] ${label}: timeout, retry ${retry + 1}/2`);
     } finally {
       scope.dispose();
     }

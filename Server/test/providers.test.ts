@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { matchedTitle } from "../src/providers/matched-title";
 import { createQqMusicProvider, decryptQrcHex } from "../src/providers/qqmusic";
 import { withLyricRequestRetries } from "../src/providers/request";
+import type { ProviderAttempt } from "../src/types";
 
 const testDir = dirname(fileURLToPath(import.meta.url));
 const pragueSquareQrcHex = readFileSync(join(testDir, "fixtures/qq-prague-square-qrc.hex"), "utf8").trim();
@@ -109,7 +110,7 @@ describe("QQ Music provider", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("logs search results", async () => {
+  it("records search results without duplicate console logs", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body));
@@ -143,6 +144,7 @@ describe("QQ Music provider", () => {
       return new Response("not found", { status: 404 });
     });
 
+    const trace: ProviderAttempt = { provider: "qq music", stage: "syllable", startedAt: "test", durationMs: 0, outcome: "pending", retries: 0, upstream: [] };
     const provider = createQqMusicProvider(fetchMock as typeof fetch);
     await provider.getSyllableLyrics({
       id: "spotify",
@@ -150,11 +152,12 @@ describe("QQ Music provider", () => {
       artists: ["蔡依林", "周杰倫"],
       album: "看我72变",
       durationSeconds: 294
-    });
+    }, { trace });
 
-    expect(logSpy).toHaveBeenCalledWith(
-      '[qqmusic] search "布拉格广场": 1 result(s): 13410 "布拉格广场" by 蔡依林, 周杰伦 (294s)'
-    );
+    expect(logSpy).not.toHaveBeenCalled();
+    expect(trace.upstream[0]).toMatchObject({ operation: "search", query: "布拉格广场", resultCount: 1, matchedCount: 1, result: "matched" });
+    expect(trace.upstream[1]).toMatchObject({ operation: "lyrics", status: 404, result: "http_error" });
+    expect(trace.matches).toEqual([{ Provider: "qqmusic", Transport: "direct", TrackId: "13410", MatchedTitle: "布拉格广场" }]);
 
     logSpy.mockRestore();
   });

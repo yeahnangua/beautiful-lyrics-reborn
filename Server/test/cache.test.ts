@@ -171,17 +171,22 @@ describe("worker route integration", () => {
   }
 
   it("answers the second request from cache without touching providers", async () => {
-    const getLyrics = vi.fn().mockImplementation(async () => stored());
-    const worker = createWorker({ getLyrics });
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const getLyrics = vi.fn().mockImplementation(async () => stored());
+      const worker = createWorker({ getLyrics });
 
-    const first = await json(await worker.fetch!(request(), env(), context) as Response);
-    expect(getLyrics).toHaveBeenCalledTimes(1);
-    expect(first.Type).toBe("Syllable");
+      const first = await json(await worker.fetch!(request(), env(), context) as Response);
+      expect(getLyrics).toHaveBeenCalledTimes(1);
+      expect(first.Type).toBe("Syllable");
+      expect(log).toHaveBeenCalledTimes(1);
 
-    const second = await json(await worker.fetch!(request(), env(), context) as Response);
-    expect(getLyrics).toHaveBeenCalledTimes(1);
-    expect(second.RequestId).not.toBe(first.RequestId);
-    expect(second.LyricsHash).toBe(first.LyricsHash);
+      const second = await json(await worker.fetch!(request(), env(), context) as Response);
+      expect(getLyrics).toHaveBeenCalledTimes(1);
+      expect(second.RequestId).not.toBe(first.RequestId);
+      expect(second.LyricsHash).toBe(first.LyricsHash);
+      expect(log).toHaveBeenCalledTimes(1);
+    } finally { log.mockRestore(); }
   });
 
   it("adds the final attribution lyric on cache hits without storing duplicate generated rows", async () => {

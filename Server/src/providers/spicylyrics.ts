@@ -1,5 +1,5 @@
 import { contributorUrl } from "../../../Universal/Modules/LyricsAttribution";
-import { contextFetch } from "./request";
+import { contextFetch, getFetchContext, recordUpstreamResult } from "./request";
 import { withSource } from "./matched-title";
 import type {
   BeautifulLyrics,
@@ -172,7 +172,11 @@ function createSpicyLyricsProviderImplementation(fetchImpl: typeof fetch): Spicy
     async getLyrics(track: TrackMetadata): Promise<BeautifulLyrics | undefined> {
       if (track.id.length === 0) return undefined;
       const key = apiKey;
-      if (key === undefined || key.length === 0) return undefined;
+      const context = getFetchContext(fetchImpl);
+      if (key === undefined || key.length === 0) {
+        if (context.trace) context.trace.reason = "not_configured";
+        return undefined;
+      }
       const response = await fetchImpl(lyricsUrl + encodeURIComponent(track.id), {
         headers: {
           Accept: "application/json",
@@ -180,18 +184,30 @@ function createSpicyLyricsProviderImplementation(fetchImpl: typeof fetch): Spicy
           "User-Agent": "beautiful-lyrics-server/1.0"
         }
       });
-      if (!response.ok) return undefined;
+      recordUpstreamResult(context, { operation: "lyrics" });
+      if (!response.ok) {
+        recordUpstreamResult(context, { result: "http_error" });
+        return undefined;
+      }
       let envelope: SpicyEnvelope;
       try {
         envelope = (await response.json()) as SpicyEnvelope;
       } catch {
+        recordUpstreamResult(context, { result: "invalid_payload" });
         return undefined;
       }
-      if (!isRecord(envelope)) return undefined;
+      if (!isRecord(envelope)) {
+        recordUpstreamResult(context, { result: "invalid_payload" });
+        return undefined;
+      }
       const attribution = buildAttribution(envelope);
       // Do not serve community lyrics when their required credits cannot be shown.
-      if (!attribution) return undefined;
+      if (!attribution) {
+        recordUpstreamResult(context, { result: "missing_attribution" });
+        return undefined;
+      }
       const lyrics = sanitizeSpicyBody(envelope.Body, attribution);
+      recordUpstreamResult(context, { result: lyrics ? "found" : "no_lyrics" });
       if (lyrics === undefined) return undefined;
       return withSource(lyrics, { Provider: "spicylyrics", Transport: "direct", TrackId: track.id });
     }

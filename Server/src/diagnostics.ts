@@ -1,4 +1,46 @@
 import type { BeautifulLyrics, RequestDiagnostics } from "./types";
+import { providerName } from "./source-policy";
+
+/** One application log per fresh lyrics query, without payloads or credentials. */
+export function logLyricsQuery(record: RequestDiagnostics, lyricsType?: BeautifulLyrics["Type"]): void {
+  if (record.cache === "hit") return;
+  const brief = (value: string | undefined) => typeof value === "string" ? value.slice(0, 200) : undefined;
+  console.log(JSON.stringify({
+    event: "lyrics-query",
+    requestId: record.id,
+    track: { id: record.track.id, name: brief(record.track.name), artists: record.track.artists.slice(0, 5).map(brief) },
+    outcome: record.outcome,
+    durationMs: record.durationMs,
+    provider: record.source?.Provider,
+    lyricsType,
+    queries: record.attempts.map(attempt => ({
+      provider: providerName(attempt.provider),
+      stage: attempt.stage,
+      outcome: attempt.outcome,
+      found: attempt.outcome === "success" || attempt.blockAction === "filtered" ? true
+        : attempt.outcome === "none" && !attempt.reason ? false : undefined,
+      reason: attempt.reason ?? attempt.error,
+      durationMs: attempt.durationMs,
+      retries: attempt.retries,
+      selected: attempt.selected,
+      lyricsType: attempt.lyricsType,
+      blockAction: attempt.blockAction,
+      matches: attempt.matches?.slice(0, 3).map(match => ({ id: match.TrackId ?? match.LyricsId, title: brief(match.MatchedTitle) })),
+      requests: attempt.upstream.map(upstream => ({
+        endpoint: upstream.endpoint.split("?")[0]?.slice(0, 300),
+        operation: upstream.operation,
+        status: upstream.status,
+        codes: upstream.codes,
+        outcome: upstream.outcome,
+        result: upstream.result,
+        query: brief(upstream.query),
+        resultCount: upstream.resultCount,
+        matchedCount: upstream.matchedCount,
+        durationMs: upstream.durationMs
+      }))
+    }))
+  }));
+}
 
 export async function hashLyrics(lyrics: BeautifulLyrics): Promise<string> {
   const { Source: _source, RequestId: _id, RetrievedAt: _time, LyricsHash: _hash, ...content } = lyrics;

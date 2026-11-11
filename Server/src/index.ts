@@ -1,7 +1,7 @@
 import { appendAttributionLyric } from "./attribution";
 import { feedbackResponse, type FeedbackEnv } from "./feedback";
 import { PluginFetch as fetch } from "../../Universal/Modules/Http";
-import { hashLyrics, saveDiagnostics, cleanupFeedback } from "./diagnostics";
+import { hashLyrics, saveDiagnostics, cleanupFeedback, logLyricsQuery } from "./diagnostics";
 import type { RequestDiagnostics } from "./types";
 import { extensionReleaseResponse } from "./extension-release";
 // import { amllDbProvider } from "./providers/amlldb";
@@ -314,6 +314,7 @@ export function createWorker(service: LyricsService, auth = createLyricsAuth()):
         // Allow scope cancellation handlers to settle before snapshotting attempts.
         await Promise.resolve();
         diagnostics.durationMs = Date.now() - started;
+        logLyricsQuery(diagnostics, lyrics?.Type);
         recordRequestMetrics(env, diagnostics, lyrics);
         // One waitUntil for all background writes keeps the response a single unit of work.
         const background: Promise<unknown>[] = [];

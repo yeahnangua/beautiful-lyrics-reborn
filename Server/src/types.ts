@@ -141,7 +141,16 @@ export type TimedLyricsProvider = {
 
 export type QqMusicProvider = TimedLyricsProvider;
 
-export type UpstreamEvent = {
+export type UpstreamDetails = {
+  operation?: "search" | "lyrics" | "metadata";
+  query?: string;
+  result?: "matched" | "found" | "no_results" | "missing_song_list" | "no_match" | "no_lyrics" | "no_syllable_lyrics" | "no_line_lyrics"
+    | "instrumental" | "restricted" | "missing_attribution" | "http_error" | "api_error" | "invalid_payload";
+  codes?: Record<string, number | undefined>;
+  resultCount?: number;
+  matchedCount?: number;
+};
+export type UpstreamEvent = UpstreamDetails & {
   endpoint: string;
   durationMs: number;
   status?: number;
@@ -158,6 +167,7 @@ export type ProviderAttempt = {
   lyricsType?: BeautifulLyrics["Type"];
   source?: LyricsSource;
   error?: string;
+  reason?: "not_configured" | "metadata_unavailable" | "token_unavailable";
   matches?: LyricsSource[];
   retries: number;
   upstream: UpstreamEvent[];

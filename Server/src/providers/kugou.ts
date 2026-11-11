@@ -7,7 +7,7 @@ import OpenCC from "opencc-js";
 import { convertLrcToLineLyrics } from "../convert/lrc";
 import { decodeBase64Text } from "../convert/base64";
 import { convertKrcToSyllableLyrics, decodeKrc } from "../convert/krc";
-import { withLyricRequestRetries } from "./request";
+import { withLyricRequestRetries, recordUpstreamResult } from "./request";
 import { withSource, recordMatch } from "./matched-title";
 import type { TimedLyricsProvider, TrackMetadata, RequestContext } from "../types";
 
@@ -51,7 +51,15 @@ function matches(value: unknown, track: TrackMetadata): value is Candidate {
 function createKugouProviderImplementation(fetchImpl: typeof fetch, word: boolean) {
   async function getJson<T>(url: URL, signal: AbortSignal): Promise<T | undefined> {
     const response = await fetchImpl(url.toString(), { headers, signal });
-    return response.ok ? await response.json() as T : undefined;
+    if (!response.ok) {
+      recordUpstreamResult(getFetchContext(fetchImpl), { result: "http_error" });
+      return undefined;
+    }
+    try { return await response.json() as T; }
+    catch (error) {
+      recordUpstreamResult(getFetchContext(fetchImpl), { result: "invalid_payload" });
+      throw error;
+    }
   }
 
   return {
@@ -60,18 +68,23 @@ function createKugouProviderImplementation(fetchImpl: typeof fetch, word: boolea
         return undefined;
       }
       return withLyricRequestRetries(async (signal) => {
+        const query = simplify(`${track.artists[0]} - ${track.name}`);
         const searchUrl = new URL("https://krcs.kugou.com/search");
         searchUrl.search = new URLSearchParams({
           ver: "1", man: "yes", client: "mobi",
-          keyword: simplify(`${track.artists[0]} - ${track.name}`),
+          keyword: query,
           hash: "", album_audio_id: "",
           duration: String(Math.round((track.durationSeconds ?? 0) * 1000))
         }).toString();
-        const search = await getJson<{ status?: number; candidates?: unknown[] }>(searchUrl, signal);
+        const search = await getJson<{ status?: number; errcode?: number; candidates?: unknown[] }>(searchUrl, signal);
+        recordUpstreamResult(context, { operation: "search", query, codes: { status: search?.status, errcode: search?.errcode } });
         if (search?.status !== 200 || !Array.isArray(search.candidates)) {
+          if (search !== undefined) recordUpstreamResult(context, { result: search?.status !== undefined && search.status !== 200 ? "api_error" : "invalid_payload" });
           return undefined;
         }
         const candidates = search.candidates.filter((candidate): candidate is Candidate => matches(candidate, track));
+        recordUpstreamResult(context, { resultCount: search.candidates.length, matchedCount: candidates.length,
+          result: candidates.length > 0 ? "matched" : search.candidates.length > 0 ? "no_match" : "no_results" });
         const difference = (candidate: Candidate): number => track.durationSeconds === undefined
           ? 0 : Math.abs((candidate.duration ?? Infinity) / 1000 - track.durationSeconds);
         candidates.sort((a, b) => difference(a) - difference(b) || (b.score ?? 0) - (a.score ?? 0));
@@ -83,12 +96,15 @@ function createKugouProviderImplementation(fetchImpl: typeof fetch, word: boolea
             ver: "1", client: "pc", id: candidate.id, accesskey: candidate.accesskey,
             fmt: word ? "krc" : "lrc", charset: "utf8"
           }).toString();
-          const payload = await getJson<{ status?: number; content?: string }>(lyricUrl, signal);
+          const payload = await getJson<{ status?: number; errcode?: number; content?: string }>(lyricUrl, signal);
+          recordUpstreamResult(context, { operation: "lyrics", codes: { status: payload?.status, errcode: payload?.errcode } });
           if (payload?.status !== 200) {
+            if (payload !== undefined) recordUpstreamResult(context, { result: payload?.status === undefined ? "invalid_payload" : "api_error" });
             continue;
           }
           const lyrics = word ? convertKrcToSyllableLyrics(await decodeKrc(payload.content))
             : convertLrcToLineLyrics(decodeBase64Text(payload.content), track.durationSeconds);
+          recordUpstreamResult(context, { result: lyrics ? "found" : !payload.content ? "no_lyrics" : word ? "no_syllable_lyrics" : "no_line_lyrics" });
           if (lyrics !== undefined) {
             return withSource(lyrics, source);
           }

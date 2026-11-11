@@ -1,5 +1,5 @@
 import { withSource, recordMatch } from "./matched-title";
-import { contextFetch, getFetchContext } from "./request";
+import { contextFetch, getFetchContext, recordUpstreamResult } from "./request";
 import { convertSpotifyLyricsPayload } from "../convert/spotify";
 import type { BeautifulLyrics, SpotifyClientContext, SpotifyProvider, TrackMetadata } from "../types";
 
@@ -54,24 +54,22 @@ async function getJson(
   url: string,
   accessToken: string,
   clientContext: SpotifyClientContext | undefined,
-  description: string
+  operation: "lyrics" | "metadata"
 ): Promise<unknown | undefined> {
   const response = await fetchImpl(url, {
     headers: spotifyHeaders(accessToken, clientContext)
   });
+  recordUpstreamResult(getFetchContext(fetchImpl), { operation });
 
   if (response.ok === false) {
-    console.log(`[spotify] ${description}: ${response.status} ${response.statusText}`);
+    recordUpstreamResult(getFetchContext(fetchImpl), { result: "http_error" });
     return undefined;
   }
 
   try {
     return await response.json();
-  } catch (error) {
-    console.warn(
-      `[spotify] ${description}: failed to parse JSON (${response.headers.get("Content-Type") ?? "unknown content type"})`,
-      error
-    );
+  } catch {
+    recordUpstreamResult(getFetchContext(fetchImpl), { result: "invalid_payload" });
     return undefined;
   }
 }
@@ -148,15 +146,13 @@ function createSpotifyProviderImplementation(fetchImpl: FetchLike = fetch): Spot
     ): Promise<BeautifulLyrics | undefined> {
       recordMatch(getFetchContext(fetchImpl), { Provider: "spotify", Transport: "direct", TrackId: trackId });
       const url = `${spotifyLyricsBaseUrl}/${encodeURIComponent(trackId)}?format=json&vocalRemoval=false&market=from_token`;
-      const payload = await getJson(fetchImpl, url, accessToken, clientContext, `${trackId} lyrics`);
+      const payload = await getJson(fetchImpl, url, accessToken, clientContext, "lyrics");
       if (payload === undefined) {
         return undefined;
       }
 
       const lyrics = convertSpotifyLyricsPayload(payload as Parameters<typeof convertSpotifyLyricsPayload>[0]);
-      if (lyrics === undefined) {
-        console.log(`[spotify] ${trackId} lyrics: response contained no usable lyrics`);
-      }
+      recordUpstreamResult(getFetchContext(fetchImpl), { result: lyrics ? "found" : "no_lyrics" });
 
       return withSource(lyrics, { Provider: "spotify", Transport: "direct", TrackId: trackId });
     },
@@ -172,11 +168,12 @@ function createSpotifyProviderImplementation(fetchImpl: FetchLike = fetch): Spot
         webUrl,
         accessToken,
         clientContext,
-        `${trackId} Web API metadata`
+        "metadata"
       )) as
         | SpotifyTrackResponse
         | undefined;
       if (webPayload !== undefined) {
+        recordUpstreamResult(getFetchContext(fetchImpl), { result: "found" });
         return convertWebTrack(trackId, webPayload);
       }
 
@@ -187,7 +184,7 @@ function createSpotifyProviderImplementation(fetchImpl: FetchLike = fetch): Spot
         internalUrl,
         accessToken,
         clientContext,
-        `${trackId} internal metadata`
+        "metadata"
       )) as
         | SpotifyInternalTrackResponse
         | undefined;
@@ -195,7 +192,9 @@ function createSpotifyProviderImplementation(fetchImpl: FetchLike = fetch): Spot
         return undefined;
       }
 
-      return convertInternalTrack(trackId, internalPayload);
+      const metadata = convertInternalTrack(trackId, internalPayload);
+      recordUpstreamResult(getFetchContext(fetchImpl), { result: metadata ? "found" : "invalid_payload" });
+      return metadata;
     }
   };
 }

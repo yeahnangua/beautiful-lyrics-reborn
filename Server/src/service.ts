@@ -24,7 +24,6 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
       const blocks = context.sourceBlocks ?? [];
       const finish = (result: Candidate | undefined) => {
         if (!result || context.signal?.aborted) return undefined;
-        console.log(`[lyrics] ${trackId}: using ${result[0]} ${result[1].Type}`);
         const lyrics = decodeEntitiesDeep(result[1]);
         const source: LyricsSource = candidateSource(result[0], lyrics);
         if (!source.MatchedTitle && matchedTitle(result[1])) source.MatchedTitle = matchedTitle(result[1])!;
@@ -108,6 +107,7 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
           async (scope: RequestContext) => {
             const track = await metadataPromise;
             syllable.signal.throwIfAborted();
+            if (!track && scope.trace) scope.trace.reason = "metadata_unavailable";
             return track ? request(track, scope) : undefined;
           };
         const candidates = syllableCandidates;

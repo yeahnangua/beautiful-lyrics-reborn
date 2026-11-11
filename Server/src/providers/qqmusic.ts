@@ -5,7 +5,7 @@ import { decodeBase64Text } from "../convert/base64";
 import { decryptQrc } from "qrc-decoder";
 import { convertQrcXmlToSyllableLyrics } from "../convert/karaoke";
 import type { QqMusicProvider, BeautifulLyrics, TrackMetadata } from "../types";
-import { withLyricRequestRetries } from "./request";
+import { withLyricRequestRetries, recordUpstreamResult } from "./request";
 import { withSource, recordMatch } from "./matched-title";
 
 type FetchLike = typeof fetch;
@@ -36,7 +36,9 @@ type QqMusicSearchResponse = {
 };
 
 type QqMusicLyricResponse = {
+  code?: number;
   "music.musichallSong.PlayLyricInfo.GetPlayLyricInfo"?: {
+    code?: number;
     data?: {
       qrc?: number;
       lyric?: string;
@@ -118,27 +120,6 @@ function artistNames(song: QqMusicSearchSong): string[] {
   return song.singer?.map((artist) => artist.name ?? "").filter((name) => name.length > 0) ?? [];
 }
 
-function formatDuration(seconds: number | undefined): string {
-  return seconds === undefined ? "unknown duration" : `${Number(seconds.toFixed(1))}s`;
-}
-
-function summarizeSong(song: QqMusicSearchSong): string {
-  const id = song.id === undefined ? song.mid ?? "unknown-id" : String(song.id);
-  const title = songTitle(song) || "unknown title";
-  const artists = artistNames(song).join(", ") || "unknown artist";
-  return `${id} "${title}" by ${artists} (${formatDuration(song.interval)})`;
-}
-
-function logSearchResults(query: string, songs: QqMusicSearchSong[]): void {
-  const preview = songs.slice(0, 5).map(summarizeSong).join("; ");
-  const suffix = preview.length === 0 ? "" : `: ${preview}`;
-  console.log(`[qqmusic] search "${query}": ${songs.length} result(s)${suffix}`);
-}
-
-function logMatchedSong(song: QqMusicSearchSong): void {
-  console.log(`[qqmusic] matched ${summarizeSong(song)}`);
-}
-
 function durationMatches(song: QqMusicSearchSong, track: TrackMetadata): boolean {
   if (track.durationSeconds === undefined || song.interval === undefined) {
     return true;
@@ -188,15 +169,15 @@ async function postMusicu<T>(fetchImpl: FetchLike, body: unknown, retryOnTimeout
     });
 
     if (response.ok === false) {
-      const body = await response.text().catch(() => "");
-      const snippet = body.trim().slice(0, 240);
-      console.warn(
-        `[qqmusic] request failed: ${response.status} ${response.statusText}${snippet.length > 0 ? ` ${snippet}` : ""}`
-      );
+      recordUpstreamResult(getFetchContext(fetchImpl), { result: "http_error" });
       return undefined;
     }
 
-    return (await response.json()) as T;
+    try { return (await response.json()) as T; }
+    catch (error) {
+      recordUpstreamResult(getFetchContext(fetchImpl), { result: "invalid_payload" });
+      throw error;
+    }
   };
 
   return retryOnTimeout ? withLyricRequestRetries((signal) => request(signal), "qqmusic request", getFetchContext(fetchImpl)) : request();
@@ -228,13 +209,15 @@ async function searchSongs(fetchImpl: FetchLike, query: string): Promise<QqMusic
 
   const list = payload?.req?.data?.body?.song?.list;
   const songs = Array.isArray(list) ? list : [];
-  // A genuine empty result carries code 0 and an empty list; a block/rate limit carries a non-zero code and no list.
-  if (payload !== undefined && Array.isArray(list) === false) {
-    console.warn(
-      `[qqmusic] search "${query}": no song list (code ${payload.code ?? "?"}, req code ${payload.req?.code ?? "?"})`
-    );
-  }
-  logSearchResults(query, songs);
+  recordUpstreamResult(getFetchContext(fetchImpl), {
+    operation: "search", query,
+    codes: { code: payload?.code, req: payload?.req?.code },
+    ...(payload === undefined ? {} : payload === null ? { result: "invalid_payload" } : {
+      result: (payload.code !== undefined && payload.code !== 0) || (payload.req?.code !== undefined && payload.req.code !== 0)
+        ? "api_error" : !Array.isArray(list) ? "invalid_payload" : songs.length > 0 ? "matched" : "no_results",
+      resultCount: songs.length
+    })
+  });
   return songs;
 }
 
@@ -255,13 +238,28 @@ async function getTimedLyrics(fetchImpl: FetchLike, songId: number, word: boolea
     true
   );
 
-  const lyricData = payload?.["music.musichallSong.PlayLyricInfo.GetPlayLyricInfo"]?.data;
-  if (!lyricData?.lyric || (word && lyricData.qrc !== 1)) {
+  const response = payload?.["music.musichallSong.PlayLyricInfo.GetPlayLyricInfo"];
+  const lyricData = response?.data;
+  const context = getFetchContext(fetchImpl);
+  recordUpstreamResult(context, { operation: "lyrics", codes: { code: payload?.code, lyric: response?.code } });
+  if (!payload) {
+    if (payload === null) recordUpstreamResult(context, { result: "invalid_payload" });
+    return undefined;
+  }
+  if (!lyricData?.lyric) {
+    recordUpstreamResult(context, { result: (payload.code !== undefined && payload.code !== 0) || (response?.code !== undefined && response.code !== 0)
+      ? "api_error" : !response ? "invalid_payload" : "no_lyrics" });
+    return undefined;
+  }
+  if (word && lyricData.qrc !== 1) {
+    recordUpstreamResult(context, { result: "no_syllable_lyrics" });
     return undefined;
   }
 
-  return word ? convertQrcXmlToSyllableLyrics(decryptQrcHex(lyricData.lyric))
+  const lyrics = word ? convertQrcXmlToSyllableLyrics(decryptQrcHex(lyricData.lyric))
     : convertLrcToLineLyrics(decodeBase64Text(lyricData.lyric) ?? lyricData.lyric, durationSeconds);
+  recordUpstreamResult(context, { result: lyrics ? "found" : word ? "no_syllable_lyrics" : "no_line_lyrics" });
+  return lyrics;
 }
 
 function createQqMusicProviderImplementation(fetchImpl: FetchLike, word: boolean) {
@@ -274,11 +272,14 @@ function createQqMusicProviderImplementation(fetchImpl: FetchLike, word: boolean
       // ponytail: one title-only search (simplified) to stay under QQ rate limits;
       // artist and duration matching below picks the right song from the wider results.
       const songs = await searchSongs(fetchImpl, traditionalToSimplified(track.name));
-      const candidates = songs.filter((song) => matchesTrack(song, track)).slice(0, 3);
+      const matching = songs.filter((song) => matchesTrack(song, track));
+      const candidates = matching.slice(0, 3);
+      if (songs.length > 0) recordUpstreamResult(getFetchContext(fetchImpl), {
+        matchedCount: matching.length, result: matching.length > 0 ? "matched" : "no_match"
+      });
       for (const song of candidates) {
         const source = { Provider: "qqmusic", Transport: "direct", TrackId: String(song.id), MatchedTitle: songTitle(song) } as const;
         recordMatch(getFetchContext(fetchImpl), source);
-        logMatchedSong(song);
         const lyrics = await getTimedLyrics(fetchImpl, song.id!, word, track.durationSeconds);
         if (lyrics !== undefined) return withSource(lyrics, source);
       }

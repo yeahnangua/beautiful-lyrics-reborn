@@ -3,7 +3,7 @@
 Beautiful Lyrics Reborn is a community-maintained revival of the original
 Beautiful Lyrics Spicetify extension. It keeps the fullscreen/card/page lyric
 experience alive and adds a new Cloudflare Worker lyrics service for Spicy Lyrics,
-Spotify, QQ Music, KuGou, NetEase, Apple Music via Paxsenix, and LRCLIB fallbacks.
+Spotify, QQ Music, KuGou, NetEase, Apple Music via Paxsenix, lrc.red, and LRCLIB fallbacks.
 
 This repository contains both pieces:
 
@@ -26,11 +26,11 @@ https://lyrics.txw.qzz.io
 - The statistics page includes provider performance, weighted latency percentiles, cache reuse and fullscreen usage. Aggregate plugin metrics are always enabled; no song, lyric, account, token or persistent user identifier is sent. See [loading and statistics details](docs/fullscreen-loading-and-statistics.md).
 - Reborn lyrics provider flow:
   1. The first available syllable lyrics from direct Spicy Lyrics, QQ Music QRC, KuGou KRC, NetEase YRC,
-     Apple Music via Paxsenix; syllable providers are queried concurrently.
+     Apple Music via Paxsenix, or lrc.red TTML; syllable providers are queried concurrently.
   2. The first available line lyrics from direct Spotify, QQ Music LRC, KuGou LRC,
      NetEase LRC, or LRCLIB, including saved line results
-     from Spicy Lyrics and Apple Music; line providers are queried concurrently.
-  3. Static fallbacks from Spicy Lyrics, Spotify, and LRCLIB.
+     from Spicy Lyrics, Apple Music, and lrc.red; line providers are queried concurrently.
+  3. Static fallbacks from Spicy Lyrics, Spotify, lrc.red, and LRCLIB.
 
 Lyrics preserve the quality order syllable > line > static. The syllable phase
 (including metadata) has a 15-second budget, followed by up to 10 seconds for
@@ -53,6 +53,13 @@ vary by server IP; no user credentials are bundled with these providers.
 Spicy Lyrics is keyed by Spotify track ID and needs a secret API key. When the
 `SPICY_LYRICS_KEY` Worker secret is unset, the provider is skipped entirely. See
 [docs/spicylyrics.md](docs/spicylyrics.md) for setup and the binding attribution requirement.
+
+[lrc.red](https://lrc.red) supplies TTML with word, line, or unsynced lyrics. The Worker
+uses a known ISRC directly or matches search results by title, artist, and duration,
+preserving word spaces, background vocals, and singer alignment. Every result carries
+clickable lrc.red credit through the existing attribution renderer. Requests identify
+this repository and its contact email, and honor `Retry-After` on 429/503 responses.
+See [the lrc.red integration notes](docs/lrcred.md).
 
 ## Local Extension Install
 

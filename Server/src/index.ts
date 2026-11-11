@@ -8,6 +8,7 @@ import { extensionReleaseResponse } from "./extension-release";
 import { appleMusicProvider } from "./providers/applemusic";
 import { kugouProvider } from "./providers/kugou";
 import { lrclibProvider } from "./providers/lrclib";
+import { lrcRedProvider } from "./providers/lrcred";
 import { neteaseProvider } from "./providers/netease";
 import { qqMusicProvider } from "./providers/qqmusic";
 import { spotifyProvider } from "./providers/spotify";
@@ -28,6 +29,7 @@ const defaultService = createLyricsService({
   netease: neteaseProvider,
   spicylyrics: spicyLyricsProvider,
   applemusic: appleMusicProvider,
+  lrcred: lrcRedProvider,
   spotify: spotifyProvider,
   lrclib: lrclibProvider
 });

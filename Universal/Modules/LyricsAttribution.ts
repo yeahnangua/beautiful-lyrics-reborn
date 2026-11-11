@@ -1,4 +1,4 @@
-import type { SpicyAttribution } from "../Types/Lyrics.ts";
+import type { LyricsAttribution } from "../Types/Lyrics.ts";
 
 /** Contributor URLs are external data; never turn script/data URLs into links. */
 export function contributorUrl(value: string): string | undefined {
@@ -8,7 +8,10 @@ export function contributorUrl(value: string): string | undefined {
   } catch { return undefined; }
 }
 
-export function attributionParts(attribution: SpicyAttribution): { text: string; href?: string | undefined }[] {
+export function attributionParts(attribution: LyricsAttribution): { text: string; href?: string | undefined }[] {
+  if (attribution.provider === "lrc.red") {
+    return [{ text: "Lyrics via " }, { text: "lrc.red", href: "https://lrc.red" }];
+  }
   const parts: { text: string; href?: string | undefined }[] = [{ text: `Lyrics via ${attribution.provider}` }];
   if (attribution.source === "spicy_lyrics") {
     for (const [contributor, separator] of [[attribution.uploader, " · "], [attribution.maker, " / "]] as const) {
@@ -19,6 +22,6 @@ export function attributionParts(attribution: SpicyAttribution): { text: string;
   return parts;
 }
 
-export function attributionText(attribution: SpicyAttribution): string {
+export function attributionText(attribution: LyricsAttribution): string {
   return attributionParts(attribution).map(part => part.text).join("");
 }

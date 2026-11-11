@@ -2,8 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { motion, type MotionValue } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Heart, ListPlus, Settings2, Flag, Volume2, Maximize, Minimize, X } from 'lucide-react';
-import { contributorUrl } from '../../../Universal/Modules/LyricsAttribution.ts';
-import type { SpicyAttribution } from '../../../Universal/Types/Lyrics.ts';
+import { attributionParts } from '../../../Universal/Modules/LyricsAttribution.ts';
+import type { LyricsAttribution } from '../../../Universal/Types/Lyrics.ts';
 import type { PlayerSnapshot, FoliaActions } from './contracts';
 
 // Folia's expanding glass capsule adapted to host-owned Spotify transport actions.
@@ -62,16 +62,16 @@ function Progress({ time, duration, disabled, seek }: { time: MotionValue<number
     onBlur={event => { if (dragging.current) { dragging.current = false; seek(Number(event.currentTarget.value)); } }} /><span>{timeText(duration)}</span></div>;
 }
 
-function Attribution({ attribution, hideProvider }: { attribution: SpicyAttribution; hideProvider?: boolean }) {
-  const contributors = attribution.source === 'spicy_lyrics' ? [attribution.uploader, attribution.maker].filter(value => value !== undefined) : [];
-  if (hideProvider && contributors.length === 0) return null;
+function Attribution({ attribution, hideProvider }: { attribution: LyricsAttribution; hideProvider?: boolean }) {
+  const parts = attributionParts(attribution);
+  if (hideProvider) {
+    parts.shift();
+    if (parts[0]?.text === ' · ' || parts[0]?.text === ' / ') parts.shift();
+  }
+  if (parts.length === 0) return null;
   return <div className="folia-attribution" dir="ltr">
-    {!hideProvider && <span>Lyrics via {attribution.provider}</span>}
-    {contributors.map((contributor, index) => {
-      const href = contributorUrl(contributor.url);
-      return <React.Fragment key={`${contributor.id}:${index}`}><span>{index === 0 ? (hideProvider ? '' : ' · ') : ' / '}</span>
-        {href ? <a href={href} target="_blank" rel="noopener noreferrer">🔗 {contributor.username}</a> : <span>{contributor.username}</span>}
-      </React.Fragment>;
-    })}
+    {parts.map((part, index) => part.href
+      ? <a key={index} href={part.href} target="_blank" rel="noopener noreferrer">{part.text}</a>
+      : <span key={index}>{part.text}</span>)}
   </div>;
 }

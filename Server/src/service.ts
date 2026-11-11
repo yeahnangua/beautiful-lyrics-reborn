@@ -116,7 +116,8 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
           run("qq music", withMetadata((t, scope) => providers.qqmusic.getSyllableLyrics(t, scope)), syllable),
           run("kugou direct", withMetadata((t, scope) => providers.kugou.getSyllableLyrics(t, scope)), syllable),
           run("netease direct", withMetadata((t, scope) => providers.netease.getSyllableLyrics(t, scope)), syllable),
-          run("applemusic", withMetadata((t, scope) => providers.applemusic.getLyrics(t, scope)), syllable)
+          run("applemusic", withMetadata((t, scope) => providers.applemusic.getLyrics(t, scope)), syllable),
+          run("lrc.red", withMetadata((t, scope) => providers.lrcred.getLyrics(t, scope)), syllable)
         );
         let winner = await first(candidates, lyrics => lyrics.Type === "Syllable");
         if (winner && isLiveTitle(matchedTitle(winner[1]) ?? metadata?.name ?? "")) {
@@ -167,7 +168,7 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
       }
       if (context.signal?.aborted) return undefined;
 
-      const staticOrder = ["spicylyrics", "spotify", "lrclib"];
+      const staticOrder = ["spicylyrics", "spotify", "lrc.red", "lrclib"];
       for (const source of staticOrder) {
         const lyrics = available.get(source);
         if (lyrics?.Type === "Static") return finish([source, lyrics]);

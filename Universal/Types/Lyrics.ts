@@ -5,6 +5,8 @@ export type SpicyAttribution = {
   uploader?: Contributor;
   maker?: Contributor;
 };
+export type LrcRedAttribution = { provider: "lrc.red"; source: "lrc.red" };
+export type LyricsAttribution = SpicyAttribution | LrcRedAttribution;
 export type LyricsSource = {
   Provider: string;
   Transport: "direct" | "lyrically";
@@ -13,7 +15,7 @@ export type LyricsSource = {
   MatchedTitle?: string;
 };
 export type LyricsProvenance = {
-  Attribution?: SpicyAttribution;
+  Attribution?: LyricsAttribution;
   Source?: LyricsSource;
   RequestId?: string;
   RetrievedAt?: string;

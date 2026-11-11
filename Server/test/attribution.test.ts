@@ -16,6 +16,17 @@ const syllable: BeautifulLyrics = { Type: "Syllable", StartTime: 1, EndTime: 240
     Syllables: [{ Text: "last sung lyric", StartTime: 230, EndTime: 240, IsPartOfWord: false }] } }] };
 
 describe("attribution as the final lyric", () => {
+  it.each([line, syllable, { Type: "Static" as const, Lines: [{ Text: "lyric" }] }])("keeps one lrc.red credit on $Type lyrics", original => {
+    const input = { ...original, Attribution: { provider: "lrc.red" as const, source: "lrc.red" as const } };
+    const result = appendAttributionLyric(input, 265);
+    const rows = result.Type === "Static" ? result.Lines : result.Content.filter(row => row.Type === "Vocal");
+    const credits = rows.filter(row => "IsAttribution" in row && row.IsAttribution);
+    expect(credits).toHaveLength(1);
+    const credit = credits[0]!;
+    expect("Lead" in credit ? credit.Lead.Syllables[0]!.Text : credit.Text).toBe("Lyrics via lrc.red");
+    expect(appendAttributionLyric(result, 265)).toEqual(result);
+  });
+
   for (const original of [line, syllable]) it(`${original.Type} uses precise track duration, not the end of singing`, () => {
     const snapshot = structuredClone(original);
     const result = appendAttributionLyric(original, 265.437);

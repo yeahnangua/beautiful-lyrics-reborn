@@ -1,8 +1,8 @@
 import { attributionParts } from "@Universal/Modules/LyricsAttribution.ts"
-import type { SpicyAttribution } from "@Universal/Types/Lyrics.ts"
+import type { LyricsAttribution } from "@Universal/Types/Lyrics.ts"
 
 /** Build inline credits inside a normal lyric span, without injecting HTML. */
-export function SetLyricText(span: HTMLElement, text: string, attribution?: SpicyAttribution) {
+export function SetLyricText(span: HTMLElement, text: string, attribution?: LyricsAttribution) {
 	if (!attribution) { span.innerText = text; return }
 	for (const part of attributionParts(attribution)) {
 		if (!part.href) { span.appendChild(document.createTextNode(part.text)); continue }

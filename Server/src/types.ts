@@ -1,4 +1,4 @@
-import type { SpicyAttribution } from "../../Universal/Types/Lyrics";
+import type { LyricsAttribution } from "../../Universal/Types/Lyrics";
 export type LyricsSource = {
   Provider: string;
   Transport: "direct" | "lyrically";
@@ -25,8 +25,8 @@ export type TimeMetadata = {
 export type StaticSyncedLyrics = LyricsProvenance & {
   Type: "Static";
   Lines: TextMetadata[];
-  /** Spicy attribution when this result came from the Spicy Lyrics provider. */
-  Attribution?: SpicyAttribution;
+  /** Provider credits carried through cache and rendering. */
+  Attribution?: LyricsAttribution;
 };
 
 export type LineVocal = TimeMetadata &
@@ -42,8 +42,8 @@ export type Interlude = TimeMetadata & {
 export type LineSyncedLyrics = LyricsProvenance & TimeMetadata & {
   Type: "Line";
   Content: (LineVocal | Interlude)[];
-  /** Spicy attribution when this result came from the Spicy Lyrics provider. */
-  Attribution?: SpicyAttribution;
+  /** Provider credits carried through cache and rendering. */
+  Attribution?: LyricsAttribution;
 };
 
 export type SyllableMetadata = TimeMetadata &
@@ -67,8 +67,8 @@ export type SyllableVocalSet = {
 export type SyllableSyncedLyrics = LyricsProvenance & TimeMetadata & {
   Type: "Syllable";
   Content: (SyllableVocalSet | Interlude)[];
-  /** Spicy attribution when this result came from the Spicy Lyrics provider. */
-  Attribution?: SpicyAttribution;
+  /** Provider credits carried through cache and rendering. */
+  Attribution?: LyricsAttribution;
 };
 
 export type BeautifulLyrics = StaticSyncedLyrics | LineSyncedLyrics | SyllableSyncedLyrics;
@@ -104,6 +104,7 @@ export type ProviderClients = {
   netease: TimedLyricsProvider;
   spicylyrics: SpicyLyricsProvider;
   applemusic: AppleMusicProvider;
+  lrcred: LrcRedProvider;
   spotify: SpotifyProvider;
   lrclib: LrclibProvider;
 };
@@ -128,6 +129,10 @@ export type SpotifyProvider = {
 };
 
 export type LrclibProvider = {
+  getLyrics(track: TrackMetadata, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
+};
+
+export type LrcRedProvider = {
   getLyrics(track: TrackMetadata, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
 };
 
@@ -172,7 +177,7 @@ export type ProviderAttempt = {
   lyricsType?: BeautifulLyrics["Type"];
   source?: LyricsSource;
   error?: string;
-  reason?: "not_configured" | "metadata_unavailable" | "token_unavailable" | "apple_music_id_unavailable";
+  reason?: "not_configured" | "metadata_unavailable" | "token_unavailable" | "apple_music_id_unavailable" | "upstream_backoff";
   matches?: LyricsSource[];
   retries: number;
   upstream: UpstreamEvent[];

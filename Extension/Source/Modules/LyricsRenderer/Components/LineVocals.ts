@@ -1,5 +1,5 @@
 import { SetLyricText } from "../LyricText.ts"
-import type { SpicyAttribution } from "@Universal/Types/Lyrics.ts"
+import type { LyricsAttribution } from "@Universal/Types/Lyrics.ts"
 // Packages
 import { Maid, Giveable } from "@Universal/Modules/Maid.ts"
 import { Signal } from "@Universal/Modules/Signal.ts"
@@ -61,7 +61,7 @@ export default class LineVocals implements SyncedVocals, Giveable {
 
 	// Constructor
 	public constructor(
-		lineContainer: HTMLElement, lineMetadata: LineVocal, attribution?: SpicyAttribution
+			lineContainer: HTMLElement, lineMetadata: LineVocal, attribution?: LyricsAttribution
 	) {
 		// First create our container
 		const container = this.Maid.Give(document.createElement('div'))

@@ -42,6 +42,17 @@ test('credits are inline safe links inside an ordinary lead lyric, without seeki
   let stopped=false;links[0].listeners.get('click')({stopPropagation(){stopped=true;}});assert.equal(stopped,true);
   vocal.Destroy();assert.equal(parent.children.length,0);
 });
+test('lrc.red uses the same inline credits with its own clickable provider link', () => {
+  const parent = new Element(), attr = {provider:'lrc.red',source:'lrc.red'};
+  const vocal = new LineVocals(parent,{StartTime:19.9,EndTime:20,Text:'Lyrics via lrc.red'},attr);
+  const span=parent.children[0].children[0],links=span.children.filter(child=>child instanceof Anchor);
+  assert.equal(span.textContent,'Lyrics via lrc.red');
+  assert.deepEqual(links.map(link=>[link.textContent,link.href]),[['lrc.red','https://lrc.red']]);
+  assert.equal(links[0].target,'_blank');
+  assert.equal(links[0].rel,'noopener noreferrer');
+  let stopped=false;links[0].listeners.get('click')({stopPropagation(){stopped=true;}});assert.equal(stopped,true);
+  vocal.Destroy();
+});
 test('the normal lyric animator highlights only the final 100ms and resets when seeking back', () => {
   const parent=new Element(),vocal=new LineVocals(parent,{StartTime:19.9,EndTime:20,Text:'credits'},attribution);
   for(const [time,active,sung] of [[19.89,false,false],[19.9,true,false],[19.99,true,false],[20,true,false],[20.01,false,true],[2,false,false],[19.95,true,false]]) {

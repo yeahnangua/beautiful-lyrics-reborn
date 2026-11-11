@@ -1,5 +1,5 @@
 import { SetLyricText } from "../LyricText.ts"
-import type { SpicyAttribution } from "@Universal/Types/Lyrics.ts"
+import type { LyricsAttribution } from "@Universal/Types/Lyrics.ts"
 // Packages
 import { Maid, Giveable } from '@Universal/Modules/Maid.ts'
 
@@ -15,7 +15,7 @@ export default class StaticVocals implements BaseVocals, Giveable {
 
 	// Constructor
 	public constructor(
-		lineContainer: HTMLElement, lyricMetadata: TextMetadata, attribution?: SpicyAttribution
+			lineContainer: HTMLElement, lyricMetadata: TextMetadata, attribution?: LyricsAttribution
 	) {
 		// Store our lyric-metadata
 		this.LyricMetadata = lyricMetadata

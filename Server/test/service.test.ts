@@ -34,6 +34,9 @@ function createProviders(): ProviderClients {
     applemusic: {
       getLyrics: vi.fn().mockResolvedValue(undefined)
     },
+    lrcred: {
+      getLyrics: vi.fn().mockResolvedValue(undefined)
+    },
     spotify: {
       getLyrics: vi.fn().mockResolvedValue(undefined),
       getTrackMetadata: vi.fn().mockResolvedValue(undefined)
@@ -73,20 +76,22 @@ describe("per-type source blocks", () => {
     expect(providers.netease.getSyllableLyrics).not.toHaveBeenCalled();
     expect(diagnostics.attempts).toContainEqual(expect.objectContaining({ provider: "netease direct", outcome: "blocked", blockAction: "skipped", upstream: [] }));
   });
-  it.each(["spicylyrics", "applemusic"] as const)("retains %s line results from the syllable race when only syllables are blocked", async provider => {
+  it.each(["spicylyrics", "applemusic", "lrcred"] as const)("retains %s line results from the syllable race when only syllables are blocked", async provider => {
     const providers = createProviders();
+    const source = provider === "lrcred" ? "lrc.red" : provider;
     vi.mocked(providers[provider].getLyrics).mockResolvedValue(line);
     const result = await createLyricsService(providers).getLyrics("track", "token", track, undefined,
-      { sourceBlocks: [{ provider, lyricsType: "Syllable" }] });
-    expect(result).toMatchObject({ Type: "Line", Source: { Provider: provider } });
+      { sourceBlocks: [{ provider: source, lyricsType: "Syllable" }] });
+    expect(result).toMatchObject({ Type: "Line", Source: { Provider: source } });
     expect(providers[provider].getLyrics).toHaveBeenCalledTimes(1);
   });
-  it.each(["spicylyrics", "applemusic"] as const)("filters blocked %s line results before any fallback can reuse them", async provider => {
+  it.each(["spicylyrics", "applemusic", "lrcred"] as const)("filters blocked %s line results before any fallback can reuse them", async provider => {
     const providers = createProviders();
+    const source = provider === "lrcred" ? "lrc.red" : provider;
     vi.mocked(providers[provider].getLyrics).mockResolvedValue(line);
     vi.mocked(providers.lrclib.getLyrics).mockResolvedValue(plain);
     const result = await createLyricsService(providers).getLyrics("track", "token", track, undefined,
-      { sourceBlocks: [{ provider, lyricsType: "Line" }] });
+      { sourceBlocks: [{ provider: source, lyricsType: "Line" }] });
     expect(result).toMatchObject({ Type: "Static", Source: { Provider: "lrclib" } });
   });
   it("blocks Spotify lines while still requesting Spotify metadata", async () => {
@@ -144,7 +149,7 @@ describe("lyrics service", () => {
     expect(await createLyricsService(providers).getLyrics("track", "token", track, undefined, { diagnostics })).toBeUndefined();
     expect(legacyRequest).not.toHaveBeenCalled();
     expect(diagnostics.attempts.map(attempt => attempt.provider).sort()).toEqual([
-      "spicylyrics", "qq music", "kugou direct", "netease direct", "applemusic", "spotify", "lrclib",
+      "spicylyrics", "qq music", "kugou direct", "netease direct", "applemusic", "lrc.red", "spotify", "lrclib",
       "qq music", "kugou direct", "netease direct", 
     ].sort());
     expect(diagnostics.attempts.some(attempt => attempt.stage === "static")).toBe(false);
@@ -1022,11 +1027,12 @@ describe("provider attempt diagnostics", () => {
     for (const provider of [providers.qqmusic, providers.kugou, providers.netease, ]) vi.mocked(provider.getSyllableLyrics).mockImplementation(() => new Promise(() => {}));
     vi.mocked(providers.spicylyrics.getLyrics).mockImplementation(() => new Promise(() => {}));
     vi.mocked(providers.applemusic.getLyrics).mockImplementation(() => new Promise(() => {}));
+    vi.mocked(providers.lrcred.getLyrics).mockImplementation(() => new Promise(() => {}));
     const record = diagnostics(), controller = new AbortController();
     const pending = createLyricsService(providers).getLyrics("track", "token", record.track, undefined, { diagnostics: record, signal: controller.signal });
     await Promise.resolve();controller.abort();
     expect(await pending).toBeUndefined();
-    expect(record.attempts).toHaveLength(5);
+    expect(record.attempts).toHaveLength(6);
     expect(record.attempts.every(attempt => attempt.outcome === "cancelled")).toBe(true);
   });
 });

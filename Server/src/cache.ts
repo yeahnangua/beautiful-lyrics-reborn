@@ -60,7 +60,10 @@ function normalizeMetadata(trackId: string, metadata?: TrackMetadata): TrackMeta
   for (const key of ["album", "isrc"] as const) {
     if (typeof metadata[key] === "string" && metadata[key].trim()) result[key] = metadata[key].trim();
   }
-  if (Number.isFinite(metadata.durationSeconds) && metadata.durationSeconds! > 0) result.durationSeconds = metadata.durationSeconds!;
+  if (Number.isFinite(metadata.durationSeconds) && metadata.durationSeconds! > 0) {
+    const duration = Math.round(metadata.durationSeconds!);
+    if (duration > 0) result.durationSeconds = duration;
+  }
   if (typeof metadata.appleMusicId === "string" && /^\d+$/.test(metadata.appleMusicId.trim())) {
     result.appleMusicId = metadata.appleMusicId.trim();
     if (typeof metadata.appleMusicTitle === "string" && metadata.appleMusicTitle.trim()) result.appleMusicTitle = metadata.appleMusicTitle.trim();

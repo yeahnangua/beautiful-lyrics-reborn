@@ -9,8 +9,19 @@ User-Agent: beautiful-lyrics-reborn (https://github.com/yeahnangua/beautiful-lyr
 ```
 
 When Spotify metadata includes a valid ISRC, the provider first requests `/s/{isrc}.ttml`.
+The extension shares a song-ID-keyed metadata lookup between the details view and
+both foreground and prefetched lyric requests. Cached metadata requires no extra
+network request. ISRC resolution runs alongside the Apple Music lookup with a
+1.5-second caller budget; unavailable or invalid ISRCs fall back to normal search.
+The shared lookup has its own eight-second lifetime, so one cancelled or timed-out
+lyric waiter does not cancel another consumer. Late results cannot update a newer
+lookup, and a slow or failed cache write does not delay the returned metadata.
+
 Otherwise, or when that recording is unavailable, it searches `/search.json?q={title artist}`.
-Search candidates must match the normalized title and an expected artist. When the
+Search candidates must match the normalized title and an expected artist. Full artist
+names remain eligible, including names such as AC/DC; collaboration credits also
+match complete names separated by punctuation or feat/ft/with markers. Substring
+matches are not accepted. When the
 Spotify duration is available, the candidate must supply a duration within eight seconds.
 EP/album/single version and remaster labels can be normalized; live, acoustic, remix,
 and other different versions remain distinct. Matching albums rank ahead of compilations.
@@ -34,6 +45,10 @@ required for the clickable provider link.
 
 Requests retain the service's cancellation/deadline bounds. HTTP 429/503 ends the current
 lookup and suppresses further lrc.red queries in that Worker instance until `Retry-After`.
+Missing, blank, malformed, negative, or numerically overflowing delays use five seconds.
+Valid numeric delays and HTTP dates have a one-second minimum without a five-minute
+maximum; fractional numeric delays are tolerated, and asctime HTTP dates use UTC.
+An overlapping request cannot shorten an already active cooldown.
 This is an instance-local cooldown, not a distributed rate limiter. No upload, synchronization,
 or submission endpoint is called.
 

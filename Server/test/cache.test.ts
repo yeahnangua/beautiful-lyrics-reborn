@@ -8,6 +8,7 @@ import { createWorker, type WorkerEnv } from "../src/index";
 import { loadDiagnostics } from "../src/diagnostics";
 import { putSourceBlock } from "../src/source-blocks";
 import { createLyricsService, type LyricsService } from "../src/service";
+import { convertLrcToLineLyrics } from "../src/convert/lrc";
 import type { BeautifulLyrics, RequestDiagnostics } from "../src/types";
 import { lyricsAuthFixture } from "./lyrics-auth-fixture";
 
@@ -154,6 +155,54 @@ describe("Workers Cache content and request boundary", () => {
     expect(service.getLyrics.mock.results).toHaveLength(1);
   });
 
+  it("uses one integer duration for the cache identity and internal query context", async () => {
+    const first = await cacheIdentity("track", { ...metadata, durationSeconds: 234.56 }, []);
+    const second = await cacheIdentity("track", { ...metadata, durationSeconds: 234.587 }, []);
+    expect(first.identity).toEqual(second.identity);
+    expect(first.metadata?.durationSeconds).toBe(235);
+    expect(second.metadata?.durationSeconds).toBe(235);
+    expect(cachePath(first.identity)).toMatch(/^\/lyrics-body\/v2\//);
+    const internal = createOriginRequest(first.identity, { metadata: first.metadata!, sourceBlocks: [],
+      deadline: Date.now() + 1000, triggerRequestId: crypto.randomUUID() }, "token");
+    expect((await readOriginRequest(internal)).metadata?.durationSeconds).toBe(235);
+    const below = await cacheIdentity("track", { ...metadata, durationSeconds: 234.49 }, []);
+    const above = await cacheIdentity("track", { ...metadata, durationSeconds: 234.51 }, []);
+    expect(below.identity.metadataHash).not.toBe(above.identity.metadataHash);
+  });
+
+  it("omits durations that round to zero and retains positive rounded values", async () => {
+    const { durationSeconds: _duration, ...withoutDuration } = metadata;
+    const missing = await cacheIdentity("track", withoutDuration, []);
+    const tiny = await cacheIdentity("track", { ...metadata, durationSeconds: 0.49 }, []);
+    expect(tiny.identity).toEqual(missing.identity);
+    expect(tiny.metadata).not.toHaveProperty("durationSeconds");
+    expect((await cacheIdentity("track", { ...metadata, durationSeconds: 0.5 }, [])).metadata?.durationSeconds).toBe(1);
+  });
+
+  it("shares normalized lyric bodies while preserving each request's precise attribution timing", async () => {
+    const getLyrics = vi.fn<LyricsService["getLyrics"]>(async (_id, _token, track) => ({
+      ...convertLrcToLineLyrics("[00:01.00]First\n[03:50.00]Last", track?.durationSeconds)!,
+      Source: { Provider: "lrc.red", Transport: "direct" }, Attribution: { provider: "lrc.red", source: "lrc.red" }
+    }));
+    const fixture = cacheFixture({ getLyrics });
+    const first = await (await fixture.call(request({ duration: "234.56" }))).json() as BeautifulLyrics;
+    const response = await fixture.call(request({ duration: "234.587" }));
+    const second = await response.json() as BeautifulLyrics;
+    expect(response.headers.get("X-Lyrics-Cache")).toBe("hit");
+    expect(getLyrics).toHaveBeenCalledTimes(1);
+    expect(getLyrics.mock.calls[0]?.[2]?.durationSeconds).toBe(235);
+    expect(second.LyricsHash).toBe(first.LyricsHash);
+    expect(second.RequestId).not.toBe(first.RequestId);
+    expect(first.Type).toBe("Line");
+    expect(second.Type).toBe("Line");
+    if (first.Type !== "Line" || second.Type !== "Line") throw Error("Expected line lyrics");
+    expect(first.Content.at(-1)).toMatchObject({ IsAttribution: true, EndTime: 234.56 });
+    expect(second.Content.at(-1)).toMatchObject({ IsAttribution: true, EndTime: 234.587 });
+    const stored = await [...fixture.entries.values()][0]!.response.clone().json() as OriginEnvelope;
+    expect(stored.schema).toBe(2);
+    expect(stored.lyrics).toMatchObject({ Type: "Line", EndTime: 235 });
+  });
+
   it("canonicalizes metadata and policy while separating Apple Music and duration variants", async () => {
     const blocks = [{ provider: "qqmusic", lyricsType: "Line" as const }, { provider: "netease", lyricsType: "Syllable" as const }];
     const first = await cacheIdentity("track", metadata, blocks);
@@ -172,7 +221,7 @@ describe("Workers Cache content and request boundary", () => {
     await fixture.call(request({}, { ...auth.headers, "Cache-Control": "no-store", Cookie: "PRIVATE_COOKIE",
       "If-None-Match": "private-etag", "X-Forwarded-Host": "attacker.invalid" }));
     const internal = fixture.fetch.mock.calls[0]![0];
-    expect(internal.url).toMatch(/\/lyrics-body\/v1\/track\/[a-f0-9]{64}\/[a-f0-9]{64}$/);
+    expect(internal.url).toMatch(/\/lyrics-body\/v2\/track\/[a-f0-9]{64}\/[a-f0-9]{64}$/);
     for (const header of ["Authorization", "X-Lyrics-Session", "Cookie", "Cache-Control", "If-None-Match", "X-Forwarded-Host"]) {
       expect(internal.headers.has(header)).toBe(false);
     }

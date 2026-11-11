@@ -17,6 +17,7 @@ import {
 	FetchLyrics
 } from "../Session.ts"
 import { GetExpireStore, type ExpirationSettings } from '../Cache.ts'
+import { createTrackInformationLoader, getTrackIsrc, resolveTrackIsrc } from '../TrackInformation.ts'
 
 // Our Modules
 import {
@@ -183,7 +184,7 @@ type StreamedArtistsDetails = {
 export type StreamedSongDetails = {
 	IsLocal: false;
 
-	ISRC: string;
+	ISRC: string | undefined;
 	Name: string;
 	Artists: StreamedArtistsDetails[];
 	Album: {
@@ -207,6 +208,23 @@ const TrackInformationStore = GetExpireStore<TrackInformation>(
 	},
 	true
 )
+const LoadTrackInformation = createTrackInformationLoader({
+	getCached: songId => TrackInformationStore.GetItem(songId),
+	setCached: (songId, information) => TrackInformationStore.SetItem(songId, information),
+	async fetchTrack(songId) {
+		const internalId = SpotifyURI.idToHex(songId)
+		const requestBuilder = SpotifyRequestBuilder.build()
+			.withHost("https://spclient.wg.spotify.com/metadata/4")
+			.withPath(`/track/${internalId}`)
+			.withEndpointIdentifier(`/track/${internalId}`)
+		requestBuilder.UseExistingPromise = true
+		const response = await requestBuilder.send() as TrackInformationResponse
+		if (!response.ok) throw new Error(`Failed to load Track (${songId}) Information`)
+		return response.body
+	}
+})
+PlayerMaid.Give(() => LoadTrackInformation.destroy())
+const ResolveTrackIsrc = (songId: string, parent: AbortSignal) => resolveTrackIsrc(LoadTrackInformation, songId, parent)
 const SongNameFilters = [
 	/\s*(?:\-|\/)\s*(?:(?:Stereo|Mono)\s*)?Remastered(?:\s*\d+)?/,
 	/\s*\-\s*(?:Stereo|Mono)(?:\s*Version|\s*Mix)?/,
@@ -248,47 +266,7 @@ const LoadSongDetails = () => {
 
 	// Otherwise, fetch our details
 	{
-		TrackInformationStore.GetItem(songAtUpdate.Id)
-		.then(
-			trackInformation => {
-				if (trackInformation === undefined) {
-					// Create our base-build
-					const requestBuilder = (
-						SpotifyRequestBuilder.build()
-						.withHost("https://spclient.wg.spotify.com/metadata/4")
-						.withPath(`/track/${songAtUpdate.InternalId}`)
-						.withEndpointIdentifier(`/track/${songAtUpdate.InternalId}`)
-					)
-
-					// Mark our request-builder to default to existing promise
-					requestBuilder.UseExistingPromise = true
-
-					// Now send our request
-					return (
-						// SpotifyFetch(`https://api.spotify.com/v1/tracks/${songAtUpdate.Id}`)
-						(requestBuilder.send() as Promise<TrackInformationResponse>)
-						// Uncaught on purpose - it should rarely ever fail
-						.catch(error => {console.warn(error); throw error})
-						.then(
-							response => {
-								if (response.ok === false) {
-									throw `Failed to load Track (${songAtUpdate.Id}) Information`
-								}
-								return response.body
-							}
-						)
-						.then(
-							(trackInformation) => {
-								TrackInformationStore.SetItem(songAtUpdate.Id, trackInformation)
-								return trackInformation
-							}
-						)
-					)
-				} else {
-					return trackInformation
-				}
-			}
-		)
+		LoadTrackInformation(songAtUpdate.Id)
 		.then(
 			trackInformation => {
 				// Make sure we still have the same song active
@@ -303,7 +281,7 @@ const LoadSongDetails = () => {
 				SongDetails = {
 					IsLocal: false,
 
-					ISRC: trackInformation.external_id.find(entry => entry.type === "isrc")!.id,
+					ISRC: getTrackIsrc(trackInformation),
 					Name: transformedName,
 					Artists: trackInformation.artist.map(
 						artist => (
@@ -334,6 +312,12 @@ const LoadSongDetails = () => {
 				SongDetailsLoadedSignal.Fire()
 			}
 		)
+		.catch(error => {
+			if (Song !== songAtUpdate) return
+			console.warn("Could not load song details", error)
+			HaveSongDetailsLoaded = true
+			SongDetailsLoadedSignal.Fire()
+		})
 	}
 }
 
@@ -470,8 +454,11 @@ PlayerMaid.Give(() => {
 const FetchProviderLyrics = async (
 	songId: string, lyricsRequestURL: string, parent: AbortSignal, remainingRetries = 1
 ): Promise<ProviderLyrics | false> => {
-	const appleMusicTrack = await Abortable(parent, () => ResolveAppleMusicId(lyricsRequestURL, parent))
+	const [appleMusicTrack, isrc] = await Abortable(parent, () => Promise.all([
+		ResolveAppleMusicId(lyricsRequestURL, parent), ResolveTrackIsrc(songId, parent)
+	]))
 	const requestUrl = new URL(lyricsRequestURL)
+	if (isrc) requestUrl.searchParams.set("isrc", isrc)
 	if (appleMusicTrack) {
 		requestUrl.searchParams.set("apple_id", appleMusicTrack.id)
 		requestUrl.searchParams.set("apple_title", appleMusicTrack.title)

@@ -24,9 +24,30 @@ function candidate(value: unknown): Candidate | undefined {
 }
 
 function matches(item: Candidate, track: TrackMetadata): boolean {
+  const artists = [item.artist, ...item.artist.split(/[、,，;；&/＋+]|(?:\s+(?:feat|ft|with)\.?\s+)/i)]
+    .map(normalized).filter(Boolean);
   return canonicalTitle(item.title) === canonicalTitle(track.name) &&
-    track.artists.some(artist => normalized(artist) === normalized(item.artist)) &&
+    track.artists.some(artist => artists.includes(normalized(artist))) &&
     (track.durationSeconds === undefined || item.duration !== undefined && Math.abs(item.duration - track.durationSeconds) <= 8);
+}
+
+function retryAfterDeadline(value: string | null, now: number): number {
+  const text = value?.trim();
+  const fallback = now + 5000;
+  if (!text) return fallback;
+  // Also tolerate fractional delays, as our session client does; never parse bad numbers as dates.
+  if (/^\d+(?:\.\d+)?$/.test(text)) {
+    const delay = Math.ceil(Number(text) * 1000);
+    return Number.isSafeInteger(delay) && delay <= Number.MAX_SAFE_INTEGER - now
+      ? now + Math.max(1000, delay) : fallback;
+  }
+  const imf = /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/;
+  const obsolete = /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), \d{2}-(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-\d{2} \d{2}:\d{2}:\d{2} GMT$|^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ \d]\d \d{2}:\d{2}:\d{2} \d{4}$/;
+  if (!imf.test(text) && !obsolete.test(text)) return fallback;
+  // The obsolete asctime format has no zone marker but HTTP dates are always UTC.
+  const until = Date.parse(text.endsWith(" GMT") ? text : text + " GMT");
+  if (!Number.isFinite(until) || imf.test(text) && new Date(until).toUTCString() !== text) return fallback;
+  return Math.max(now + 1000, until);
 }
 
 export function createLrcRedProvider(fetchImpl: typeof fetch = fetch): LrcRedProvider {
@@ -46,10 +67,7 @@ export function createLrcRedProvider(fetchImpl: typeof fetch = fetch): LrcRedPro
         });
         recordUpstreamResult(context, { operation });
         if (response.status === 429 || response.status === 503) {
-          const retry = response.headers.get("Retry-After");
-          const seconds = retry === null ? NaN : Number(retry);
-          const until = Number.isFinite(seconds) ? Date.now() + seconds * 1000 : Date.parse(retry ?? "");
-          retryAfterUntil = Math.max(Date.now() + 1000, Number.isFinite(until) ? until : Date.now() + 5000);
+          retryAfterUntil = Math.max(retryAfterUntil, retryAfterDeadline(response.headers.get("Retry-After"), Date.now()));
         }
         if (!response.ok) recordUpstreamResult(context, { result: response.status === 404 ? "no_lyrics" : "http_error" });
         return response;

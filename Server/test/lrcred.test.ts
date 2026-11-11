@@ -90,6 +90,27 @@ describe("lrc.red provider", () => {
     await createLrcRedProvider(fetchMock).getLyrics(track);
     expect(String(fetchMock.mock.calls[1]?.[0]).endsWith("USABC2400001.ttml")).toBe(true);
   });
+  it.each([", ", "，", "、", " & ", " / ", " + ", "＋", "; ", "；", " feat. ", " ft ", " WITH "])("matches collaboration credits separated by %s", async separator => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => String(input).includes("search.json")
+      ? Response.json({ hits: [{ ...hit, artist: `Artist A${separator}Artist B` }] }) : new Response(redWords));
+    expect(await createLrcRedProvider(fetchMock).getLyrics({ ...track, artists: ["Artist A", "Artist B"] }))
+      .toMatchObject({ Type: "Syllable", Source: { TrackId: hit.isrc } });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+  it.each(["AC/DC", "Simon & Garfunkel", "Earth, Wind & Fire", "Sleeping With Sirens"])("preserves a complete artist name containing separators: %s", async artist => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => String(input).includes("search.json")
+      ? Response.json({ hits: [{ ...hit, artist }] }) : new Response(redWords));
+    expect(await createLrcRedProvider(fetchMock).getLyrics({ ...track, artists: [artist] })).toMatchObject({ Type: "Syllable" });
+  });
+  it("keeps exact artist, recording-version and duration checks for collaborations", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ hits: [
+      { ...hit, artist: "Artist Extended, Someone Else" },
+      { ...hit, artist: "Artist, Someone Else", title: "Song (Live)" },
+      { ...hit, artist: "Artist, Someone Else", duration: 189 }
+    ] }));
+    expect(await createLrcRedProvider(fetchMock).getLyrics(track)).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
   it("upgrades a line candidate to words without dropping its source", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -147,6 +168,43 @@ describe("lrc.red provider", () => {
     expect(first).toMatchObject({ retries: 0, upstream: [{ status, result: "http_error" }] });
     expect(second).toMatchObject({ reason: "upstream_backoff", upstream: [] });
   });
+  it.each([null, "", "   ", "-1", "-0.5", "+1", "NaN", "Infinity", "1e3", "0x10", "1/2", "9007199254740", "999999999999999999999999", "invalid",
+    "Tue, 30 Feb 2027 12:00:00 GMT"])("uses the five-second fallback for invalid Retry-After %j", async value => {
+    vi.useFakeTimers();
+    try {
+      const now = Date.parse("2026-11-11T12:00:00Z");
+      vi.setSystemTime(now);
+      const fetchMock = vi.fn(async () => new Response("busy", { status: 429, headers: value === null ? {} : { "Retry-After": value } }));
+      const provider = createLrcRedProvider(fetchMock);
+      await provider.getLyrics(track);
+      vi.setSystemTime(now + 4999);
+      await provider.getLyrics(track);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      vi.setSystemTime(now + 5000);
+      await provider.getLyrics(track);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally { vi.useRealTimers(); }
+  });
+  it.each([
+    ["0", 1000], ["0.5", 1000], ["1.25", 1250], [" 2 ", 2000], ["86400", 86_400_000],
+    ["Thu, 12 Nov 2026 12:00:00 GMT", 86_400_000], ["Wed, 11 Nov 2026 11:59:00 GMT", 1000],
+    ["Wednesday, 11-Nov-26 12:00:10 GMT", 10000], ["Wed Nov 11 12:00:10 2026", 10000]
+  ] as const)("preserves the requested cooldown for Retry-After %s", async (value, delay) => {
+    vi.useFakeTimers();
+    try {
+      const now = Date.parse("2026-11-11T12:00:00Z");
+      vi.setSystemTime(now);
+      const fetchMock = vi.fn(async () => new Response("busy", { status: 503, headers: { "Retry-After": value } }));
+      const provider = createLrcRedProvider(fetchMock);
+      await provider.getLyrics(track);
+      vi.setSystemTime(now + delay - 1);
+      await provider.getLyrics(track);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      vi.setSystemTime(now + delay);
+      await provider.getLyrics(track);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally { vi.useRealTimers(); }
+  });
   it("cancels an in-flight request without retries", async () => {
     const controller = new AbortController(), diagnostics = trace();
     let started!: () => void;
@@ -159,5 +217,30 @@ describe("lrc.red provider", () => {
     await ready; controller.abort(); await failure;
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(diagnostics).toMatchObject({ retries: 0, upstream: [{ outcome: "cancelled" }] });
+  });
+  it("does not shorten a long cooldown when an older concurrent request returns a shorter delay", async () => {
+    vi.useFakeTimers();
+    try {
+      const now = Date.parse("2026-11-11T12:00:00Z");
+      vi.setSystemTime(now);
+      const responses: Array<(response: Response) => void> = [];
+      let started!: () => void;
+      const ready = new Promise<void>(resolve => { started = resolve; });
+      const fetchMock = vi.fn(async () => new Promise<Response>(resolve => {
+        responses.push(resolve);
+        if (responses.length === 2) started();
+      }));
+      const provider = createLrcRedProvider(fetchMock);
+      const first = provider.getLyrics(track), second = provider.getLyrics(track);
+      await ready;
+      expect(responses).toHaveLength(2);
+      responses[0]!(new Response("busy", { status: 429, headers: { "Retry-After": "86400" } }));
+      await first;
+      responses[1]!(new Response("busy", { status: 429, headers: { "Retry-After": "1" } }));
+      await second;
+      vi.setSystemTime(now + 5 * 60_000);
+      expect(await provider.getLyrics(track)).toBeUndefined();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally { vi.useRealTimers(); }
   });
 });

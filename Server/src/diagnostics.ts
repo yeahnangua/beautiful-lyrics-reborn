@@ -5,7 +5,25 @@ import { providerName } from "./source-policy";
 export function logLyricsQuery(record: RequestDiagnostics, lyricsType?: BeautifulLyrics["Type"]): void {
   if (record.cache === "hit") return;
   const brief = (value: string | undefined) => typeof value === "string" ? value.slice(0, 200) : undefined;
+  const summaryText = (value: string | undefined) => value?.replace(/\s+/g, " ").trim().slice(0, 120);
+  const title = summaryText(record.track.name) || summaryText(record.track.id) || "未知歌曲";
+  const artists = summaryText(record.track.artists.slice(0, 3).join(" / "));
+  const outcome = {
+    pending: "查询中", success: "已找到歌词", none: "未找到歌词", failed: "查询失败", cancelled: "查询已取消"
+  }[record.outcome];
+  const source = record.outcome === "success" ? summaryText(record.source?.Provider) || "未知" : "无";
+  const type = lyricsType && { Syllable: "逐字", Line: "逐行", Static: "纯文本" }[lyricsType];
+  // Workers Logs uses these top-level fields for the Message and Level columns.
+  const message = [
+    `[lyrics-query] ${title}${artists ? ` — ${artists}` : ""}`,
+    outcome,
+    `来源：${source}`,
+    ...(record.outcome === "success" && type ? [type] : []),
+    `${Math.round(record.durationMs)}ms`
+  ].join(" | ");
   console.log(JSON.stringify({
+    message,
+    level: record.outcome === "failed" ? "error" : "info",
     event: "lyrics-query",
     requestId: record.id,
     track: { id: record.track.id, name: brief(record.track.name), artists: record.track.artists.slice(0, 5).map(brief) },

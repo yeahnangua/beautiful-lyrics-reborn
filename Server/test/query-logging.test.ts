@@ -88,7 +88,10 @@ describe("Worker lyrics query logs", () => {
     expect(console.warn).not.toHaveBeenCalled();
     const text = vi.mocked(console.log).mock.calls[0]![0] as string;
     const record = JSON.parse(text);
-    expect(record).toMatchObject({ event: "lyrics-query", track, outcome: "none" });
+    expect(record).toMatchObject({
+      event: "lyrics-query", level: "info", track, outcome: "none",
+      message: expect.stringMatching(/^\[lyrics-query\] Song — Artist \| 未找到歌词 \| 来源：无 \| \d+ms$/)
+    });
     expect(record.queries).toHaveLength(9);
     expect(record.queries).toEqual(expect.arrayContaining([
       expect.objectContaining({ provider: "spicylyrics", outcome: "failed", requests: [expect.objectContaining({ status: 403, result: "http_error" })] }),
@@ -113,7 +116,10 @@ describe("Worker lyrics query logs", () => {
     expect(console.log).toHaveBeenCalledTimes(1);
     const text = vi.mocked(console.log).mock.calls[0]![0] as string;
     const record = JSON.parse(text);
-    expect(record).toMatchObject({ outcome: "success", provider: "qqmusic", lyricsType: "Line" });
+    expect(record).toMatchObject({
+      outcome: "success", level: "info", provider: "qqmusic", lyricsType: "Line",
+      message: expect.stringMatching(/^\[lyrics-query\] Song — Artist \| 已找到歌词 \| 来源：qqmusic \| 逐行 \| \d+ms$/)
+    });
     expect(record.queries).toContainEqual(expect.objectContaining({ provider: "qqmusic", stage: "line", selected: true, found: true }));
     expect(text).not.toContain("LYRIC_BODY_SECRET");
   });

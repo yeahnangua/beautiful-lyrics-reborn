@@ -6,7 +6,14 @@ export type SpicyAttribution = {
   maker?: Contributor;
 };
 export type LrcRedAttribution = { provider: "lrc.red"; source: "lrc.red" };
-export type LyricsAttribution = SpicyAttribution | LrcRedAttribution;
+export type BetterLyricsAttribution = { provider: "betterlyrics"; source: "betterlyrics" };
+export type UnisonAttribution = {
+  provider: "unison";
+  source: "unison";
+  songId: string;
+  submitter: Contributor;
+};
+export type LyricsAttribution = SpicyAttribution | LrcRedAttribution | BetterLyricsAttribution | UnisonAttribution;
 export type LyricsSource = {
   Provider: string;
   Transport: "direct" | "lyrically";

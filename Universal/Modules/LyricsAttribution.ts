@@ -12,6 +12,17 @@ export function attributionParts(attribution: LyricsAttribution): { text: string
   if (attribution.provider === "lrc.red") {
     return [{ text: "Lyrics via " }, { text: "lrc.red", href: "https://lrc.red" }];
   }
+  if (attribution.provider === "betterlyrics") {
+    return [{ text: "Lyrics via " }, { text: "Better Lyrics", href: "https://betterlyrics.org" }];
+  }
+  if (attribution.provider === "unison") {
+    return [
+      { text: "Lyrics from " },
+      { text: "Unison", href: `https://unison.betterlyrics.org/song/${encodeURIComponent(attribution.songId)}` },
+      { text: " · submitted by " },
+      { text: attribution.submitter.username, href: contributorUrl(attribution.submitter.url) },
+    ];
+  }
   const parts: { text: string; href?: string | undefined }[] = [{ text: `Lyrics via ${attribution.provider}` }];
   if (attribution.source === "spicy_lyrics") {
     for (const [contributor, separator] of [[attribution.uploader, " · "], [attribution.maker, " / "]] as const) {

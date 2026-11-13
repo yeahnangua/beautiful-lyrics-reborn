@@ -60,7 +60,7 @@ export function createLyricsOrigin(service: LyricsService) {
     const envelope: OriginEnvelope = {
       schema: lyricsCacheVersion, trackId: input.trackId, metadataHash: input.metadataHash, policyHash: input.policyHash,
       outcome: failed ? "failed" : lyrics ? "success" : "none", originRunId: record.id, generatedAt,
-      ...(lyrics ? { lyrics, lyricsHash: record.lyricsHash!, expiresAt: generatedAt + cacheTtlMs(lyrics.Type) } : {})
+      ...(lyrics ? { lyrics, lyricsHash: record.lyricsHash!, expiresAt: generatedAt + cacheTtlMs(lyrics.Type, lyrics.Source?.Provider) } : {})
     };
     const pending = saveOriginDiagnostics(env.FEEDBACK_DB, structuredClone(record))
       .catch(() => console.warn("Lyrics origin diagnostics write failed"));
@@ -68,7 +68,7 @@ export function createLyricsOrigin(service: LyricsService) {
     else await pending;
     return Response.json(envelope, {
       status: failed ? 502 : 200,
-      headers: { "Cache-Control": lyrics ? "public, max-age=" + cacheTtlMs(lyrics.Type) / 1000 + ", must-revalidate" : "no-store" }
+      headers: { "Cache-Control": lyrics ? "public, max-age=" + cacheTtlMs(lyrics.Type, lyrics.Source?.Provider) / 1000 + ", must-revalidate" : "no-store" }
     });
   };
 }

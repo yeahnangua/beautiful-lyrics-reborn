@@ -2,7 +2,7 @@
 
 歌词正文保存在 Cloudflare Workers Cache。默认入口每次执行鉴权、限流和来源屏蔽规则读取，再通过内部的 LyricsOrigin.fetch 访问缓存。只有未命中时才运行歌词查询服务。
 
-歌词专用 D1、歌曲索引和缓存 URL 表均已退出运行链路。FEEDBACK_DB 继续负责规则、反馈、请求诊断及实际查询诊断。插件自己的本地缓存和离线复用逻辑保持不变。
+歌词专用 D1、歌曲索引和缓存 URL 表均已退出运行链路。FEEDBACK_DB 继续负责规则、反馈、请求诊断及实际查询诊断。插件也按来源设置本地缓存有效期，Unison 的社区更正和署名使用短缓存更新。
 
 ## 请求与缓存边界
 
@@ -34,6 +34,11 @@ metadataHash 根据固定字段顺序包含歌名、歌手、专辑、时长、I
 | Syllable | 30 天 | public, max-age=2592000, must-revalidate |
 | Line | 14 天 | public, max-age=1209600, must-revalidate |
 | Static | 3 天 | public, max-age=259200, must-revalidate |
+| Unison（所有类型） | 10 分钟 | public, max-age=600, must-revalidate |
+
+Unison 的服务端和插件本地缓存均为 10 分钟。回源时使用限量 ETag 快照发送 If-None-Match；只有上游返回 304 才能复用快照，修改歌词或提交者署名后返回的新正文会替换快照。快照最多保存 32 条、2 MB、1 小时，不作为上游不可用时的过期兜底。
+
+版本 4 加入 Better Lyrics 和 Unison，插件原始与转换后歌词缓存同步升级为版本 13，避免旧逐字结果遮住新来源。
 
 空结果和错误明确 no-store；不启用负缓存、后台过期刷新或过期内容兜底。提前淘汰视为正常未命中。TTL 是允许使用的上限，不保证保存到期。
 

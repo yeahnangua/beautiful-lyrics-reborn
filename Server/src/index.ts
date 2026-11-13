@@ -6,6 +6,7 @@ import type { RequestDiagnostics } from "./types";
 import { extensionReleaseResponse } from "./extension-release";
 // import { amllDbProvider } from "./providers/amlldb";
 import { appleMusicProvider } from "./providers/applemusic";
+import { betterLyricsProvider } from "./providers/betterlyrics";
 import { kugouProvider } from "./providers/kugou";
 import { lrclibProvider } from "./providers/lrclib";
 import { lrcRedProvider } from "./providers/lrcred";
@@ -13,6 +14,7 @@ import { neteaseProvider } from "./providers/netease";
 import { qqMusicProvider } from "./providers/qqmusic";
 import { spotifyProvider } from "./providers/spotify";
 import { spicyLyricsProvider } from "./providers/spicylyrics";
+import { unisonProvider } from "./providers/unison";
 import { createLyricsService, type LyricsService } from "./service";
 import type { BeautifulLyrics, SpotifyClientContext, TrackMetadata } from "./types";
 import { dashboardHtml } from "./dashboard";
@@ -33,6 +35,8 @@ export const defaultService = createLyricsService({
   spicylyrics: spicyLyricsProvider,
   applemusic: appleMusicProvider,
   lrcred: lrcRedProvider,
+  betterlyrics: betterLyricsProvider,
+  unison: unisonProvider,
   spotify: spotifyProvider,
   lrclib: lrclibProvider
 });

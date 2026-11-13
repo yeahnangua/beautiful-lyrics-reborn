@@ -104,6 +104,44 @@ function queryLogs(): Array<Record<string, any>> {
 }
 
 describe("Workers Cache content and request boundary", () => {
+  it("refreshes Unison lyrics and contributor credits after ten minutes", async () => {
+    const community: BeautifulLyrics = { ...lyrics,
+      Source: { Provider: "unison", Transport: "direct", LyricsId: "123" },
+      Attribution: { provider: "unison", source: "unison", songId: "Ugr4KKK_SqY",
+        submitter: { id: "curator", username: "Original", url: "https://unison.betterlyrics.org/curator/curator" } }
+    };
+    const service = { getLyrics: vi.fn(async () => structuredClone(community)) };
+    const fixture = cacheFixture(service);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      expect((await fixture.call()).headers.get("X-Lyrics-Cache")).toBe("miss");
+      expect((await fixture.call()).headers.get("X-Lyrics-Cache")).toBe("hit");
+      expect(service.getLyrics).toHaveBeenCalledTimes(1);
+      const cached = [...fixture.entries.values()][0]!;
+      const envelope = await cached.response.clone().json() as OriginEnvelope;
+      expect(envelope.expiresAt! - envelope.generatedAt).toBe(600_000);
+      expect(cached.response.headers.get("Cache-Control")).toBe("public, max-age=600, must-revalidate");
+      if (community.Attribution?.provider !== "unison") throw new Error("Expected Unison credit");
+      community.Attribution.submitter.username = "Updated";
+      vi.setSystemTime(Date.now() + 600_001);
+      const refreshed = await fixture.call();
+      expect(refreshed.headers.get("X-Lyrics-Cache")).toBe("miss");
+      expect(await refreshed.json()).toMatchObject({ Attribution: { submitter: { username: "Updated" } } });
+      expect(service.getLyrics).toHaveBeenCalledTimes(2);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("does not cache community lyrics whose submitter credit is missing", async () => {
+    const { Attribution: _credit, ...uncredited } = lyrics;
+    const service = { getLyrics: vi.fn(async (): Promise<BeautifulLyrics> => ({ ...uncredited,
+      Source: { Provider: "unison", Transport: "direct" } })) };
+    const fixture = cacheFixture(service);
+    const result = await fixture.call();
+    expect(result.status).toBe(502);
+    expect(fixture.entries.size).toBe(0);
+    expect(result.headers.get("Cache-Control")).toContain("no-store");
+  });
+
   it("does not reuse content from earlier source-policy namespaces", async () => {
     const service = successfulService(), fixture = cacheFixture(service);
     await fixture.call();

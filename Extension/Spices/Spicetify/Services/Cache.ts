@@ -4,7 +4,7 @@ import { IsDevelopment } from "./Session.ts"
 // Configuration Types
 export type ExpirationSettings = {
 	Duration: number;
-	Unit: ("Days" | "Weeks" | "Months");
+	Unit: ("Minutes" | "Days" | "Weeks" | "Months");
 }
 
 // Instant Store Types
@@ -187,14 +187,18 @@ export const GetExpireStore = <ItemType>(
 				// Determine when we expire
 				const expirationSettings = (expirationOverride ?? itemExpirationSettings)
 				const expireAtDate = new Date()
-				expireAtDate.setHours(0, 0, 0, 0)
-				if (expirationSettings.Unit == "Days") {
-					expireAtDate.setDate(expireAtDate.getDate() + expirationSettings.Duration)
-				} else if (expirationSettings.Unit == "Weeks") {
-					expireAtDate.setDate(expireAtDate.getDate() + (expirationSettings.Duration * 7))
+				if (expirationSettings.Unit == "Minutes") {
+					expireAtDate.setTime(expireAtDate.getTime() + (expirationSettings.Duration * 60_000))
 				} else {
-					expireAtDate.setMonth(expireAtDate.getMonth() + expirationSettings.Duration)
-					expireAtDate.setDate(0)
+					expireAtDate.setHours(0, 0, 0, 0)
+					if (expirationSettings.Unit == "Days") {
+						expireAtDate.setDate(expireAtDate.getDate() + expirationSettings.Duration)
+					} else if (expirationSettings.Unit == "Weeks") {
+						expireAtDate.setDate(expireAtDate.getDate() + (expirationSettings.Duration * 7))
+					} else {
+						expireAtDate.setMonth(expireAtDate.getMonth() + expirationSettings.Duration)
+						expireAtDate.setDate(0)
+					}
 				}
 				const expireAt = expireAtDate.getTime()
 	

@@ -44,8 +44,9 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
         context.diagnostics?.attempts.push(attempt);
         try {
           // These paths can only return one type. Mixed-type paths must still run.
-          const onlyType = ["qq music", "kugou direct", "netease direct"].includes(name)
-            ? (stage === "line" ? "Line" : "Syllable") : undefined;
+          const onlyType = name === "betterlyrics-kugou" ? "Line"
+            : ["qq music", "kugou direct", "netease direct"].includes(name)
+              ? (stage === "line" ? "Line" : "Syllable") : undefined;
           if (onlyType && isSourceBlocked(blocks, providerName(name), onlyType)) {
             attempt.outcome = "blocked";
             attempt.blockAction = "skipped";
@@ -119,6 +120,21 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
           run("applemusic", withMetadata((t, scope) => providers.applemusic.getLyrics(t, scope)), syllable),
           run("lrc.red", withMetadata((t, scope) => providers.lrcred.getLyrics(t, scope)), syllable)
         );
+        if (providers.betterlyrics) {
+          const betterlyrics = providers.betterlyrics;
+          candidates.push(
+            run("betterlyrics", withMetadata((t, scope) => betterlyrics.getLyrics(t, scope)), syllable),
+            run("betterlyrics-qq", withMetadata((t, scope) => betterlyrics.getQqLyrics(t, scope)), syllable)
+          );
+        }
+        if (providers.unison) {
+          const unison = providers.unison;
+          candidates.push(run("unison", async scope => {
+            const track = await metadataPromise;
+            syllable.signal.throwIfAborted();
+            return unison.getLyrics(track ?? { id: trackId, name: "", artists: [] }, scope);
+          }, syllable));
+        }
         let winner = await first(candidates, lyrics => lyrics.Type === "Syllable");
         if (winner && isLiveTitle(matchedTitle(winner[1]) ?? metadata?.name ?? "")) {
           const alternativeScope = requestScope(2_000, syllable);
@@ -159,6 +175,10 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
             run("netease direct", scope => providers.netease.getLineLyrics(knownTrack, scope), line),
             run("lrclib", scope => providers.lrclib.getLyrics(knownTrack, scope), line)
           );
+          if (providers.betterlyrics) {
+            const betterlyrics = providers.betterlyrics;
+            candidates.push(run("betterlyrics-kugou", scope => betterlyrics.getKugouLyrics(knownTrack, scope), line));
+          }
         }
         const winner = await first(candidates, lyrics => lyrics.Type !== "Static");
         if (winner) return finish(winner);
@@ -168,7 +188,7 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
       }
       if (context.signal?.aborted) return undefined;
 
-      const staticOrder = ["spicylyrics", "spotify", "lrc.red", "lrclib"];
+      const staticOrder = ["spicylyrics", "unison", "spotify", "lrc.red", "betterlyrics", "lrclib"];
       for (const source of staticOrder) {
         const lyrics = available.get(source);
         if (lyrics?.Type === "Static") return finish([source, lyrics]);

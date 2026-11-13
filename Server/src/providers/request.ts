@@ -42,7 +42,8 @@ export function recordUpstreamResult(context: RequestContext | undefined, detail
     event.outcome = "failed";
   }
 }
-export function contextFetch(fetchImpl: typeof fetch, context: RequestContext = {}): typeof fetch {
+export function contextFetch(fetchImpl: typeof fetch, context: RequestContext = {},
+  options: { preserveUserAgent?: boolean } = {}): typeof fetch {
   const wrapped: typeof fetch = async (input, init) => {
     const started = Date.now();
     // Host and path only: query strings, request headers and response bodies stay private.
@@ -64,7 +65,8 @@ export function contextFetch(fetchImpl: typeof fetch, context: RequestContext = 
     if (scope.signal.aborted) onAbort();
     try {
       return await abortable(async () => {
-        const headers = WithUserAgent(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+        const inputHeaders = init?.headers ?? (input instanceof Request ? input.headers : undefined);
+        const headers = options.preserveUserAgent ? new Headers(inputHeaders) : WithUserAgent(inputHeaders);
         const response = await fetchImpl(input, { ...init, headers, signal: scope.signal });
         scope.signal.throwIfAborted();
         event.status = response.status;

@@ -4,6 +4,7 @@ import { describe, it, expect, vi } from "vitest";
 import { appendAttributionLyric } from "../src/attribution";
 import { createWorker } from "../src/index";
 import type { BeautifulLyrics } from "../src/types";
+import { attributionParts } from "../../Universal/Modules/LyricsAttribution";
 
 const Attribution = { provider: "spicylyrics" as const, source: "spicy_lyrics",
   uploader: { id: "1", username: "Uploader", url: "https://spicylyrics.org/uid/1" },
@@ -25,6 +26,45 @@ describe("attribution as the final lyric", () => {
     const credit = credits[0]!;
     expect("Lead" in credit ? credit.Lead.Syllables[0]!.Text : credit.Text).toBe("Lyrics via lrc.red");
     expect(appendAttributionLyric(result, 265)).toEqual(result);
+  });
+
+  for (const [Attribution, expected] of [
+    [{ provider: "betterlyrics", source: "betterlyrics" }, "Lyrics via Better Lyrics"],
+    [{ provider: "unison", source: "unison", songId: "song/with spaces", submitter: {
+      id: "3", username: "Community Contributor", url: "https://unison.betterlyrics.org/curator/3",
+    } }, "Lyrics from Unison · submitted by Community Contributor"],
+  ] as const) {
+    it.each([line, syllable, { Type: "Static" as const, Lines: [{ Text: "lyric" }] }])(`keeps one ${Attribution.provider} credit on $Type lyrics`, original => {
+      const input = { ...original, Attribution };
+      const snapshot = structuredClone(input);
+      const result = appendAttributionLyric(input, 265);
+      const rows = result.Type === "Static" ? result.Lines : result.Content.filter(row => row.Type === "Vocal");
+      const credits = rows.filter(row => "IsAttribution" in row && row.IsAttribution);
+      expect(credits).toHaveLength(1);
+      const credit = credits[0]!;
+      expect("Lead" in credit ? credit.Lead.Syllables[0]!.Text : credit.Text).toBe(expected);
+      expect(result.Attribution).toEqual(Attribution);
+      expect(input).toEqual(snapshot);
+      expect(appendAttributionLyric(result, 265)).toEqual(result);
+    });
+  }
+
+  it("encodes Unison song links and preserves safe curator links", () => {
+    const parts = attributionParts({ provider: "unison", source: "unison", songId: "song/with spaces?x=1", submitter: {
+      id: "key/id 3", username: "<Community Contributor>", url: "https://unison.betterlyrics.org/curator/key%2Fid%203",
+    } });
+    expect(parts[1]).toEqual({ text: "Unison", href: "https://unison.betterlyrics.org/song/song%2Fwith%20spaces%3Fx%3D1" });
+    expect(parts[3]).toEqual({ text: "<Community Contributor>", href: "https://unison.betterlyrics.org/curator/key%2Fid%203" });
+  });
+
+  it("filters unsafe Unison submitter links while preserving their names", () => {
+    for (const url of ["javascript:alert(1)", "data:text/html,hi", "/relative", "https://user:pass@unison.betterlyrics.org/"]) {
+      const parts = attributionParts({ provider: "unison", source: "unison", songId: "song/with spaces?x=1", submitter: {
+        id: "3", username: "<Community Contributor>", url,
+      } });
+      expect(parts[1]).toEqual({ text: "Unison", href: "https://unison.betterlyrics.org/song/song%2Fwith%20spaces%3Fx%3D1" });
+      expect(parts[3]).toEqual({ text: "<Community Contributor>", href: undefined });
+    }
   });
 
   for (const original of [line, syllable]) it(`${original.Type} uses precise track duration, not the end of singing`, () => {

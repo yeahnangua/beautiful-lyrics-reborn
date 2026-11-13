@@ -53,6 +53,23 @@ test('lrc.red uses the same inline credits with its own clickable provider link'
   let stopped=false;links[0].listeners.get('click')({stopPropagation(){stopped=true;}});assert.equal(stopped,true);
   vocal.Destroy();
 });
+test('Better Lyrics and Unison render provider and submitter links through the shared credit row', () => {
+  for (const [attr, text, expectedLinks] of [
+    [{provider:'betterlyrics',source:'betterlyrics'}, 'Lyrics via Better Lyrics', [['Better Lyrics','https://betterlyrics.org']]],
+    [{provider:'unison',source:'unison',songId:'song/with spaces?x=1',submitter:{id:'key/id 3',username:'<submitter>',url:'https://unison.betterlyrics.org/curator/key%2Fid%203'}},
+      'Lyrics from Unison · submitted by <submitter>', [['Unison','https://unison.betterlyrics.org/song/song%2Fwith%20spaces%3Fx%3D1'],['<submitter>','https://unison.betterlyrics.org/curator/key%2Fid%203']]],
+  ]) {
+    const parent = new Element(), vocal = new LineVocals(parent,{StartTime:19.9,EndTime:20,Text:text},attr);
+    const span=parent.children[0].children[0],links=span.children.filter(child=>child instanceof Anchor);
+    assert.equal(span.textContent,text);
+    assert.deepEqual(links.map(link=>[link.textContent,link.href]),expectedLinks);
+    assert.ok(links.every(link=>link.target==='_blank'&&link.rel==='noopener noreferrer'));
+    for(const link of links) {
+      let stopped=false;link.listeners.get('click')({stopPropagation(){stopped=true;}});assert.equal(stopped,true);
+    }
+    vocal.Destroy();
+  }
+});
 test('the normal lyric animator highlights only the final 100ms and resets when seeking back', () => {
   const parent=new Element(),vocal=new LineVocals(parent,{StartTime:19.9,EndTime:20,Text:'credits'},attribution);
   for(const [time,active,sung] of [[19.89,false,false],[19.9,true,false],[19.99,true,false],[20,true,false],[20.01,false,true],[2,false,false],[19.95,true,false]]) {
@@ -68,18 +85,29 @@ test('unsafe contributor URLs remain text inside the lyric', () => {
     assert.equal(span.children.some(child=>child instanceof Anchor),false);
   }
 });
+test('unsafe Unison submitter URLs remain text beside the safe song link', () => {
+  for(const url of ['javascript:alert(1)','data:text/html,hi','/relative','https://user:pass@unison.betterlyrics.org/']) {
+    const span=new Element();SetLyricText(span,'credits',{provider:'unison',source:'unison',songId:'song-id',submitter:{id:'3',username:'<submitter>',url}});
+    const links=span.children.filter(child=>child instanceof Anchor);
+    assert.equal(span.textContent,'Lyrics from Unison · submitted by <submitter>');
+    assert.deepEqual(links.map(link=>[link.textContent,link.href]),[['Unison','https://unison.betterlyrics.org/song/song-id']]);
+  }
+});
 test('renderers consume the Worker credit row once, without appending a client footer', async () => {
-  for(const Type of ['Static','Line','Syllable']) {
-    const measured=[],vocals=[],time=new Signal(),offset=new Signal();
-    class Scroller { constructor(scroll,lyrics,groups) { measured.push(groups); } SetLyricsEnded(){} ForceToActive(){} Destroy(){} }
-    class Vocal { RequestedTimeSkip=new Signal().GetEvent(); constructor(parent,metadata,attr){vocals.push({metadata,attr});} Animate(){} Destroy(){} }
-    const Renderer=await load('../Source/Modules/LyricsRenderer.ts',{document,Maid,StaticVocals:Vocal,LineVocals:Vocal,SyllableVocals:Vocal,InterludeVisual:Vocal,
-      LyricsScroller:Scroller,TimeStepped:time.GetEvent(),LyricsOffsetChanged:offset.GetEvent(),Timestamp:0,GetLyricsOffset:()=>0,SeekTo:()=>{},OnPreRender:()=>()=>{}},'LyricsRenderer');
-    const row={Type:'Vocal',Text:'credits',IsAttribution:true,StartTime:19.9,EndTime:20,OppositeAligned:false,Lead:{StartTime:19.9,EndTime:20,Syllables:[{Text:'credits',StartTime:19.9,EndTime:20,IsPartOfWord:false}]}};
-    const parent=new Element(),renderer=new Renderer(parent,{Type,NaturalAlignment:'Left',EndTime:20,Content:[row],Lines:[row],Attribution:attribution});
-    assert.equal(measured[0].length,1);assert.equal(vocals.length,1);assert.deepEqual(vocals[0].attr,attribution);
-    assert.equal(measured[0][0].GroupContainer.classList.contains('AttributionLine'),false);
-    renderer.Destroy();assert.equal(parent.children.length,0);
+  for(const attr of [attribution,{provider:'betterlyrics',source:'betterlyrics'},
+    {provider:'unison',source:'unison',songId:'song-id',submitter:{id:'3',username:'submitter',url:'https://unison.betterlyrics.org/curator/3'}}]) {
+    for(const Type of ['Static','Line','Syllable']) {
+      const measured=[],vocals=[],time=new Signal(),offset=new Signal();
+      class Scroller { constructor(scroll,lyrics,groups) { measured.push(groups); } SetLyricsEnded(){} ForceToActive(){} Destroy(){} }
+      class Vocal { RequestedTimeSkip=new Signal().GetEvent(); constructor(parent,metadata,attr){vocals.push({metadata,attr});} Animate(){} Destroy(){} }
+      const Renderer=await load('../Source/Modules/LyricsRenderer.ts',{document,Maid,StaticVocals:Vocal,LineVocals:Vocal,SyllableVocals:Vocal,InterludeVisual:Vocal,
+        LyricsScroller:Scroller,TimeStepped:time.GetEvent(),LyricsOffsetChanged:offset.GetEvent(),Timestamp:0,GetLyricsOffset:()=>0,SeekTo:()=>{},OnPreRender:()=>()=>{}},'LyricsRenderer');
+      const row={Type:'Vocal',Text:'credits',IsAttribution:true,StartTime:19.9,EndTime:20,OppositeAligned:false,Lead:{StartTime:19.9,EndTime:20,Syllables:[{Text:'credits',StartTime:19.9,EndTime:20,IsPartOfWord:false}]}};
+      const parent=new Element(),renderer=new Renderer(parent,{Type,NaturalAlignment:'Left',EndTime:20,Content:[row],Lines:[row],Attribution:attr});
+      assert.equal(measured[0].length,1);assert.equal(vocals.length,1);assert.deepEqual(vocals[0].attr,attr);
+      assert.equal(measured[0][0].GroupContainer.classList.contains('AttributionLine'),false);
+      renderer.Destroy();assert.equal(parent.children.length,0);
+    }
   }
 });
 process.on('exit',()=>Object.assign(globalThis,globals));

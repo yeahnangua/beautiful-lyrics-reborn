@@ -41,7 +41,10 @@ export class LyricsCacheError extends Error {
   constructor() { super("Invalid lyrics cache response"); }
 }
 
-export function cacheTtlMs(type: BeautifulLyrics["Type"]): number { return ttlByType[type]; }
+export function cacheTtlMs(type: BeautifulLyrics["Type"], provider?: string): number {
+  // Community lyrics and their contributor credits can be edited after publication.
+  return provider === "unison" ? 10 * 60_000 : ttlByType[type];
+}
 export function trackCachePrefix(trackId: string): string {
   if (!validSpotifyId(trackId)) throw new LyricsCacheError();
   return originPathPrefix + trackId + "/";
@@ -147,6 +150,16 @@ export function isCacheableLyrics(value: unknown): value is BeautifulLyrics {
   if (source?.Provider === "spicylyrics" && (lyrics.Attribution?.provider !== "spicylyrics"
     || typeof lyrics.Attribution.source !== "string" || !lyrics.Attribution.source.trim())) return false;
   if (source?.Provider === "lrc.red" && (lyrics.Attribution?.provider !== "lrc.red" || lyrics.Attribution.source !== "lrc.red")) return false;
+  if (["betterlyrics", "betterlyrics-qq", "betterlyrics-kugou"].includes(source?.Provider ?? "") && (lyrics.Attribution?.provider !== "betterlyrics"
+    || lyrics.Attribution.source !== "betterlyrics")) return false;
+  if (source?.Provider === "unison") {
+    const attribution = lyrics.Attribution;
+    if (attribution?.provider !== "unison" || attribution.source !== "unison"
+      || typeof attribution.songId !== "string" || !/^[a-zA-Z0-9_-]{11}$/.test(attribution.songId)
+      || typeof attribution.submitter?.id !== "string" || !attribution.submitter.id
+      || typeof attribution.submitter.username !== "string" || !attribution.submitter.username.trim()
+      || attribution.submitter.url !== "https://unison.betterlyrics.org/curator/" + encodeURIComponent(attribution.submitter.id)) return false;
+  }
   return !!source && typeof source.Provider === "string" && /^[a-z0-9._-]{1,50}$/.test(source.Provider)
     && (source.Transport === "direct" || source.Transport === "lyrically")
     && !("RequestId" in lyrics) && !("RetrievedAt" in lyrics) && !("LyricsHash" in lyrics);
@@ -166,7 +179,7 @@ export async function readOriginResponse(response: Response, identity: CacheIden
   }
   if (entry.outcome !== "success" || response.status !== 200 || !isCacheableLyrics(entry.lyrics)
     || !Number.isFinite(entry.expiresAt) || entry.expiresAt! <= now
-    || entry.expiresAt! - entry.generatedAt !== cacheTtlMs(entry.lyrics.Type)
+    || entry.expiresAt! - entry.generatedAt !== cacheTtlMs(entry.lyrics.Type, entry.lyrics.Source?.Provider)
     || !digestPattern.test(entry.lyricsHash ?? "")
     || isSourceBlocked(blocks, entry.lyrics.Source!.Provider, entry.lyrics.Type)
     || await hashLyrics(entry.lyrics) !== entry.lyricsHash) throw new LyricsCacheError();

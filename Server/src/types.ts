@@ -105,6 +105,8 @@ export type ProviderClients = {
   spicylyrics: SpicyLyricsProvider;
   applemusic: AppleMusicProvider;
   lrcred: LrcRedProvider;
+  betterlyrics?: BetterLyricsProvider;
+  unison?: UnisonProvider;
   spotify: SpotifyProvider;
   lrclib: LrclibProvider;
 };
@@ -134,6 +136,16 @@ export type LrclibProvider = {
 
 export type LrcRedProvider = {
   getLyrics(track: TrackMetadata, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
+};
+
+export type UnisonProvider = {
+  getLyrics(track: TrackMetadata, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
+};
+
+export type BetterLyricsProvider = {
+  getLyrics(track: TrackMetadata, context?: RequestContext): Promise<BeautifulLyrics | undefined>;
+  getQqLyrics(track: TrackMetadata, context?: RequestContext): Promise<SyllableSyncedLyrics | LineSyncedLyrics | undefined>;
+  getKugouLyrics(track: TrackMetadata, context?: RequestContext): Promise<LineSyncedLyrics | undefined>;
 };
 
 export type SpicyLyricsProvider = {

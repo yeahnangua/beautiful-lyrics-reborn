@@ -137,6 +137,82 @@ describe("per-type source blocks", () => {
   });
 });
 
+describe("Better Lyrics and Unison service integration", () => {
+  const track = { id: "track", name: "Song", artists: ["Artist"], durationSeconds: 180 };
+  const line = { Type: "Line" as const, StartTime: 1, EndTime: 2,
+    Content: [{ Type: "Vocal" as const, Text: "line", StartTime: 1, EndTime: 2, OppositeAligned: false }] };
+  const plain = { Type: "Static" as const, Lines: [{ Text: "plain" }] };
+  function sources() {
+    const providers = createProviders();
+    return { ...providers, betterlyrics: {
+      getLyrics: vi.fn().mockResolvedValue(undefined),
+      getQqLyrics: vi.fn().mockResolvedValue(undefined),
+      getKugouLyrics: vi.fn().mockResolvedValue(undefined)
+    }, unison: { getLyrics: vi.fn().mockResolvedValue(undefined) } };
+  }
+  it("selects Better Lyrics QQ syllables despite a TTML failure and cancels pending sources", async () => {
+    const providers = sources();
+    providers.betterlyrics.getLyrics.mockRejectedValue(new Error("Cache-only API unavailable"));
+    providers.betterlyrics.getQqLyrics.mockResolvedValue(wordLyrics("QQ words"));
+    vi.mocked(providers.qqmusic.getSyllableLyrics).mockImplementation(() => new Promise(() => {}));
+    const diagnostics: RequestDiagnostics = { id: "better-qq", track, startedAt: "test", durationMs: 0, outcome: "pending", attempts: [] };
+    const result = await createLyricsService(providers).getLyrics(track.id, "token", track, undefined, { diagnostics });
+    expect(result).toMatchObject({ Type: "Syllable", Source: { Provider: "betterlyrics-qq" } });
+    expect(diagnostics.attempts).toContainEqual(expect.objectContaining({ provider: "betterlyrics-qq", selected: true }));
+    const scope = vi.mocked(providers.qqmusic.getSyllableLyrics).mock.calls[0]?.[1];
+    expect(scope?.signal?.aborted).toBe(true);
+    expect(providers.betterlyrics.getKugouLyrics).not.toHaveBeenCalled();
+  });
+  it("retains line-only TTML from the syllable phase without requesting it twice", async () => {
+    const providers = sources();
+    providers.betterlyrics.getLyrics.mockResolvedValue(line);
+    const result = await createLyricsService(providers).getLyrics(track.id, "token", track, undefined,
+      { sourceBlocks: [{ provider: "betterlyrics", lyricsType: "Syllable" }] });
+    expect(result).toMatchObject({ Type: "Line", Source: { Provider: "betterlyrics" } });
+    expect(providers.betterlyrics.getLyrics).toHaveBeenCalledTimes(1);
+  });
+  it("uses Better Lyrics KuGou as a line fallback when the word endpoints fail", async () => {
+    const providers = sources();
+    providers.betterlyrics.getKugouLyrics.mockResolvedValue(line);
+    expect(await createLyricsService(providers).getLyrics(track.id, "token", track))
+      .toMatchObject({ Type: "Line", Source: { Provider: "betterlyrics-kugou" } });
+  });
+  it("skips a blocked Better Lyrics KuGou request and filters a blocked QQ result", async () => {
+    const providers = sources();
+    providers.betterlyrics.getQqLyrics.mockResolvedValue(wordLyrics("blocked"));
+    vi.mocked(providers.lrclib.getLyrics).mockResolvedValue(line);
+    const result = await createLyricsService(providers).getLyrics(track.id, "token", track, undefined,
+      { sourceBlocks: [{ provider: "betterlyrics-qq", lyricsType: "Syllable" }, { provider: "betterlyrics-kugou", lyricsType: "Line" }] });
+    expect(result?.Source?.Provider).toBe("lrclib");
+    expect(providers.betterlyrics.getKugouLyrics).not.toHaveBeenCalled();
+  });
+  it("preserves Unison line fallback when only its syllables are blocked", async () => {
+    const providers = sources();
+    providers.unison.getLyrics.mockResolvedValue(line);
+    expect(await createLyricsService(providers).getLyrics(track.id, "token", track, undefined,
+      { sourceBlocks: [{ provider: "unison", lyricsType: "Syllable" }] }))
+      .toMatchObject({ Type: "Line", Source: { Provider: "unison" } });
+  });
+  it("does not let Unison plain lyrics beat pending timed lyrics", async () => {
+    const providers = sources();
+    providers.unison.getLyrics.mockResolvedValue(plain);
+    vi.mocked(providers.spotify.getLyrics).mockResolvedValue(line);
+    expect(await createLyricsService(providers).getLyrics(track.id, "token", track))
+      .toMatchObject({ Type: "Line", Source: { Provider: "spotify" } });
+    vi.mocked(providers.spotify.getLyrics).mockResolvedValue(undefined);
+    expect(await createLyricsService(providers).getLyrics(track.id, "token", track))
+      .toMatchObject({ Type: "Static", Source: { Provider: "unison" } });
+  });
+  it("still queries Unison by Spotify ID when metadata is unavailable", async () => {
+    const providers = sources();
+    providers.unison.getLyrics.mockResolvedValue(wordLyrics("community"));
+    expect(await createLyricsService(providers).getLyrics(track.id, "token"))
+      .toMatchObject({ Type: "Syllable", Source: { Provider: "unison" } });
+    expect(providers.unison.getLyrics).toHaveBeenCalledWith({ id: track.id, name: "", artists: [] }, expect.anything());
+    expect(providers.betterlyrics.getLyrics).not.toHaveBeenCalled();
+  });
+});
+
 describe("lyrics service", () => {
   it("selects Apple Music syllables using client metadata before line fallbacks", async () => {
     const providers = createProviders();

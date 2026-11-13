@@ -151,10 +151,16 @@ test('cache template migration fills missing view settings and preserves stored 
  assert.deepEqual(get('offset',1,{Songs:{}}).Items,{Songs:{abc:0.4}});
 });
 
-test('both lyric snapshot stores invalidate the previous source policy and keep their normal TTL', async () => {
+test('both lyric snapshot stores invalidate old selections and prioritize the ten-minute Unison TTL', async () => {
  const entries = new Map(), stores = [];
+ const start = new Date(2026, 10, 13, 23, 56, 37, 123).getTime();
+ let now = start;
+ class ClockDate extends Date {
+  constructor(...args) { super(...(args.length ? args : [now])); }
+  static now() { return now; }
+ }
  const getStore = evaluate(await read('../Spices/Spicetify/Services/Cache.ts'), {
-  IsDevelopment: false,
+  IsDevelopment: false, Date: ClockDate,
   caches: { open: async name => ({
    match: async path => entries.has(name + path) ? Response.json(entries.get(name + path)) : undefined,
    put: async (path, response) => { entries.set(name + path, await response.json()); },
@@ -164,9 +170,9 @@ test('both lyric snapshot stores invalidate the previous source policy and keep 
  const storeDefinitions = player.slice(player.indexOf('const ProviderLyricsStore ='), player.indexOf('export const ClearLyricsCache'));
  evaluate(storeDefinitions, {
   GetExpireStore(name, version, expiration, forceNewData) {
-   assert.ok(version > 11);
+   assert.equal(version, 13);
    assert.deepEqual(expiration, { Duration: 2, Unit: 'Days' });
-   entries.set(name + '/track', { CacheVersion: 11, ExpiresAt: Date.now() + 86_400_000,
+   entries.set(name + '/track', { CacheVersion: 12, ExpiresAt: start + 86_400_000,
     Content: { Type: 'Static', Lines: [{ Text: 'previous selection' }] } });
    const store = getStore(name, version, expiration, forceNewData);
    stores.push({ name, version, store });
@@ -175,12 +181,54 @@ test('both lyric snapshot stores invalidate the previous source policy and keep 
  }, 'undefined');
  assert.deepEqual(stores.map(({ name }) => name), ['Player_ProviderLyrics', 'Player_TransformedLyrics']);
  assert.equal(stores[0].version, stores[1].version);
+ const expiration = evaluate(player.slice(player.indexOf('const UnisonLyricsExpiration'), player.indexOf('export let SongProviderLyrics')), {}, 'LyricsCacheExpiration');
+ const unison = { provider: 'unison', source: 'unison', songId: 'dQw4w9WgXcQ',
+  submitter: { id: 'key-id', username: 'Contributor', url: 'https://unison.betterlyrics.org/curator/key-id' } };
+ const plain = { Type: 'Static', Lines: [{ Text: 'current selection' }] };
+ const syllable = { Type: 'Syllable', StartTime: 0, EndTime: 1, Content: [], Attribution: { provider: 'betterlyrics', source: 'betterlyrics' } };
+ const cases = [
+  [plain, new Date(2026, 10, 15).getTime()],
+  [false, new Date(2026, 10, 15).getTime()],
+  [syllable, new Date(2026, 11, 13).getTime()],
+  ...['Static', 'Line', 'Syllable'].map(Type => [{ ...(Type === 'Static' ? plain : { Type, StartTime: 0, EndTime: 1, Content: [] }), Attribution: unison }, start + 600_000]),
+ ];
  for (const { name, version, store } of stores) {
+  now = start;
   assert.equal(await store.GetItem('track'), undefined);
-  const fresh = { Type: 'Static', Lines: [{ Text: 'current selection' }] };
-  await store.SetItem('track', fresh);
-  assert.deepEqual(await store.GetItem('track'), fresh);
-  assert.equal(entries.get(name + '/track').CacheVersion, version);
+  for (const [lyrics, expiresAt] of cases) {
+   now = start;
+   const snapshot = lyrics && name === 'Player_TransformedLyrics' ? { ...lyrics, Language: 'eng', NaturalAlignment: 'Left' } : lyrics;
+   await store.SetItem('track', snapshot, expiration(snapshot));
+   assert.deepEqual(entries.get(name + '/track'), { CacheVersion: version, ExpiresAt: expiresAt, Content: snapshot });
+   now = expiresAt - 1;
+   assert.deepEqual(await store.GetItem('track'), snapshot);
+   now = expiresAt + 1;
+   assert.equal(await store.GetItem('track'), undefined);
+  }
+ }
+});
+
+test('minute cache defaults preserve time of day while calendar units retain their original boundaries', async () => {
+ const start = new Date(2026, 10, 13, 23, 56, 37, 123).getTime(), entries = new Map();
+ class ClockDate extends Date {
+  constructor(...args) { super(...(args.length ? args : [start])); }
+  static now() { return start; }
+ }
+ const getStore = evaluate(await read('../Spices/Spicetify/Services/Cache.ts'), {
+  IsDevelopment: false, Date: ClockDate,
+  caches: { open: async name => ({
+   put: async (path, response) => { entries.set(name + path, await response.json()); },
+  }) },
+ }, 'GetExpireStore');
+ for (const [Unit, Duration, expiresAt] of [
+  ['Minutes', 10, new Date(2026, 10, 14, 0, 6, 37, 123).getTime()],
+  ['Days', 2, new Date(2026, 10, 15).getTime()],
+  ['Weeks', 2, new Date(2026, 10, 27).getTime()],
+  ['Months', 1, new Date(2026, 10, 30).getTime()],
+ ]) {
+  const store = getStore(Unit, 1, { Unit, Duration });
+  await store.SetItem('track', 'lyrics');
+  assert.equal(entries.get(Unit + '/track').ExpiresAt, expiresAt);
  }
 });
 

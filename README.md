@@ -3,7 +3,8 @@
 Beautiful Lyrics Reborn is a community-maintained revival of the original
 Beautiful Lyrics Spicetify extension. It keeps the fullscreen/card/page lyric
 experience alive and adds a new Cloudflare Worker lyrics service for Spicy Lyrics,
-Spotify, QQ Music, KuGou, NetEase, Apple Music via Paxsenix, lrc.red, and LRCLIB fallbacks.
+Spotify, QQ Music, KuGou, NetEase, Apple Music via Paxsenix, lrc.red, Better Lyrics,
+Unison, and LRCLIB fallbacks.
 
 This repository contains both pieces:
 
@@ -26,11 +27,13 @@ https://lyrics.txw.qzz.io
 - The statistics page includes provider performance, weighted latency percentiles, cache reuse and fullscreen usage. Aggregate plugin metrics are always enabled; no song, lyric, account, token or persistent user identifier is sent. See [loading and statistics details](docs/fullscreen-loading-and-statistics.md).
 - Reborn lyrics provider flow:
   1. The first available syllable lyrics from direct Spicy Lyrics, QQ Music QRC, KuGou KRC, NetEase YRC,
-     Apple Music via Paxsenix, or lrc.red TTML; syllable providers are queried concurrently.
+     Apple Music via Paxsenix, lrc.red TTML, Better Lyrics TTML/QRC, or Unison;
+     syllable providers are queried concurrently.
   2. The first available line lyrics from direct Spotify, QQ Music LRC, KuGou LRC,
-     NetEase LRC, or LRCLIB, including saved line results
-     from Spicy Lyrics, Apple Music, and lrc.red; line providers are queried concurrently.
-  3. Static fallbacks from Spicy Lyrics, Spotify, lrc.red, and LRCLIB.
+     NetEase LRC, Better Lyrics KuGou LRC, or LRCLIB, including saved line results
+     from Spicy Lyrics, Apple Music, lrc.red, Better Lyrics, and Unison;
+     line providers are queried concurrently.
+  3. Static fallbacks from Spicy Lyrics, Unison, Spotify, lrc.red, Better Lyrics, and LRCLIB.
 
 Lyrics preserve the quality order syllable > line > static. The syllable phase
 (including metadata) has a 15-second budget, followed by up to 10 seconds for
@@ -61,6 +64,14 @@ clickable lrc.red credit through the existing attribution renderer. Requests ide
 this repository and its contact email, and honor `Retry-After` on 429/503 responses.
 See [the lrc.red integration notes](docs/lrcred.md).
 
+[Better Lyrics](https://api.betterlyrics.org) supplies public TTML, QQ QRC and KuGou LRC
+endpoints. Each endpoint participates independently; cache-only TTML access, rate limits,
+or a failed endpoint do not prevent the other sources from answering.
+[Unison](https://unison.betterlyrics.org) supplies community TTML, LRC and plain lyrics,
+matched by ISRC, provider track IDs or song metadata. Its results include links to Unison
+and the submitter, and use a ten-minute cache so edits and credits can be refreshed.
+See [the Better Lyrics and Unison integration notes](docs/betterlyrics-and-unison.md).
+
 ## Local Extension Install
 
 The fullscreen integration requires Node.js 24+ and Deno 2. Install its build dependencies once:
@@ -87,8 +98,9 @@ This builds an offline Spicetify extension and enables
 
 Explicit HTTP requests made by the extension (lyrics, policy, feedback, iTunes,
 Spotify fetches, metrics, and release/fullscreen checks/downloads) and Worker upstream requests include
-`beautiful-lyrics-reborn` in `User-Agent`. Existing provider-specific user agents
-are preserved and extended. Spotify's Chromium runtime may discard a custom
+`beautiful-lyrics-reborn` in `User-Agent`. Better Lyrics and Unison keep their browser-compatible
+Firefox user agent unchanged and identify the plugin in `X-User-Agent` instead.
+Other provider-specific user agents are preserved and extended. Spotify's Chromium runtime may discard a custom
 `User-Agent`; this does not override the client's global user agent or the headers
 of resources loaded by the browser (such as images, fonts, and module imports) or
 Spotify's internal platform APIs.

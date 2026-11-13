@@ -322,9 +322,9 @@ const LoadSongDetails = () => {
 }
 
 // Handle our Lyrics
-// Version 12 invalidates snapshots from the previous source-selection policy.
+// Version 13 invalidates snapshots from before Better Lyrics and Unison were available.
 const ProviderLyricsStore = GetExpireStore<ProviderLyrics | false>(
-	"Player_ProviderLyrics", 12,
+	"Player_ProviderLyrics", 13,
 	{
 		Duration: 2,
 		Unit: "Days"
@@ -332,7 +332,7 @@ const ProviderLyricsStore = GetExpireStore<ProviderLyrics | false>(
 	true
 )
 const TransformedLyricsStore = GetExpireStore<TransformedLyrics | false>(
-	"Player_TransformedLyrics", 12,
+	"Player_TransformedLyrics", 13,
 	{
 		Duration: 2,
 		Unit: "Days"
@@ -348,16 +348,21 @@ export const ClearLyricsCache = (): Promise<void> => (
 	).then(() => undefined)
 )
 
-// Syllable lyrics are the best result a song can get, so they can safely live for a month
-// (30 days, since the "Months" unit expires at month boundaries); everything else keeps
-// the short default so a better source appearing later gets picked up.
+// Community submissions can change at any time, including syllable lyrics.
+const UnisonLyricsExpiration: ExpirationSettings = {
+	Duration: 10,
+	Unit: "Minutes"
+}
+// Other syllable lyrics can live for 30 days; lower-quality results keep the short default.
 const SyllableLyricsExpiration: ExpirationSettings = {
 	Duration: 30,
 	Unit: "Days"
 }
-const LyricsCacheExpiration = (lyrics: (ProviderLyrics | TransformedLyrics | false)): (ExpirationSettings | undefined) => (
-	((lyrics !== false) && (lyrics.Type === "Syllable")) ? SyllableLyricsExpiration : undefined
-)
+const LyricsCacheExpiration = (lyrics: (ProviderLyrics | TransformedLyrics | false)): (ExpirationSettings | undefined) => {
+	if (lyrics === false) return undefined
+	if (lyrics.Attribution?.provider === "unison") return UnisonLyricsExpiration
+	return lyrics.Type === "Syllable" ? SyllableLyricsExpiration : undefined
+}
 
 export let SongProviderLyrics: (ProviderLyrics | undefined) = undefined
 export let SongLyricsFromCache = false

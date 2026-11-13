@@ -179410,6 +179410,22 @@ function rbr(e) {
 		text: "lrc.red",
 		href: "https://lrc.red"
 	}];
+	if (e.provider === "betterlyrics") return [{ text: "Lyrics via " }, {
+		text: "Better Lyrics",
+		href: "https://betterlyrics.org"
+	}];
+	if (e.provider === "unison") return [
+		{ text: "Lyrics from " },
+		{
+			text: "Unison",
+			href: `https://unison.betterlyrics.org/song/${encodeURIComponent(e.songId)}`
+		},
+		{ text: " · submitted by " },
+		{
+			text: e.submitter.username,
+			href: nbr(e.submitter.url)
+		}
+	];
 	let t = [{ text: `Lyrics via ${e.provider}` }];
 	if (e.source === "spicy_lyrics") for (let [n, r] of [[e.uploader, " · "], [e.maker, " / "]]) n && t.push({ text: r }, {
 		text: `🔗 ${n.username}`,

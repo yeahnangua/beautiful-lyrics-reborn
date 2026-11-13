@@ -322,9 +322,9 @@ const LoadSongDetails = () => {
 }
 
 // Handle our Lyrics
-// Version 11 fetches Worker-generated attribution lyrics instead of the old footer.
+// Version 12 invalidates snapshots from the previous source-selection policy.
 const ProviderLyricsStore = GetExpireStore<ProviderLyrics | false>(
-	"Player_ProviderLyrics", 11,
+	"Player_ProviderLyrics", 12,
 	{
 		Duration: 2,
 		Unit: "Days"
@@ -332,7 +332,7 @@ const ProviderLyricsStore = GetExpireStore<ProviderLyrics | false>(
 	true
 )
 const TransformedLyricsStore = GetExpireStore<TransformedLyrics | false>(
-	"Player_TransformedLyrics", 11,
+	"Player_TransformedLyrics", 12,
 	{
 		Duration: 2,
 		Unit: "Days"

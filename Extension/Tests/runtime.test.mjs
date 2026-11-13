@@ -151,6 +151,39 @@ test('cache template migration fills missing view settings and preserves stored 
  assert.deepEqual(get('offset',1,{Songs:{}}).Items,{Songs:{abc:0.4}});
 });
 
+test('both lyric snapshot stores invalidate the previous source policy and keep their normal TTL', async () => {
+ const entries = new Map(), stores = [];
+ const getStore = evaluate(await read('../Spices/Spicetify/Services/Cache.ts'), {
+  IsDevelopment: false,
+  caches: { open: async name => ({
+   match: async path => entries.has(name + path) ? Response.json(entries.get(name + path)) : undefined,
+   put: async (path, response) => { entries.set(name + path, await response.json()); },
+  }) },
+ }, 'GetExpireStore');
+ const player = await read('../Spices/Spicetify/Services/Player/mod.ts');
+ const storeDefinitions = player.slice(player.indexOf('const ProviderLyricsStore ='), player.indexOf('export const ClearLyricsCache'));
+ evaluate(storeDefinitions, {
+  GetExpireStore(name, version, expiration, forceNewData) {
+   assert.ok(version > 11);
+   assert.deepEqual(expiration, { Duration: 2, Unit: 'Days' });
+   entries.set(name + '/track', { CacheVersion: 11, ExpiresAt: Date.now() + 86_400_000,
+    Content: { Type: 'Static', Lines: [{ Text: 'previous selection' }] } });
+   const store = getStore(name, version, expiration, forceNewData);
+   stores.push({ name, version, store });
+   return store;
+  },
+ }, 'undefined');
+ assert.deepEqual(stores.map(({ name }) => name), ['Player_ProviderLyrics', 'Player_TransformedLyrics']);
+ assert.equal(stores[0].version, stores[1].version);
+ for (const { name, version, store } of stores) {
+  assert.equal(await store.GetItem('track'), undefined);
+  const fresh = { Type: 'Static', Lines: [{ Text: 'current selection' }] };
+  await store.SetItem('track', fresh);
+  assert.deepEqual(await store.GetItem('track'), fresh);
+  assert.equal(entries.get(name + '/track').CacheVersion, version);
+ }
+});
+
 
 test('desktop AuthorizationAPI fallback handles clients without Session credentials', async () => {
  const platform = {Session: {}, AuthorizationAPI: {getState: async () => ({token: {accessToken: 'desktop', accessTokenExpirationTimestampMs: Date.now()+60000}})}};
@@ -181,7 +214,6 @@ test('feedback captures the current song and lyrics before a song change',async(
 test('actual lyric loader regenerates mismatched transformed caches and never publishes after switching songs', async()=>{
  const source=await read('../Spices/Spicetify/Services/Player/mod.ts');
  const loader=lyricsLoader(source);
- assert.match(source,/"Player_ProviderLyrics", 11/);assert.match(source,/"Player_TransformedLyrics", 11/);
  const raw={Type:'Static',Lines:[{Text:'correct'}],RequestId:'A',LyricsHash:'a',Source:{Provider:'spotify',Transport:'direct'}};
  const wrong={...raw,RequestId:'B',Lines:[{Text:'wrong'}]};
  let transforms=0;

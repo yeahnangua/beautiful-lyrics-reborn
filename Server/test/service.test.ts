@@ -120,6 +120,21 @@ describe("per-type source blocks", () => {
     const sourceBlocks = sourceProviders.flatMap(provider => lyricsTypes.map(lyricsType => ({ provider, lyricsType })));
     expect(await createLyricsService(providers).getLyrics("track", "token", track, undefined, { sourceBlocks })).toBeUndefined();
   });
+  it("uses an unblocked syllable source immediately", async () => {
+    vi.useFakeTimers();
+    try {
+      const providers = createProviders();
+      vi.mocked(providers.netease.getSyllableLyrics).mockResolvedValue(wordLyrics("fallback"));
+      const pending = createLyricsService(providers).getLyrics("track", "token", track, undefined,
+        { sourceBlocks: [{ provider: "qqmusic", lyricsType: "Syllable" }] });
+      let settled = false; void pending.then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(settled).toBe(true);
+      expect((await pending)?.Source?.Provider).toBe("netease");
+      expect(providers.qqmusic.getSyllableLyrics).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
 });
 
 describe("lyrics service", () => {
@@ -150,7 +165,7 @@ describe("lyrics service", () => {
     expect(legacyRequest).not.toHaveBeenCalled();
     expect(diagnostics.attempts.map(attempt => attempt.provider).sort()).toEqual([
       "spicylyrics", "qq music", "kugou direct", "netease direct", "applemusic", "lrc.red", "spotify", "lrclib",
-      "qq music", "kugou direct", "netease direct", 
+      "qq music", "kugou direct", "netease direct"
     ].sort());
     expect(diagnostics.attempts.some(attempt => attempt.stage === "static")).toBe(false);
   });
@@ -746,6 +761,28 @@ describe("lyrics service", () => {
   });
 });
 
+describe("provider race completion", () => {
+  const track = { id: "track", name: "Song", artists: ["Artist"] };
+
+  it.each(["Line", "Static", "none"] as const)("finishes a %s fallback without an artificial delay after all syllable sources miss", async type => {
+    vi.useFakeTimers();
+    try {
+      const p = createProviders();
+      const lyrics = type === "Line"
+        ? { Type: "Line" as const, StartTime: 0, EndTime: 1, Content: [] }
+        : type === "Static" ? { Type: "Static" as const, Lines: [{ Text: "fallback" }] } : undefined;
+      vi.mocked(p.spotify.getLyrics).mockResolvedValue(lyrics);
+      const result = createLyricsService(p).getLyrics("track", "token", track);
+      let settled = false; void result.then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(settled).toBe(true);
+      if (lyrics) expect(await result).toEqual(contentEqual(lyrics));
+      else expect(await result).toBeUndefined();
+      expect(p.spotify.getLyrics).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+});
 
 describe("worker route", () => {
   const env = workerAuth.env;
@@ -948,7 +985,7 @@ describe("bounded quality phases", () => {
 describe("direct line fallback", () => {
   const track = { id: "track", name: "Song", artists: ["Artist"] };
   const line = { Type: "Line" as const, StartTime: 1, EndTime: 2, Content: [] };
-  const sources = ["qqmusic", "kugou", "netease", ] as const;
+  const sources = ["qqmusic", "kugou", "netease"] as const;
 
   it.each(sources)("uses %s lines when Spotify and LRCLIB fail", async source => {
     const providers = createProviders();
@@ -1024,7 +1061,7 @@ describe("provider attempt diagnostics", () => {
   });
   it("records all pending sources as cancelled when the client aborts", async () => {
     const providers = createProviders();
-    for (const provider of [providers.qqmusic, providers.kugou, providers.netease, ]) vi.mocked(provider.getSyllableLyrics).mockImplementation(() => new Promise(() => {}));
+    for (const provider of [providers.qqmusic, providers.kugou, providers.netease]) vi.mocked(provider.getSyllableLyrics).mockImplementation(() => new Promise(() => {}));
     vi.mocked(providers.spicylyrics.getLyrics).mockImplementation(() => new Promise(() => {}));
     vi.mocked(providers.applemusic.getLyrics).mockImplementation(() => new Promise(() => {}));
     vi.mocked(providers.lrcred.getLyrics).mockImplementation(() => new Promise(() => {}));

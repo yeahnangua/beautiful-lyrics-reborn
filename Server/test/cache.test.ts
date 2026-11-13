@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { cacheIdentity, cachePath, cacheTtlMs, createOriginRequest, readOriginRequest, trackCachePrefix,
   type OriginBinding, type OriginEnvelope } from "../src/cache";
 import { createLyricsOrigin } from "../src/lyrics-origin";
+import { lyricsCacheVersion } from "../src/cache-version";
 import { createWorker, type WorkerEnv } from "../src/index";
 import { loadDiagnostics } from "../src/diagnostics";
 import { putSourceBlock } from "../src/source-blocks";
@@ -103,6 +104,26 @@ function queryLogs(): Array<Record<string, any>> {
 }
 
 describe("Workers Cache content and request boundary", () => {
+  it("does not reuse content from earlier source-policy namespaces", async () => {
+    const service = successfulService(), fixture = cacheFixture(service);
+    await fixture.call();
+    const [currentPath, cached] = [...fixture.entries][0]!;
+    const envelope = await cached.response.clone().json() as OriginEnvelope;
+    expect(lyricsCacheVersion).toBeGreaterThan(2);
+    expect(currentPath).toMatch(new RegExp(`^/lyrics-body/v${lyricsCacheVersion}/`));
+    fixture.entries.clear();
+    for (const version of [1, 2]) {
+      fixture.entries.set(currentPath.replace(`/v${lyricsCacheVersion}/`, `/v${version}/`), {
+        response: Response.json({ ...envelope, schema: version }), until: cached.until
+      });
+    }
+    const response = await fixture.call();
+    expect(response.headers.get("X-Lyrics-Cache")).toBe("miss");
+    expect(await response.json()).toMatchObject({ Source: lyrics.Source });
+    expect(service.getLyrics).toHaveBeenCalledTimes(2);
+    expect(fixture.entries.has(currentPath)).toBe(true);
+  });
+
   it("shares cache across users, gives each response a new ID, and logs a hit without re-counting providers", async () => {
     const service = successfulService(), fixture = cacheFixture(service);
     const firstResponse = await fixture.call();
@@ -161,7 +182,7 @@ describe("Workers Cache content and request boundary", () => {
     expect(first.identity).toEqual(second.identity);
     expect(first.metadata?.durationSeconds).toBe(235);
     expect(second.metadata?.durationSeconds).toBe(235);
-    expect(cachePath(first.identity)).toMatch(/^\/lyrics-body\/v2\//);
+    expect(cachePath(first.identity)).toMatch(new RegExp(`^/lyrics-body/v${lyricsCacheVersion}/`));
     const internal = createOriginRequest(first.identity, { metadata: first.metadata!, sourceBlocks: [],
       deadline: Date.now() + 1000, triggerRequestId: crypto.randomUUID() }, "token");
     expect((await readOriginRequest(internal)).metadata?.durationSeconds).toBe(235);
@@ -199,7 +220,7 @@ describe("Workers Cache content and request boundary", () => {
     expect(first.Content.at(-1)).toMatchObject({ IsAttribution: true, EndTime: 234.56 });
     expect(second.Content.at(-1)).toMatchObject({ IsAttribution: true, EndTime: 234.587 });
     const stored = await [...fixture.entries.values()][0]!.response.clone().json() as OriginEnvelope;
-    expect(stored.schema).toBe(2);
+    expect(stored.schema).toBe(lyricsCacheVersion);
     expect(stored.lyrics).toMatchObject({ Type: "Line", EndTime: 235 });
   });
 
@@ -221,7 +242,7 @@ describe("Workers Cache content and request boundary", () => {
     await fixture.call(request({}, { ...auth.headers, "Cache-Control": "no-store", Cookie: "PRIVATE_COOKIE",
       "If-None-Match": "private-etag", "X-Forwarded-Host": "attacker.invalid" }));
     const internal = fixture.fetch.mock.calls[0]![0];
-    expect(internal.url).toMatch(/\/lyrics-body\/v2\/track\/[a-f0-9]{64}\/[a-f0-9]{64}$/);
+    expect(internal.url).toMatch(new RegExp(`/lyrics-body/v${lyricsCacheVersion}/track/[a-f0-9]{64}/[a-f0-9]{64}$`));
     for (const header of ["Authorization", "X-Lyrics-Session", "Cookie", "Cache-Control", "If-None-Match", "X-Forwarded-Host"]) {
       expect(internal.headers.has(header)).toBe(false);
     }
@@ -276,7 +297,7 @@ describe("Workers Cache content and request boundary", () => {
     expect(JSON.stringify(queryLogs())).not.toMatch(/未命中缓存|未找到歌词|UPSTREAM_SECRET/);
   });
 
-  it.each(["expired", "hash", "policy", "provenance", "empty"] as const)("rejects %s cached content and recovers once without a hit log", async fault => {
+  it.each(["expired", "hash", "policy", "provenance", "empty", "old schema"] as const)("rejects %s cached content and recovers once without a hit log", async fault => {
     const service = successfulService(), fixture = cacheFixture(service);
     await fixture.call();
     const cached = [...fixture.entries.values()][0]!;
@@ -286,6 +307,7 @@ describe("Workers Cache content and request boundary", () => {
     if (fault === "policy") entry.policyHash = "0".repeat(64);
     if (fault === "provenance") entry.lyrics!.RequestId = "replayed";
     if (fault === "empty") { entry.outcome = "none"; delete entry.lyrics; delete entry.lyricsHash; delete entry.expiresAt; }
+    if (fault === "old schema") Object.assign(entry, { schema: entry.schema - 1 });
     cached.response = Response.json(entry);
     cached.until = Infinity;
     const response = await fixture.call();
@@ -377,7 +399,7 @@ describe("Workers Cache content and request boundary", () => {
     const timed = { getSyllableLyrics: vi.fn(hang), getLineLyrics: vi.fn(hang) };
     const service = createLyricsService({
       spotify: { getTrackMetadata: async () => metadata, getLyrics: hang },
-      qqmusic: timed, kugou: timed, netease: timed, 
+      qqmusic: timed, kugou: timed, netease: timed,
       spicylyrics: { getLyrics: async () => undefined },
       applemusic: { getLyrics: async () => undefined },
       lrcred: { getLyrics: async () => undefined },

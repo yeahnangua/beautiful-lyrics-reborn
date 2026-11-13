@@ -15,9 +15,6 @@ function json(body: unknown): Response {
   return new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
 }
 
-
-
-
 describe("NetEase direct provider", () => {
   it("matches title, artist, duration and album before downloading YRC directly", async () => {
     const song = { name: "范例歌曲", artists: [{ name: "范例歌手" }], duration: 180000 };
@@ -83,9 +80,8 @@ describe("NetEase direct provider", () => {
   });
 });
 
-
-it.each([createNeteaseProvider, ])("skips direct lookup without track metadata", async (create) => {
+it("skips direct lookup without track metadata", async () => {
   const fetchMock = vi.fn();
-  expect(await create(fetchMock as typeof fetch).getSyllableLyrics({ id: "id", name: "", artists: [] })).toBeUndefined();
+  expect(await createNeteaseProvider(fetchMock as typeof fetch).getSyllableLyrics({ id: "id", name: "", artists: [] })).toBeUndefined();
   expect(fetchMock).not.toHaveBeenCalled();
 });

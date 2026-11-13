@@ -85,13 +85,9 @@ describe("direct line providers", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-
-
-  it.each([createQqMusicProvider, createKugouProvider, createNeteaseProvider, ])("skips lookup without metadata (%#)", async create => {
+  it.each([createQqMusicProvider, createKugouProvider, createNeteaseProvider])("skips lookup without metadata (%#)", async create => {
     const fetchMock = vi.fn();
     expect(await create(fetchMock).getLineLyrics({ id: "track", name: "", artists: [] })).toBeUndefined();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
-
-

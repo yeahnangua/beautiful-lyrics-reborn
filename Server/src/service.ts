@@ -44,7 +44,7 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
         context.diagnostics?.attempts.push(attempt);
         try {
           // These paths can only return one type. Mixed-type paths must still run.
-          const onlyType = ["qq music", "kugou direct", "netease direct", ].includes(name)
+          const onlyType = ["qq music", "kugou direct", "netease direct"].includes(name)
             ? (stage === "line" ? "Line" : "Syllable") : undefined;
           if (onlyType && isSourceBlocked(blocks, providerName(name), onlyType)) {
             attempt.outcome = "blocked";

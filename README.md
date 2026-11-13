@@ -46,8 +46,8 @@ KuGou, and NetEase paths remain disabled. The direct KuGou and
 NetEase providers match the title, artist, and duration before retrieving KRC, YRC,
 or LRC. QQ Music uses the same matching checks for its QRC and LRC requests.
 KuGou decodes native word timings and skips unverified UGC candidates.
-A missing or restricted result
-leaves the other providers available. Upstream availability and rate limits can
+A missing or restricted result leaves the other providers available.
+Upstream availability and rate limits can
 vary by server IP; no user credentials are bundled with these providers.
 
 Spicy Lyrics is keyed by Spotify track ID and needs a secret API key. When the

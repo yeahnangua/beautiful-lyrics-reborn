@@ -322,9 +322,9 @@ const LoadSongDetails = () => {
 }
 
 // Handle our Lyrics
-// Version 13 invalidates snapshots from before Better Lyrics and Unison were available.
+// Version 14 invalidates incorrect recording matches and LRC timing boundaries.
 const ProviderLyricsStore = GetExpireStore<ProviderLyrics | false>(
-	"Player_ProviderLyrics", 13,
+	"Player_ProviderLyrics", 14,
 	{
 		Duration: 2,
 		Unit: "Days"
@@ -332,7 +332,7 @@ const ProviderLyricsStore = GetExpireStore<ProviderLyrics | false>(
 	true
 )
 const TransformedLyricsStore = GetExpireStore<TransformedLyrics | false>(
-	"Player_TransformedLyrics", 13,
+	"Player_TransformedLyrics", 14,
 	{
 		Duration: 2,
 		Unit: "Days"
@@ -406,14 +406,18 @@ const BuildLyricsRequestURL = (songId: string, songDuration: number, track = Spo
 const ResolveAppleMusicId = (lyricsRequestURL: string, parent: AbortSignal): Promise<{ id: string; title: string } | undefined> => {
 	const lyricsUrl = new URL(lyricsRequestURL)
 	const trackName = lyricsUrl.searchParams.get("track_name")
-	const artistName = lyricsUrl.searchParams.get("artist_name")
+	const artistNames = lyricsUrl.searchParams.getAll("artist_name").filter(name => name.trim())
 	const duration = Number(lyricsUrl.searchParams.get("duration"))
-	if ((trackName === null) || (trackName.length === 0)) {
+	if (!trackName?.trim() || artistNames.length === 0) {
 		return Promise.resolve(undefined)
 	}
+	const normalize = (text: string) => SimplifySearchText(text).normalize("NFKC").toLowerCase().replace(/[\p{P}\p{Z}\s]/gu, "")
+	const expectedTitle = normalize(FilterSongName(trackName))
+	const expectedArtists = artistNames.map(normalize).filter(Boolean)
+	if (!expectedTitle || !expectedArtists.length) return Promise.resolve(undefined)
 
 	const searchUrl = new URL("https://itunes.apple.com/search")
-	searchUrl.searchParams.set("term", SimplifySearchText(`${trackName} ${artistName ?? ""}`.trim()))
+	searchUrl.searchParams.set("term", SimplifySearchText(`${trackName} ${artistNames[0]}`.trim()))
 	searchUrl.searchParams.set("media", "music")
 	searchUrl.searchParams.set("entity", "song")
 	searchUrl.searchParams.set("limit", "10")
@@ -423,20 +427,22 @@ const ResolveAppleMusicId = (lyricsRequestURL: string, parent: AbortSignal): Pro
 		fetch(searchUrl.toString(), { signal: scope.Signal })
 		.then(response => ((response.ok === false) ? undefined : response.json()))
 		.then(
-			(payload?: { results?: { trackId?: number; trackName?: string; trackTimeMillis?: number }[] }) => {
+			(payload?: { results?: { trackId?: number; trackName?: string; artistName?: string; trackTimeMillis?: number }[] }) => {
 				const results = (Array.isArray(payload?.results) ? payload.results : [])
-				const lowerTrackName = SimplifySearchText(trackName).toLowerCase()
 				const matched = results.find(result => {
-					if ((result.trackId === undefined) || (result.trackName === undefined)) {
+					if (!result || !Number.isSafeInteger(result.trackId) || result.trackId! <= 0
+						|| typeof result.trackName !== "string" || typeof result.artistName !== "string") {
 						return false
 					}
-					const resultTrackName = SimplifySearchText(result.trackName).toLowerCase()
+					const resultArtists = [result.artistName, ...result.artistName.split(/[、,，;；&/＋+]|(?:\s+(?:feat|ft|with)\.?\s+)/i)]
+						.map(normalize).filter(Boolean)
 					return (
-						(resultTrackName.includes(lowerTrackName) || lowerTrackName.includes(resultTrackName))
+						normalize(FilterSongName(result.trackName)) === expectedTitle
+						&& expectedArtists.some(artist => resultArtists.includes(artist))
 						&& (
 							(Number.isFinite(duration) === false) || (duration <= 0)
-							|| (result.trackTimeMillis === undefined)
-							|| (Math.abs((result.trackTimeMillis / 1000) - duration) <= 5)
+							|| (typeof result.trackTimeMillis === "number" && Number.isFinite(result.trackTimeMillis)
+								&& result.trackTimeMillis > 0 && Math.abs((result.trackTimeMillis / 1000) - duration) <= 5)
 						)
 					)
 				})
@@ -926,72 +932,58 @@ OnSpotifyReady.then(
 		// Handle timestamp updates
 		{
 			// Handle position syncing
-			type SyncedPostiion = ({ StartedSyncAt?: number; Position: number; })
-			let syncedPosition: (SyncedPostiion | undefined)
+			type SyncedPosition = ({ StartedSyncAt?: number; Position: number; })
+			let syncedPosition: (SyncedPosition | undefined)
+			const positionController = new AbortController()
+			PlayerMaid.Give(() => positionController.abort())
+			let positionRevision = 0
 
 			const syncTimings = [0.05, 0.1, 0.15, 0.75]
 			let canSyncNonLocalTimestamp = (IsPlaying ? syncTimings.length : 0)
-			SongChangedSignal.Connect(() => canSyncNonLocalTimestamp = syncTimings.length)
-			IsPlayingChangedSignal.Connect(() => canSyncNonLocalTimestamp = (IsPlaying ? syncTimings.length : 0))
+			const resetPositionSync = () => {
+				positionRevision++
+				syncedPosition = undefined
+				canSyncNonLocalTimestamp = IsPlaying ? syncTimings.length : 0
+			}
+			PlayerMaid.Give(SongChangedSignal.Connect(resetPositionSync))
+			PlayerMaid.Give(IsPlayingChangedSignal.Connect(resetPositionSync))
 
-			const RequestPositionSync = () => {
-				const startedAt = performance.now()
-				const isLocallyPlaying = SpotifyPlatform.PlaybackAPI._isLocal
-				return (
-					/*
-						IsLocal determines whether or not we are playing on the current device
-						OR if we are playing on a different device (device switching).
-
-						Spotify 1.2.94+ stopped live-updating the C++ Transport position during playback:
-						_contextPlayer.getPositionState() now returns the position as of the last
-						play/pause/seek only, so reading it live freezes the lyrics. Instead we
-						extrapolate from the state timestamp ourselves (same as Spotify's own playback-bar).
-						Non-local playback additionally kicks resume() to force timestamp resyncs
-						after device switches.
-					*/
-					(
-						((isLocallyPlaying === false) && (canSyncNonLocalTimestamp > 0))
-						? SpotifyPlatform.PlayerAPI._contextPlayer.resume({})
-						: Promise.resolve()
-					)
-					.then(
-						() => {
-							if (isLocallyPlaying === false) {
-								canSyncNonLocalTimestamp = Math.max(0, (canSyncNonLocalTimestamp - 1))
-							}
-							return (
-								IsPlaying ? {
-									StartedSyncAt: startedAt,
-									Position: (
-										SpotifyPlatform.PlayerAPI._state.positionAsOfTimestamp
-										+ (Date.now() - SpotifyPlatform.PlayerAPI._state.timestamp)
-									)
-								}
-								: { Position: SpotifyPlatform.PlayerAPI._state.positionAsOfTimestamp }
-							)
-						}
-					)
-				)
-				.then((position: SyncedPostiion) => syncedPosition = position )
-				.then(
-					() => PlayerMaid.Give(
-						Timeout(
-							(
-								isLocallyPlaying ? (1 / 30)
-								: (
-									(canSyncNonLocalTimestamp === 0) ? (1 / 30)
-									: syncTimings[syncTimings.length - canSyncNonLocalTimestamp]
-								)
-							), RequestPositionSync
-						),
-						"TimestampPositionSync"
-					)
-				)
+			const RequestPositionSync = async () => {
+				if (positionController.signal.aborted) return
+				const revision = positionRevision
+				const scope = CreateAbortScope(2000, positionController.signal)
+				let nextSyncDelay = 1
+				try {
+					const isLocallyPlaying = SpotifyPlatform.PlaybackAPI._isLocal
+					// Remote playback needs a bounded resync after device/song changes.
+					if (isLocallyPlaying === false && canSyncNonLocalTimestamp > 0) {
+						await Abortable(scope.Signal, () => SpotifyPlatform.PlayerAPI._contextPlayer.resume({}))
+					}
+					scope.Signal.throwIfAborted()
+					if (revision !== positionRevision) return
+					// Position and its monotonic anchor must describe the same instant,
+					// after the async resync; otherwise its latency gets counted twice.
+					const sampledAt = performance.now()
+					const state = SpotifyPlatform.PlayerAPI._state
+					const position = state.positionAsOfTimestamp + (IsPlaying ? Date.now() - state.timestamp : 0)
+					if (!Number.isFinite(position)) throw new Error("Playback position unavailable")
+					syncedPosition = IsPlaying ? { StartedSyncAt: sampledAt, Position: position } : { Position: position }
+					if (isLocallyPlaying === false) canSyncNonLocalTimestamp = Math.max(0, canSyncNonLocalTimestamp - 1)
+					nextSyncDelay = isLocallyPlaying || canSyncNonLocalTimestamp === 0
+						? 1 / 30 : syncTimings[syncTimings.length - canSyncNonLocalTimestamp]
+				} catch { /* Playback may disconnect temporarily; retry while frames continue. */ }
+				finally {
+					scope.Destroy()
+					if (!positionController.signal.aborted) {
+						PlayerMaid.Give(Timeout(nextSyncDelay, () => void RequestPositionSync()), "TimestampPositionSync")
+					}
+				}
 			}
 
 			// Handle frame updating
 			let lastUpdatedAt = performance.now()
 			const Update = () => {
+				if (positionController.signal.aborted) return
 				// Make sure we have an update
 				if (lastUpdatedAt === undefined) {
 					lastUpdatedAt = performance.now()
@@ -1051,8 +1043,9 @@ OnSpotifyReady.then(
 				PlayerMaid.Give(Defer(Update), "Timestep")
 			}
 			
-			// Finally, sync our position THEN update
-			RequestPositionSync().then(Update)
+			// Rendering must start even if the first remote sync fails or hangs.
+			void RequestPositionSync()
+			Update()
 		}
 	}
 )

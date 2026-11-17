@@ -147,10 +147,10 @@ describe("Workers Cache content and request boundary", () => {
     await fixture.call();
     const [currentPath, cached] = [...fixture.entries][0]!;
     const envelope = await cached.response.clone().json() as OriginEnvelope;
-    expect(lyricsCacheVersion).toBeGreaterThan(2);
+    expect(lyricsCacheVersion).toBeGreaterThan(4);
     expect(currentPath).toMatch(new RegExp(`^/lyrics-body/v${lyricsCacheVersion}/`));
     fixture.entries.clear();
-    for (const version of [1, 2]) {
+    for (const version of [1, 2, 3, 4]) {
       fixture.entries.set(currentPath.replace(`/v${lyricsCacheVersion}/`, `/v${version}/`), {
         response: Response.json({ ...envelope, schema: version }), until: cached.until
       });

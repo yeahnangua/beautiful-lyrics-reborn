@@ -170,9 +170,9 @@ test('both lyric snapshot stores invalidate old selections and prioritize the te
  const storeDefinitions = player.slice(player.indexOf('const ProviderLyricsStore ='), player.indexOf('export const ClearLyricsCache'));
  evaluate(storeDefinitions, {
   GetExpireStore(name, version, expiration, forceNewData) {
-   assert.equal(version, 13);
+   assert.equal(version, 14);
    assert.deepEqual(expiration, { Duration: 2, Unit: 'Days' });
-   entries.set(name + '/track', { CacheVersion: 12, ExpiresAt: start + 86_400_000,
+   entries.set(name + '/track', { CacheVersion: 13, ExpiresAt: start + 86_400_000,
     Content: { Type: 'Static', Lines: [{ Text: 'previous selection' }] } });
    const store = getStore(name, version, expiration, forceNewData);
    stores.push({ name, version, store });

@@ -274,6 +274,24 @@ describe("lyrics service", () => {
     }
   );
 
+  it.each(["Song (Live)", "Song 演唱會", "Song 现场版"])("keeps ID-matched lyrics when the requested recording is %s", async title => {
+    const providers = createProviders();
+    const live = wordLyrics("correct live recording");
+    vi.mocked(providers.spicylyrics.getLyrics).mockResolvedValue(live);
+    vi.mocked(providers.applemusic.getLyrics).mockResolvedValue(withMatchedTitle(wordLyrics("studio"), "Song"));
+    const result = await createLyricsService(providers).getLyrics("track", "token", { id: "track", name: title, artists: ["Artist"] });
+    expect(result).toEqual(contentEqual(live));
+    expect(result?.Source?.Provider).toBe("spicylyrics");
+  });
+
+  it("does not replace a live match when requested recording metadata is unavailable", async () => {
+    const providers = createProviders();
+    const live = withMatchedTitle(wordLyrics("live"), "Song (Live)");
+    vi.mocked(providers.spicylyrics.getLyrics).mockResolvedValue(live);
+    providers.unison = { getLyrics: vi.fn().mockResolvedValue(withMatchedTitle(wordLyrics("studio"), "Song")) };
+    expect(await createLyricsService(providers).getLyrics("track", "token")).toEqual(contentEqual(live));
+  });
+
   it("returns the live syllable result after two seconds when other providers are still pending", async () => {
     vi.useFakeTimers();
     try {

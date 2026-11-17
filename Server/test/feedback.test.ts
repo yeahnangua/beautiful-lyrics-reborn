@@ -66,6 +66,18 @@ beforeEach(async () => {
 
 describe("source-block administration with real D1", () => {
   const rule = { spotifyId: "1rutoX4kIkjtKW8OqBNYFP", provider: "qqmusic", lyricsType: "Syllable", enabled: true, reason: "时间不同步" };
+  it.each(["betterlyrics", "betterlyrics-qq", "betterlyrics-kugou", "unison"])("accepts feedback-linked blocks and filters for %s", async provider => {
+    const cookie = await login();
+    const report = await (await call("/reports", "POST", payload({
+      track: { id: rule.spotifyId, name: "Song", artists: ["Artist"] },
+      source: { Provider: provider, Transport: "direct" },
+    }))).json() as { id: string };
+    const response = await call("/admin/api/source-blocks", "PUT", { ...rule, provider, lyricsType: "Static", reportId: report.id }, cookie);
+    expect(response.status).toBe(200);
+    expect(await loadSourcePolicy(db, rule.spotifyId)).toEqual([{ provider, lyricsType: "Static" }]);
+    const filtered = await (await call("/admin/api/reports?source=" + provider, "GET", undefined, cookie)).json() as { items: { id: string }[] };
+    expect(filtered.items.map(item => item.id)).toEqual([report.id]);
+  });
   it("atomically deduplicates concurrent PUTs, audits changes, and keeps feedback status independent", async () => {
     const reportData = payload({ track: { id: rule.spotifyId, name: "Song", artists: ["Artist"] },
       source: { Provider: rule.provider, Transport: "direct" }, original: { Type: "Syllable", StartTime: 0, EndTime: 1, Content: [] } });

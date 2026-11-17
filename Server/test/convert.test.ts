@@ -88,6 +88,30 @@ describe("LRC conversion", () => {
     expect(convertLrcToLineLyrics("[ar:Artist]\n[00:01.00]")).toBeUndefined();
   });
 
+  it("uses empty timing markers as boundaries without displaying blank vocals", () => {
+    const lyrics = convertLrcToLineLyrics("[00:10.00]First\n[00:12.00]\n[00:30.00]Next\n[00:32.00]", 40)!;
+    expect(lyrics.Content).toEqual([
+      { Type: "Vocal", Text: "First", StartTime: 10, EndTime: 12, OppositeAligned: false },
+      { Type: "Vocal", Text: "Next", StartTime: 30, EndTime: 32, OppositeAligned: false },
+    ]);
+    expect(lyrics.EndTime).toBe(32);
+  });
+
+  it("preserves stable equal-time lines and finds the next strictly later boundary", () => {
+    const lyrics = convertLrcToLineLyrics("[00:30.00]Last\n[00:10.00]Original\n[00:10.00]\n[00:10.00]Translation\n[00:12.00]", 40)!;
+    expect(lyrics.Content.map(line => [line.Type === "Vocal" ? line.Text : "", line.StartTime, line.EndTime]))
+      .toEqual([["Original", 10, 12], ["Translation", 10, 12], ["Last", 30, 40]]);
+    const repeated = convertLrcToLineLyrics("[00:01.00][00:20.00]Repeat\n[00:03.00][00:23.00]", 30)!;
+    expect(repeated.Content.map(line => [line.StartTime, line.EndTime])).toEqual([[1, 3], [20, 23]]);
+  });
+
+  it("handles a large duplicate-timestamp payload with identical boundaries", () => {
+    const lyrics = convertLrcToLineLyrics("[00:01.00]Line\n".repeat(16000) + "[00:03.00]", 10)!;
+    expect(lyrics.Content).toHaveLength(16000);
+    expect(lyrics.Content.every(line => line.StartTime === 1 && line.EndTime === 3)).toBe(true);
+    expect(lyrics.EndTime).toBe(3);
+  });
+
   it("converts enhanced LRC word timestamps to Syllable output", () => {
     const result = convertEnhancedLrcToSyllableLyrics(
       "[00:01.00] <00:01.00> Hello <00:01.50>   <00:01.50> world\n[00:03.00] <00:03.00> Again",

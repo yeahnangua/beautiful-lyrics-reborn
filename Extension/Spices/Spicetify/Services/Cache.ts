@@ -40,49 +40,32 @@ export const GetInstantStore = <InstantStoreTemplate extends InstantStoreItems>(
 	}
 	RetrievedInstantStores.add(storeName)
 
-	// Retrieve our store
-	let store: InstantStore = (undefined as unknown as InstantStore)
-	{
-		if ((IsDevelopment === false) || (forceNewData === undefined)) {
-			const serializedStore = localStorage.getItem(storeName)
-			if (serializedStore !== null) {
-				const parsedStore = JSON.parse(serializedStore) as InstantStore
-				if (parsedStore.Version === version) {
-					store = parsedStore
-				}
+	// Defaults also provide an in-memory store when persistence is unavailable.
+	const isRecord = (value: unknown): value is InstantStoreItems => (
+		typeof value === "object" && value !== null && !Array.isArray(value)
+	)
+	let store: InstantStore = { Version: version, Items: structuredClone(template) }
+	if ((IsDevelopment === false) || (forceNewData === undefined)) {
+		try {
+			const serialized = localStorage.getItem(storeName)
+			const parsed: unknown = serialized === null ? undefined : JSON.parse(serialized)
+			if (isRecord(parsed) && parsed.Version === version && isRecord(parsed.Items)) {
+				store = { Version: version, Items: parsed.Items }
 			}
-		}
-
-		if (store === undefined) {
-			store = {
-				Version: version,
-				Items: JSON.parse(JSON.stringify(template))
-			}
-		} else {
-			const templateChecks: [Record<string, unknown>, Record<string, unknown>, string][] = [[store.Items, template, storeName]]
-			while (templateChecks.length > 0) {
-				const [check, against, path] = templateChecks.pop()!
-				for (const key in against) {
-					const checkValue = check[key]
-					const againstValue = against[key]
-					if (checkValue === undefined) {
-						check[key] = JSON.parse(JSON.stringify(againstValue))
-					} else {
-						const checkValueType = typeof checkValue
-						if (checkValueType !== (typeof againstValue)) {
-							throw new Error(`Template Type mismatch for "${`${path}.${key}`}"`)
-						} else if (checkValueType === "object") {
-							templateChecks.push(
-								[
-									checkValue as Record<string, unknown>,
-									againstValue as Record<string, unknown>,
-									`${path}.${key}`
-								]
-							)
-						}
-					}
-				}
-			}
+		} catch { /* Corrupt JSON or blocked storage must not prevent startup. */ }
+	}
+	// Repair only invalid template fields, retaining valid preferences and per-song maps.
+	const checks: [InstantStoreItems, InstantStoreItems][] = [[store.Items, template]]
+	while (checks.length > 0) {
+		const [saved, defaults] = checks.pop()!
+		for (const [key, fallback] of Object.entries(defaults)) {
+			const value = Object.hasOwn(saved, key) ? saved[key] : undefined
+			const valid = fallback === null ? value === null
+				: Array.isArray(fallback) ? Array.isArray(value)
+				: isRecord(fallback) ? isRecord(value)
+				: typeof value === typeof fallback && (typeof value !== "number" || Number.isFinite(value))
+			if (!valid) saved[key] = structuredClone(fallback)
+			else if (isRecord(fallback) && isRecord(value)) checks.push([value, fallback])
 		}
 	}
 
@@ -90,7 +73,10 @@ export const GetInstantStore = <InstantStoreTemplate extends InstantStoreItems>(
 	return Object.freeze(
 		{
 			Items: store.Items as InstantStoreTemplate,
-			SaveChanges: () => localStorage.setItem(storeName, JSON.stringify(store))
+			SaveChanges: () => {
+				try { localStorage.setItem(storeName, JSON.stringify(store)) }
+				catch { /* Keep edits usable in memory when storage is blocked or full. */ }
+			}
 		}
 	)
 }

@@ -37,10 +37,6 @@ export function convertLrcToLineLyrics(
     }
 
     const text = rawLine.replace(timestampPattern, "").trim();
-    if (text.length === 0) {
-      continue;
-    }
-
     for (const timestamp of timestamps) {
       const timestampValue = timestamp[1];
       if (timestampValue === undefined) {
@@ -60,20 +56,28 @@ export function convertLrcToLineLyrics(
     return undefined;
   }
 
-  const content: LineVocal[] = parsedLines.map((line, index) => {
-    const nextLine = parsedLines.slice(index + 1).find((candidate) => candidate.time > line.time);
+  // Blank timestamps end the preceding vocal. Walk backwards once so equal-time
+  // lines share the next boundary without repeatedly copying/scanning the tail.
+  const content: LineVocal[] = [];
+  let nextTime: number | undefined;
+  for (let index = parsedLines.length - 1; index >= 0; index--) {
+    const line = parsedLines[index]!;
+    const nextLine = parsedLines[index + 1];
+    if (nextLine && nextLine.time > line.time) nextTime = nextLine.time;
+    if (!line.text) continue;
     const fallbackEndTime = durationSeconds !== undefined && Number.isFinite(durationSeconds) && durationSeconds > line.time
       ? durationSeconds : line.time + 5;
-    const endTime = Math.max(line.time, nextLine?.time ?? fallbackEndTime);
+    const endTime = nextTime ?? fallbackEndTime;
 
-    return {
+    content.push({
       Type: "Vocal",
       Text: line.text,
       StartTime: line.time,
       EndTime: endTime,
       OppositeAligned: false
-    };
-  });
+    });
+  }
+  content.reverse();
 
   const first = content[0];
   const last = content[content.length - 1];

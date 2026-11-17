@@ -136,7 +136,10 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
           }, syllable));
         }
         let winner = await first(candidates, lyrics => lyrics.Type === "Syllable");
-        if (winner && isLiveTitle(matchedTitle(winner[1]) ?? metadata?.name ?? "")) {
+        // Prefer a studio alternative only when the requested recording is known
+        // to be non-live. An ID-matched live recording must keep its own timings.
+        if (winner && metadata?.name.trim() && !isLiveTitle(metadata.name)
+            && isLiveTitle(matchedTitle(winner[1]) ?? metadata.name)) {
           const alternativeScope = requestScope(2_000, syllable);
           try {
             const alternative = await abortable(() => Promise.any(candidates.map(async candidate => {

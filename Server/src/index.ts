@@ -291,6 +291,7 @@ export function createWorker(service: LyricsService, auth = createLyricsAuth(), 
       };
       let lyrics: BeautifulLyrics | undefined;
       let failed = false;
+      let loggedByOrigin = false;
       try {
         request.signal.throwIfAborted();
         let sourceBlocks: Awaited<ReturnType<typeof loadSourcePolicy>> = [];
@@ -332,10 +333,11 @@ export function createWorker(service: LyricsService, auth = createLyricsAuth(), 
             scope.Signal.throwIfAborted();
             const bypass = env.LYRICS_CACHE_MODE === "off" || attempt > 0;
             if (bypass) diagnostics.cache = "bypass";
+            const originRunId = crypto.randomUUID();
             // Parse and verify the body as part of the fill lifetime, even when
             // this caller disconnects while another caller is waiting for it.
             const pending = (async () => {
-              const response = await origin.fetch(createOriginRequest(normalized.identity, context, accessToken),
+              const response = await origin.fetch(createOriginRequest(normalized.identity, { ...context, originRunId }, accessToken),
                 bypass ? { cache: "no-store" } : undefined);
               const entry = await readOriginResponse(response, normalized.identity, sourceBlocks);
               return { entry, status: bypass ? "bypass" as const : cacheStatus(response),
@@ -359,6 +361,7 @@ export function createWorker(service: LyricsService, auth = createLyricsAuth(), 
                 diagnostics.lyricsHash = entry.lyricsHash!;
                 if (lyrics.Source) diagnostics.source = lyrics.Source;
               }
+              loggedByOrigin = entry.originRunId === originRunId;
               break;
             } catch {
               scope.Signal.throwIfAborted();
@@ -376,10 +379,12 @@ export function createWorker(service: LyricsService, auth = createLyricsAuth(), 
         lyrics = undefined;
       } finally {
         diagnostics.durationMs = Date.now() - started;
-        // Keep the existing cache-hit summary. Other request summaries link the
-        // caller to the shared origin log even when another request triggered it.
-        const event = diagnostics.cache === "hit" && diagnostics.outcome === "success" ? "lyrics-query" : "lyrics-request";
-        logLyricsQuery(diagnostics, lyrics?.Type, event);
+        // The origin already logged this request if it returned the proposed run ID.
+        // Cached and coalesced replies carry the run ID of another request.
+        if (!loggedByOrigin) {
+          const event = diagnostics.cache === "hit" && diagnostics.outcome === "success" ? "lyrics-query" : "lyrics-request";
+          logLyricsQuery(diagnostics, lyrics?.Type, event);
+        }
         recordRequestMetrics(env, diagnostics, lyrics);
       }
       const cacheHeaders = diagnostics.cache ? { "X-Lyrics-Cache": diagnostics.cache } : {};

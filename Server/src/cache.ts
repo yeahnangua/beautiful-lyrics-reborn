@@ -22,6 +22,7 @@ export type OriginContext = {
   sourceBlocks: SourceBlock[];
   deadline: number;
   triggerRequestId: string;
+  originRunId?: string;
 };
 export type OriginInput = CacheIdentity & OriginContext & { accessToken: string };
 export type OriginEnvelope = CacheIdentity & {
@@ -124,6 +125,9 @@ export async function readOriginRequest(request: Request): Promise<OriginInput> 
     || !uuidPattern.test(context.triggerRequestId) || !accessToken || accessToken.length > 8192 || /\s/.test(accessToken)) {
     throw new LyricsCacheError();
   }
+  if (context.originRunId !== undefined && (typeof context.originRunId !== "string" || !uuidPattern.test(context.originRunId))) {
+    throw new LyricsCacheError();
+  }
   if (context.clientContext && (typeof context.clientContext !== "object"
     || (context.clientContext.appPlatform !== undefined && typeof context.clientContext.appPlatform !== "string")
     || (context.clientContext.appVersion !== undefined && typeof context.clientContext.appVersion !== "string"))) throw new LyricsCacheError();
@@ -131,6 +135,7 @@ export async function readOriginRequest(request: Request): Promise<OriginInput> 
   if (normalized.identity.metadataHash !== match[2] || normalized.identity.policyHash !== match[3]) throw new LyricsCacheError();
   return { ...normalized.identity, sourceBlocks: normalized.sourceBlocks, deadline: context.deadline,
     triggerRequestId: context.triggerRequestId, accessToken,
+    ...(context.originRunId ? { originRunId: context.originRunId } : {}),
     ...(normalized.metadata ? { metadata: normalized.metadata } : {}),
     ...(context.clientContext ? { clientContext: context.clientContext } : {}) };
 }

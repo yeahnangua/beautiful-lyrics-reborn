@@ -304,9 +304,9 @@ describe("feedback with real local D1", () => {
       requestId = lyrics.RequestId!;
       await Promise.all(pending);
       expect(batch).not.toHaveBeenCalled();
-      const [origin, request] = logs.mock.calls.map(([line]) => JSON.parse(String(line)));
-      expect(origin).toMatchObject({ event: "lyrics-query", requestId });
-      expect(request).toMatchObject({ event: "lyrics-request", requestId, originRunId: origin.originRunId });
+      expect(logs.mock.calls.map(([line]) => JSON.parse(String(line)))).toEqual([
+        expect.objectContaining({ event: "lyrics-query", requestId, originRunId: expect.any(String) })
+      ]);
     } finally { logs.mockRestore(); }
     const displayed = { Type: "Static", Lines: [{ Text: "the displayed lyrics" }] };
     const submitted = await call("/reports", "POST", payload({ requestId, displayed }));
@@ -421,7 +421,9 @@ describe("feedback with real local D1", () => {
       expect(response.status).toBe(outcome === "failed" ? 502 : 200);
       const lines = log.mock.calls.map(([line]) => String(line));
       expect(lines.join("\n")).not.toContain("PRIVATE");
-      expect(lines.map(line => JSON.parse(line))).toContainEqual(expect.objectContaining({ event: "lyrics-request", outcome }));
+      expect(lines.map(line => JSON.parse(line))).toEqual([
+        expect.objectContaining({ event: outcome === "cancelled" ? "lyrics-request" : "lyrics-query", outcome })
+      ]);
     } finally { log.mockRestore(); }
   });
   it("serves lyrics with only read access to the policy database", async () => {

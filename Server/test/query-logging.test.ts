@@ -82,7 +82,7 @@ describe("Worker lyrics query logs", () => {
       Attribution: { provider: "lrc.red", source: "lrc.red" },
       Content: [expect.anything(), expect.objectContaining({ IsAttribution: true,
         Lead: expect.objectContaining({ Syllables: [expect.objectContaining({ Text: "Lyrics via lrc.red" })] }) })] });
-    expect(console.log).toHaveBeenCalledTimes(2);
+    expect(console.log).toHaveBeenCalledTimes(1);
     const text = vi.mocked(console.log).mock.calls[0]![0] as string;
     expect(JSON.parse(text)).toMatchObject({ provider: "lrc.red", outcome: "success",
       message: expect.stringContaining("来源：lrc.red | 逐字"),
@@ -97,7 +97,7 @@ describe("Worker lyrics query logs", () => {
     ] }), "183919743");
     expect(await response.json()).toMatchObject({ Type: "Syllable",
       Source: { Provider: "applemusic", Transport: "lyrically", TrackId: "183919743", MatchedTitle: "Song" } });
-    expect(console.log).toHaveBeenCalledTimes(2);
+    expect(console.log).toHaveBeenCalledTimes(1);
     const text = vi.mocked(console.log).mock.calls[0]![0] as string;
     const record = JSON.parse(text);
     expect(record).toMatchObject({ provider: "applemusic", outcome: "success",
@@ -131,7 +131,7 @@ describe("Worker lyrics query logs", () => {
     const response = await query(providers());
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("");
-    expect(console.log).toHaveBeenCalledTimes(2);
+    expect(console.log).toHaveBeenCalledTimes(1);
     expect(console.warn).not.toHaveBeenCalled();
     const text = vi.mocked(console.log).mock.calls[0]![0] as string;
     const record = JSON.parse(text);
@@ -161,7 +161,7 @@ describe("Worker lyrics query logs", () => {
   it("includes the chosen source and lyric type without printing the lyric body", async () => {
     const response = await query(providers(Buffer.from("[00:01.00]LYRIC_BODY_SECRET", "utf8").toString("base64")));
     expect((await response.json() as { Type: string }).Type).toBe("Line");
-    expect(console.log).toHaveBeenCalledTimes(2);
+    expect(console.log).toHaveBeenCalledTimes(1);
     const text = vi.mocked(console.log).mock.calls[0]![0] as string;
     const record = JSON.parse(text);
     expect(record).toMatchObject({

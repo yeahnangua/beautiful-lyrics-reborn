@@ -177,6 +177,8 @@ describe("Workers Cache content and request boundary", () => {
     expect(secondResponse.headers.get("Cloudflare-CDN-Cache-Control")).toBe("no-store");
     const logs = queryLogs();
     expect(logs).toHaveLength(2);
+    expect(queryLogs("lyrics-request")).toEqual([]);
+    expect(logs[0]!.requestId).toBe(first.RequestId);
     expect(logs[0]!.message).toMatch(/\| ✅ \| 来源：lrc.red \| 逐字 \| \d+ms$/);
     expect(logs[0]!.message).not.toContain("命中缓存");
     expect(logs[1]!.message).toMatch(/\| ✅ \| 命中缓存 \| 来源：lrc.red \| 逐字 \| \d+ms$/);
@@ -395,9 +397,11 @@ describe("Workers Cache content and request boundary", () => {
     expect(new Set(bodies.map(body => body.RequestId)).size).toBe(5);
     expect(service.getLyrics).toHaveBeenCalledTimes(1);
     expect(queryLogs()).toHaveLength(1);
+    const [origin] = queryLogs();
     const summaries = queryLogs("lyrics-request");
-    expect(new Set(summaries.map(log => log.requestId))).toEqual(new Set(bodies.map(body => body.RequestId)));
-    expect(new Set(summaries.map(log => log.originRunId))).toEqual(new Set([queryLogs()[0]!.originRunId]));
+    expect(summaries).toHaveLength(4);
+    expect(new Set([origin!.requestId, ...summaries.map(log => log.requestId)])).toEqual(new Set(bodies.map(body => body.RequestId)));
+    expect(summaries.every(log => log.originRunId === origin!.originRunId)).toBe(true);
     expect((await db.prepare("SELECT id FROM lyric_requests").all()).results).toEqual([]);
     expect((await db.prepare("SELECT id FROM lyric_origin_runs").all()).results).toEqual([]);
     expect(fixture.points.mock.calls.filter(call => String(call[0].indexes?.[0]).startsWith("provider:"))).toHaveLength(1);

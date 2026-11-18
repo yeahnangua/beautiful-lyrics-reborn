@@ -22,7 +22,7 @@ export function createLyricsOrigin(service: LyricsService) {
     catch { return new Response("Invalid internal request", { status: 400, headers: { "Cache-Control": "no-store" } }); }
     const started = Date.now();
     const record: RequestDiagnostics = {
-      id: crypto.randomUUID(), triggerRequestId: input.triggerRequestId,
+      id: input.originRunId ?? crypto.randomUUID(), triggerRequestId: input.triggerRequestId,
       track: input.metadata ?? { id: input.trackId, name: "", artists: [] },
       startedAt: new Date(started).toISOString(), durationMs: 0, outcome: "pending", cache: "miss",
       attempts: [], sourceBlocks: input.sourceBlocks, sourcePolicyStatus: "applied", cacheVersion: lyricsCacheVersion

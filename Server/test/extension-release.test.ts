@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createWorker } from "../src/index";
 
+const verificationOrigin = "https://beautiful-lyrics-reborn-server.1135746060.workers.dev";
 const request = (path: string) => new Request(`https://lyrics.txw.qzz.io/extension/${path}`, {
   headers: { "If-None-Match": "old-pointer" }
 }) as Request<unknown, IncomingRequestCfProperties>;
@@ -59,5 +60,32 @@ describe("extension releases", () => {
     const denied = await f.worker.fetch!(request("beautiful-lyrics-reborn.mjs"), f.env, {} as ExecutionContext);
     expect(denied.status).toBe(404);
     expect(f.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    "latest.json",
+    "beautiful-lyrics-reborn.0123456789abcdef.mjs",
+    "beautiful-lyrics-reborn-fullscreen.0123456789abcdef.mjs",
+  ])("allows CI to fetch %s on workers.dev", async file => {
+    const f = fixture();
+    const response = await f.worker.fetch!(new Request(`${verificationOrigin}/extension/${file}`), f.env, {} as ExecutionContext);
+    expect(response.status).toBe(200);
+    expect(f.fetch.mock.calls[0]?.[0].url).toBe(`${verificationOrigin}/${file}`);
+  });
+
+  it.each([
+    ["GET", "/"],
+    ["GET", "/admin"],
+    ["GET", "/lyrics/test"],
+    ["GET", "/stats"],
+    ["POST", "/reports"],
+    ["GET", "/latest.json"],
+    ["GET", "/extension/beautiful-lyrics-reborn.mjs"],
+    ["OPTIONS", "/extension/latest.json"],
+  ])("rejects %s %s on workers.dev without fetching assets", async (method, path) => {
+    const f = fixture();
+    const response = await f.worker.fetch!(new Request(`${verificationOrigin}${path}`, { method }), f.env, {} as ExecutionContext);
+    expect(response.status).toBe(404);
+    expect(f.fetch).not.toHaveBeenCalled();
   });
 });

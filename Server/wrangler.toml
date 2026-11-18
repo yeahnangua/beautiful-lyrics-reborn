@@ -1,6 +1,8 @@
 name = "beautiful-lyrics-reborn-server"
 main = "src/worker.ts"
 compatibility_date = "2026-11-10"
+workers_dev = true
+preview_urls = false
 
 [vars]
 LYRICS_CACHE_MODE = "workers-cache"

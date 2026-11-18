@@ -211,8 +211,17 @@ export function createWorker(service: LyricsService, auth = createLyricsAuth(), 
       ctx.waitUntil(cleanupFeedback(env.FEEDBACK_DB).catch(() => console.warn("Feedback cleanup failed")));
     },
     async fetch(request: Request, env: WorkerEnv, ctx?: ExecutionContext): Promise<Response> {
-      if (new URL(request.url).pathname === LyricsSessionPath) return auth.session(request, env);
-      if (new URL(request.url).pathname === "/metrics") return metricsResponse(request, env);
+      const url = new URL(request.url);
+      if (request.method === "GET" && url.pathname.startsWith("/extension/")) {
+        return extensionReleaseResponse(request, env.RELEASE_ASSETS);
+      }
+      // The workers.dev ingress is reserved for CI release verification.
+      if (url.hostname.replace(/\.$/, "").endsWith(".workers.dev")) {
+        return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
+      }
+
+      if (url.pathname === LyricsSessionPath) return auth.session(request, env);
+      if (url.pathname === "/metrics") return metricsResponse(request, env);
       const feedback = await feedbackResponse(request, env);
       if (feedback) return feedback;
       if (request.method === "OPTIONS") {
@@ -221,8 +230,6 @@ export function createWorker(service: LyricsService, auth = createLyricsAuth(), 
           headers: lyricsResponseHeaders
         });
       }
-
-      const url = new URL(request.url);
 
       const policyRoute = /^\/lyrics-policy\/([^/]+)$/.exec(url.pathname);
       if (request.method === "GET" && policyRoute) {
@@ -240,10 +247,6 @@ export function createWorker(service: LyricsService, auth = createLyricsAuth(), 
           console.warn("Lyrics source policy read failed");
           return new Response("Source policy unavailable", { status: 503, headers });
         }
-      }
-
-      if (request.method === "GET" && url.pathname.startsWith("/extension/")) {
-        return extensionReleaseResponse(request, env.RELEASE_ASSETS);
       }
 
       if (request.method === "GET" && url.pathname === "/") {

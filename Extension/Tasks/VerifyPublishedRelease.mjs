@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 
-const base = new URL("/extension/", process.argv[2] ?? "https://lyrics.txw.qzz.io");
+const base = new URL("/extension/", process.argv[2] ?? "https://beautiful-lyrics-reborn-server.1135746060.workers.dev");
 const expected = JSON.parse(await readFile(new URL("../Builds/Release/latest.json", import.meta.url), "utf8"));
 async function verify() {
   const pointer = await fetch(new URL("latest.json", base), { cache: "no-store", signal: AbortSignal.timeout(20000) });

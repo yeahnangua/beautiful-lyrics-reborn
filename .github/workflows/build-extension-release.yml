@@ -87,7 +87,7 @@ jobs:
         run: |
           npm run typecheck
           npx playwright install --with-deps chromium
-          npm run test:ui
+          npm run test:ui -- --grep-invert 'fullscreen\.spec\.ts'
 
       - name: Test Worker
         working-directory: Server

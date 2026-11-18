@@ -1,7 +1,7 @@
 import { appendAttributionLyric } from "./attribution";
 import { feedbackResponse, type FeedbackEnv } from "./feedback";
 import { PluginFetch as fetch } from "../../Universal/Modules/Http";
-import { saveDiagnostics, cleanupFeedback, logLyricsQuery } from "./diagnostics";
+import { cleanupFeedback, logLyricsQuery } from "./diagnostics";
 import type { RequestDiagnostics } from "./types";
 import { extensionReleaseResponse } from "./extension-release";
 // import { amllDbProvider } from "./providers/amlldb";
@@ -314,7 +314,7 @@ export function createWorker(service: LyricsService, auth = createLyricsAuth(), 
         diagnostics.cache = env.LYRICS_CACHE_MODE === "off" ? "bypass" : "unknown";
         const origin = options.origin?.(env, ctx) ?? {
           fetch: async (internal: Request) => {
-            const response = await directOrigin(internal, env, ctx);
+            const response = await directOrigin(internal, env);
             response.headers.set("CF-Cache-Status", "BYPASS");
             return response;
           },
@@ -376,21 +376,11 @@ export function createWorker(service: LyricsService, auth = createLyricsAuth(), 
         lyrics = undefined;
       } finally {
         diagnostics.durationMs = Date.now() - started;
-        // Real queries log inside the origin. Only accepted hits log here.
-        if (diagnostics.cache === "hit" && diagnostics.outcome === "success") logLyricsQuery(diagnostics, lyrics?.Type);
+        // Keep the existing cache-hit summary. Other request summaries link the
+        // caller to the shared origin log even when another request triggered it.
+        const event = diagnostics.cache === "hit" && diagnostics.outcome === "success" ? "lyrics-query" : "lyrics-request";
+        logLyricsQuery(diagnostics, lyrics?.Type, event);
         recordRequestMetrics(env, diagnostics, lyrics);
-        // One waitUntil for all background writes keeps the response a single unit of work.
-        const background: Promise<unknown>[] = [];
-        if (env.FEEDBACK_DB) {
-          const record = structuredClone(diagnostics);
-          background.push(saveDiagnostics(env.FEEDBACK_DB, record)
-            .catch(() => console.warn("Lyrics diagnostics write failed")));
-        }
-        if (background.length > 0) {
-          const pending = Promise.all(background);
-          if (ctx?.waitUntil) ctx.waitUntil(pending);
-          else await pending;
-        }
       }
       const cacheHeaders = diagnostics.cache ? { "X-Lyrics-Cache": diagnostics.cache } : {};
       if (failed) return new Response("Lyrics request failed", { status: 502, headers: { ...lyricsResponseHeaders, ...cacheHeaders } });

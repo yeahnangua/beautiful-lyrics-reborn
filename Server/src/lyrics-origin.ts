@@ -1,13 +1,13 @@
 import { Abortable, CreateAbortScope } from "../../Universal/Modules/Async";
 import { cacheTtlMs, isCacheableLyrics, lyricsCacheVersion, originBudgetMs, readOriginRequest, stripRequestFields, type OriginEnvelope } from "./cache";
-import { hashLyrics, logLyricsQuery, saveOriginDiagnostics } from "./diagnostics";
+import { hashLyrics, logLyricsQuery } from "./diagnostics";
 import { recordProviderMetrics, type MetricsEnv } from "./metrics";
 import { setSpicyLyricsApiKey } from "./providers/spicylyrics";
 import { isSourceBlocked } from "./source-policy";
 import type { LyricsService } from "./service";
 import type { BeautifulLyrics, RequestDiagnostics } from "./types";
 
-export type LyricsOriginEnv = MetricsEnv & { FEEDBACK_DB?: D1Database; SPICY_LYRICS_KEY?: string };
+export type LyricsOriginEnv = MetricsEnv & { SPICY_LYRICS_KEY?: string };
 
 export function keepAlive(ctx: Pick<ExecutionContext, "waitUntil"> | undefined, pending: Promise<unknown>): void {
   // Consumers may stop waiting, but one disconnected caller must not cancel a
@@ -16,7 +16,7 @@ export function keepAlive(ctx: Pick<ExecutionContext, "waitUntil"> | undefined, 
 }
 
 export function createLyricsOrigin(service: LyricsService) {
-  return async function originFetch(request: Request, env: LyricsOriginEnv, ctx?: ExecutionContext): Promise<Response> {
+  return async function originFetch(request: Request, env: LyricsOriginEnv): Promise<Response> {
     let input;
     try { input = await readOriginRequest(request); }
     catch { return new Response("Invalid internal request", { status: 400, headers: { "Cache-Control": "no-store" } }); }
@@ -62,10 +62,6 @@ export function createLyricsOrigin(service: LyricsService) {
       outcome: failed ? "failed" : lyrics ? "success" : "none", originRunId: record.id, generatedAt,
       ...(lyrics ? { lyrics, lyricsHash: record.lyricsHash!, expiresAt: generatedAt + cacheTtlMs(lyrics.Type, lyrics.Source?.Provider) } : {})
     };
-    const pending = saveOriginDiagnostics(env.FEEDBACK_DB, structuredClone(record))
-      .catch(() => console.warn("Lyrics origin diagnostics write failed"));
-    if (ctx?.waitUntil) keepAlive(ctx, pending);
-    else await pending;
     return Response.json(envelope, {
       status: failed ? 502 : 200,
       headers: { "Cache-Control": lyrics ? "public, max-age=" + cacheTtlMs(lyrics.Type, lyrics.Source?.Provider) / 1000 + ", must-revalidate" : "no-store" }

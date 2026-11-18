@@ -1,9 +1,9 @@
 import type { BeautifulLyrics, RequestDiagnostics } from "./types";
 import { providerName } from "./source-policy";
-import { packOrigin, unpackOrigin } from "./origin-storage";
+import { unpackOrigin } from "./origin-storage";
 
-/** Called by the origin for a real query, or by the gateway for an accepted hit. */
-export function logLyricsQuery(record: RequestDiagnostics, lyricsType?: BeautifulLyrics["Type"]): void {
+export function logLyricsQuery(record: RequestDiagnostics, lyricsType?: BeautifulLyrics["Type"],
+  event: "lyrics-query" | "lyrics-request" = "lyrics-query"): void {
   const brief = (value: string | undefined) => typeof value === "string" ? value.slice(0, 200) : undefined;
   const summaryText = (value: string | undefined) => value?.replace(/\s+/g, " ").trim().slice(0, 120);
   const title = summaryText(record.track.name) || summaryText(record.track.id) || "未知歌曲";
@@ -15,7 +15,7 @@ export function logLyricsQuery(record: RequestDiagnostics, lyricsType?: Beautifu
   const type = lyricsType && { Syllable: "逐字", Line: "逐行", Static: "纯文本" }[lyricsType];
   // Workers Logs uses these top-level fields for the Message and Level columns.
   const message = [
-    `[lyrics-query] ${title}${artists ? ` — ${artists}` : ""}`,
+    `[${event}] ${title}${artists ? ` — ${artists}` : ""}`,
     outcome,
     ...(record.cache === "hit" && record.outcome === "success" ? ["命中缓存"] : []),
     `来源：${source}`,
@@ -25,13 +25,14 @@ export function logLyricsQuery(record: RequestDiagnostics, lyricsType?: Beautifu
   console.log(JSON.stringify({
     message,
     level: record.outcome === "failed" ? "error" : "info",
-    event: "lyrics-query",
+    event,
     requestId: record.triggerRequestId ?? record.id,
     originRunId: record.originRunId,
     cache: record.cache,
     edgeCacheStatus: record.edgeCacheStatus,
     cacheGeneratedAt: record.cacheGeneratedAt,
     cacheVersion: record.cacheVersion,
+    sourcePolicyStatus: record.sourcePolicyStatus,
     track: { id: record.track.id, name: brief(record.track.name), artists: record.track.artists.slice(0, 5).map(brief) },
     outcome: record.outcome,
     durationMs: record.durationMs,
@@ -74,35 +75,6 @@ export async function sha256(value: string): Promise<string> {
   const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, "0")).join("");
 }
-export async function saveDiagnostics(db: D1Database | undefined, record: RequestDiagnostics): Promise<void> {
-  if (!db) return;
-  const { origin: _origin, originStatus: _status, ...summary } = record;
-  const data = JSON.stringify(summary);
-  await db.batch([
-    db.prepare(`INSERT INTO lyric_requests(id,created_at,spotify_id,song,artists,provider,outcome,data)
-      VALUES(?,?,?,?,?,?,?,?)`).bind(record.id, record.startedAt, record.track.id, record.track.name,
-      record.track.artists.join(", "), record.source?.Provider ?? "unknown", record.outcome, data),
-    // A report can arrive before waitUntil has committed this request. Backfill it atomically.
-    db.prepare("UPDATE lyric_reports SET origin_run_id=?, diagnostics=CASE WHEN ? IS NULL THEN ? " +
-      "ELSE json_set(?, '$.origin', json((SELECT data FROM lyric_origin_runs WHERE id=?))) END " +
-      "WHERE request_id=? AND diagnostics IS NULL")
-      .bind(record.originRunId ?? null, record.originRunId ?? null, data, data, record.originRunId ?? null, record.id)
-  ]);
-}
-export async function saveOriginDiagnostics(db: D1Database | undefined, record: RequestDiagnostics): Promise<void> {
-  if (!db) return;
-  const data = await packOrigin(record);
-  await db.batch([
-    db.prepare("INSERT INTO lyric_origin_runs(id,created_at,spotify_id,data) VALUES(?,?,?,?) ON CONFLICT(id) DO NOTHING")
-      .bind(record.id, record.startedAt, record.track.id, data),
-    // The request, report and shared fill may finish in any order. Preserve the
-    // origin snapshot in the report before the 14-day origin retention expires.
-    db.prepare("UPDATE lyric_reports SET diagnostics=json_set(diagnostics,'$.origin',json(?),'$.originStatus','available') " +
-      "WHERE origin_run_id=? AND diagnostics IS NOT NULL " +
-      "AND (json_type(diagnostics,'$.origin') IS NULL OR json_type(diagnostics,'$.origin')='null')")
-      .bind(data, record.id)
-  ]);
-}
 export async function hydrateOriginDiagnostics(db: D1Database, record: RequestDiagnostics): Promise<RequestDiagnostics> {
   if (!record.originRunId) return record;
   const { origin: snapshot, ...request } = record;
@@ -122,26 +94,42 @@ export async function loadDiagnostics(db: D1Database, id: string): Promise<Reque
   const attempts = await db.prepare("SELECT data FROM provider_attempts WHERE request_id=? ORDER BY ordinal").bind(id).all<{ data: string }>();
   return hydrateOriginDiagnostics(db, { ...record, attempts: attempts.results.map(row => JSON.parse(row.data)) });
 }
-export async function cleanupFeedback(db: D1Database | undefined): Promise<void> {
+const cleanupBatchesPerDay = 3;
+const diagnosticBatchSize = 1000;
+
+export async function cleanupFeedback(db: D1Database | undefined, now = Date.now()): Promise<void> {
   if (!db) return;
-  const now = Date.now();
   const requestCutoff = new Date(now - 14 * 86400_000).toISOString();
   const reportCutoff = new Date(now - 365 * 86400_000).toISOString();
-  // Keep each transaction small, including legacy children, but drain the entire backlog.
-  // Fixed cutoffs keep concurrent new requests outside this run's cleanup window.
+  const day = "cleanup:" + new Date(now).toISOString().slice(0, 10);
+  // Each batch consumes a slot in the same transaction as its deletes. The
+  // shared counter bounds the work even if a cron is retried or overlaps.
+  const hasBudget = "NOT EXISTS (SELECT 1 FROM diagnostic_daily_budget WHERE day=? AND count>=?)";
+  const oldestRequests = "SELECT id FROM lyric_requests WHERE created_at < ? ORDER BY created_at,id LIMIT ?";
   const statements = [
-    db.prepare(`DELETE FROM provider_attempts WHERE (request_id,ordinal) IN
-      (SELECT a.request_id,a.ordinal FROM lyric_requests r JOIN provider_attempts a ON a.request_id=r.id
-      WHERE r.created_at < ? LIMIT 1000)`).bind(requestCutoff),
-    db.prepare(`DELETE FROM lyric_requests WHERE id IN (SELECT r.id FROM lyric_requests r WHERE created_at < ?
-      AND NOT EXISTS(SELECT 1 FROM provider_attempts a WHERE a.request_id=r.id) LIMIT 1000)`).bind(requestCutoff),
-    db.prepare("DELETE FROM lyric_origin_runs WHERE id IN (SELECT id FROM lyric_origin_runs WHERE created_at < ? LIMIT 1000)").bind(requestCutoff),
-    db.prepare("DELETE FROM lyric_reports WHERE id IN (SELECT id FROM lyric_reports WHERE created_at < ? LIMIT 100)").bind(reportCutoff),
-    db.prepare("DELETE FROM rate_limits WHERE (key,minute) IN (SELECT key,minute FROM rate_limits WHERE minute < ? LIMIT 1000)").bind(Math.floor(now / 60000) - 2),
-    db.prepare("DELETE FROM admin_sessions WHERE id IN (SELECT id FROM admin_sessions WHERE expires < ? LIMIT 100)").bind(now)
+    db.prepare(`DELETE FROM provider_attempts WHERE ${hasBudget} AND (request_id,ordinal) IN (
+      SELECT request_id,ordinal FROM provider_attempts WHERE request_id IN (${oldestRequests}) LIMIT ?)`)
+      .bind(day, cleanupBatchesPerDay, requestCutoff, diagnosticBatchSize, diagnosticBatchSize),
+    db.prepare(`DELETE FROM lyric_requests WHERE ${hasBudget} AND id IN (${oldestRequests})
+      AND NOT EXISTS(SELECT 1 FROM provider_attempts WHERE request_id=lyric_requests.id)`)
+      .bind(day, cleanupBatchesPerDay, requestCutoff, diagnosticBatchSize),
+    db.prepare(`DELETE FROM lyric_origin_runs WHERE ${hasBudget} AND id IN (
+      SELECT id FROM lyric_origin_runs WHERE created_at < ? ORDER BY created_at,id LIMIT ?)`)
+      .bind(day, cleanupBatchesPerDay, requestCutoff, diagnosticBatchSize),
+    db.prepare(`DELETE FROM lyric_reports WHERE ${hasBudget} AND id IN (
+      SELECT id FROM lyric_reports WHERE created_at < ? ORDER BY created_at,id LIMIT 100)`)
+      .bind(day, cleanupBatchesPerDay, reportCutoff),
+    db.prepare(`DELETE FROM rate_limits WHERE ${hasBudget} AND (key,minute) IN (
+      SELECT key,minute FROM rate_limits WHERE minute < ? LIMIT 1000)`)
+      .bind(day, cleanupBatchesPerDay, Math.floor(now / 60000) - 2),
+    db.prepare(`DELETE FROM admin_sessions WHERE ${hasBudget} AND id IN (
+      SELECT id FROM admin_sessions WHERE expires < ? LIMIT 100)`)
+      .bind(day, cleanupBatchesPerDay, now),
+    db.prepare(`INSERT INTO diagnostic_daily_budget(day,count) VALUES(?,1)
+      ON CONFLICT(day) DO UPDATE SET count=count+1 WHERE count<?`).bind(day, cleanupBatchesPerDay)
   ];
-  while (true) {
+  for (let batch = 0; batch < cleanupBatchesPerDay; batch++) {
     const results = await db.batch(statements);
-    if (results.every(result => result.meta.changes === 0)) break;
+    if (results.slice(0, -1).every(result => result.meta.changes === 0)) break;
   }
 }

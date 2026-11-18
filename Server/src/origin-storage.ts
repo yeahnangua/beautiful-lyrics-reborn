@@ -2,15 +2,6 @@ import type { RequestDiagnostics } from "./types";
 
 type PackedOrigin = { encoding: "gzip-base64"; data: string };
 
-/** Keep full diagnostics while avoiding a second large plaintext request row. */
-export async function packOrigin(record: RequestDiagnostics): Promise<string> {
-  const stream = new Blob([JSON.stringify(record)]).stream().pipeThrough(new CompressionStream("gzip"));
-  const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
-  const packed: PackedOrigin = { encoding: "gzip-base64",
-    data: btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join("")) };
-  return JSON.stringify(packed);
-}
-
 export async function unpackOrigin(value: unknown): Promise<RequestDiagnostics> {
   if (!value || typeof value !== "object") throw new Error("Invalid origin diagnostics");
   if ("encoding" in value) {

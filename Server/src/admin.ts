@@ -9,7 +9,7 @@ export const adminHtml = `<!doctype html>
 <header><div><h1>歌词反馈与诊断</h1><div class="muted">查看用户反馈，追踪歌词来源与请求过程</div></div><button id="logout" hidden>退出</button></header>
 <p id="message" role="status" aria-live="polite"></p>
 <form id="login"><label>管理密码<input id="password" type="password" autocomplete="current-password" required maxlength="1024"></label><button class="primary">登录</button></form>
-<section id="workspace" hidden><nav><button id="reports" class="primary">反馈</button><button id="requests">请求日志</button><button id="source-blocks">来源屏蔽</button></nav>
+<section id="workspace" hidden><nav><button id="reports" class="primary">反馈</button><button id="requests">历史请求日志</button><button id="source-blocks">来源屏蔽</button></nav>
 <div id="records">
 <form id="filters">
 <label>歌曲 / 歌手<input name="q" placeholder="搜索歌曲或歌手"></label><label>Spotify ID<input name="spotifyId"></label>
@@ -51,7 +51,8 @@ function renderDetail(data){
   current=data;$('detailTitle').textContent=(view==='reports'?'反馈':'请求')+' · '+data.id;$('metadata').replaceChildren();
   field('歌曲',data.track.name+' / '+data.track.artists.join(', '));field('Spotify ID',data.track.id);field('时间',data.createdAt||data.startedAt);field('来源',JSON.stringify(data.source||{Provider:'unknown'}));
   if(view==='reports'){
-    field('问题类型',categoryNames[data.category]);field('邮箱',data.email||'未提供');field('说明',data.description||'未提供');field('播放位置 / 偏移量',data.playbackPosition+'s / '+data.lyricsOffset+'s');field('扩展版本 / 缓存',data.extensionVersion+' / '+(data.fromCache?'是':'否'));field('歌词指纹',data.lyricsHash||'未知');field('日志状态',data.diagnosticsAvailable?'可用':'不可用或已过保留期');
+    field('问题类型',categoryNames[data.category]);field('邮箱',data.email||'未提供');field('说明',data.description||'未提供');field('播放位置 / 偏移量',data.playbackPosition+'s / '+data.lyricsOffset+'s');field('扩展版本 / 缓存',data.extensionVersion+' / '+(data.fromCache?'是':'否'));field('歌词指纹',data.lyricsHash||'未知');field('请求 ID',data.requestId||'未提供');
+    field('日志状态',data.diagnosticsAvailable?'有历史诊断副本':data.requestId?'可用请求 ID 在 Workers Logs 查找近期日志':'无关联请求日志');
     $('editStatus').value=data.status;$('original').textContent=JSON.stringify(data.original,null,2);$('displayed').textContent=JSON.stringify(data.displayed,null,2);$('history').textContent=JSON.stringify(data.history,null,2);
     const known=providers.includes(data.source?.Provider)&&Object.hasOwn(typeNames,data.original?.Type);
     $('blockFromReport').disabled=!known;$('blockScope').textContent=known?data.track.id+' / '+data.source.Provider+' / '+typeNames[data.original.Type]:'来源未知，无法快捷屏蔽';

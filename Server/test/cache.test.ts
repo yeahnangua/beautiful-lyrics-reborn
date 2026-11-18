@@ -6,7 +6,6 @@ import { cacheIdentity, cachePath, cacheTtlMs, createOriginRequest, readOriginRe
 import { createLyricsOrigin } from "../src/lyrics-origin";
 import { lyricsCacheVersion } from "../src/cache-version";
 import { createWorker, type WorkerEnv } from "../src/index";
-import { loadDiagnostics } from "../src/diagnostics";
 import { putSourceBlock } from "../src/source-blocks";
 import { createLyricsService, type LyricsService } from "../src/service";
 import { convertLrcToLineLyrics } from "../src/convert/lrc";
@@ -66,13 +65,13 @@ function cacheFixture(service: LyricsService, overrides: Partial<WorkerEnv> = {}
   const entries = new Map<string, { response: Response; until: number }>();
   const inflight = new Map<string, Promise<Response>>();
   const fetch = vi.fn(async (req: Request, init?: { cache?: "no-store" }): Promise<Response> => {
-    if (init?.cache === "no-store") return withStatus(await run(req, env, ctx), "BYPASS");
+    if (init?.cache === "no-store") return withStatus(await run(req, env), "BYPASS");
     const key = new URL(req.url).pathname;
     const cached = entries.get(key);
     if (cached && cached.until > Date.now()) return withStatus(cached.response, "HIT");
     let pending = inflight.get(key);
     if (!pending) {
-      pending = run(req, env, ctx).then(response => {
+      pending = run(req, env).then(response => {
         const maxAge = /public, max-age=(\d+)/.exec(response.headers.get("Cache-Control") ?? "");
         if (maxAge && response.status === 200) entries.set(key, { response: response.clone(), until: Date.now() + Number(maxAge[1]) * 1000 });
         return response;
@@ -99,8 +98,8 @@ function successfulService() {
     return structuredClone({ ...lyrics, RequestId: "OLD_REQUEST_SECRET", RetrievedAt: "old", LyricsHash: "old" });
   }) };
 }
-function queryLogs(): Array<Record<string, any>> {
-  return vi.mocked(console.log).mock.calls.map(call => JSON.parse(String(call[0]))).filter(value => value.event === "lyrics-query");
+function queryLogs(event = "lyrics-query"): Array<Record<string, any>> {
+  return vi.mocked(console.log).mock.calls.map(call => JSON.parse(String(call[0]))).filter(value => value.event === event);
 }
 
 describe("Workers Cache content and request boundary", () => {
@@ -188,9 +187,8 @@ describe("Workers Cache content and request boundary", () => {
     const points = fixture.points.mock.calls.map(call => call[0] as AnalyticsEngineDataPoint);
     expect(points.filter(point => point.indexes?.[0] === "server:request")).toHaveLength(2);
     expect(points.filter(point => String(point.indexes?.[0]).startsWith("provider:"))).toHaveLength(1);
-    const record = await loadDiagnostics(db, second.RequestId!);
-    expect(record).toMatchObject({ cache: "hit", attempts: [], originStatus: "available" });
-    expect(record?.origin?.attempts).toHaveLength(1);
+    expect((await db.prepare("SELECT id FROM lyric_requests").all()).results).toEqual([]);
+    expect((await db.prepare("SELECT id FROM lyric_origin_runs").all()).results).toEqual([]);
     expect((await db.prepare("SELECT name FROM sqlite_master WHERE name='lyrics_cache'").all()).results).toEqual([]);
   });
 
@@ -397,8 +395,11 @@ describe("Workers Cache content and request boundary", () => {
     expect(new Set(bodies.map(body => body.RequestId)).size).toBe(5);
     expect(service.getLyrics).toHaveBeenCalledTimes(1);
     expect(queryLogs()).toHaveLength(1);
-    expect((await db.prepare("SELECT count(*) AS n FROM lyric_requests").first<{ n: number }>())?.n).toBe(5);
-    expect((await db.prepare("SELECT count(*) AS n FROM lyric_origin_runs").first<{ n: number }>())?.n).toBe(1);
+    const summaries = queryLogs("lyrics-request");
+    expect(new Set(summaries.map(log => log.requestId))).toEqual(new Set(bodies.map(body => body.RequestId)));
+    expect(new Set(summaries.map(log => log.originRunId))).toEqual(new Set([queryLogs()[0]!.originRunId]));
+    expect((await db.prepare("SELECT id FROM lyric_requests").all()).results).toEqual([]);
+    expect((await db.prepare("SELECT id FROM lyric_origin_runs").all()).results).toEqual([]);
     expect(fixture.points.mock.calls.filter(call => String(call[0].indexes?.[0]).startsWith("provider:"))).toHaveLength(1);
   });
 
@@ -419,7 +420,7 @@ describe("Workers Cache content and request boundary", () => {
     expect((await second).status).toBe(200);
     expect(service.getLyrics).toHaveBeenCalledTimes(1);
     await drain();
-    expect((await db.prepare("SELECT count(*) AS n FROM lyric_requests WHERE outcome='cancelled'").first<{ n: number }>())?.n).toBe(1);
+    expect(queryLogs("lyrics-request").filter(log => log.outcome === "cancelled")).toHaveLength(1);
   });
 
   it("bounds a non-cooperative provider to the remaining origin budget", async () => {
@@ -427,7 +428,7 @@ describe("Workers Cache content and request boundary", () => {
     const internal = createOriginRequest(context.identity, { metadata, sourceBlocks: [], deadline: Date.now() + 40,
       triggerRequestId: crypto.randomUUID() }, "token");
     const origin = createLyricsOrigin({ getLyrics: async () => new Promise(() => {}) });
-    const response = await origin(internal, { FEEDBACK_DB: db }, ctx);
+    const response = await origin(internal, {});
     expect(response.status).toBe(502);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
   });

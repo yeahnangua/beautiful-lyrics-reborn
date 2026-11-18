@@ -2,15 +2,16 @@ import { lyricsAuthFixture } from "./lyrics-auth-fixture";
 const auth = await lyricsAuthFixture("PRIVATE");
 const tokenAuth = await lyricsAuthFixture();
 import { readFile, readdir } from "node:fs/promises";
+import { gzipSync } from "node:zlib";
 import { Miniflare } from "miniflare";
 import { beforeAll, afterAll, beforeEach, describe, it, expect, vi } from "vitest";
 import { feedbackResponse } from "../src/feedback";
-import { cleanupFeedback, saveDiagnostics, saveOriginDiagnostics, loadDiagnostics, hashLyrics } from "../src/diagnostics";
+import { cleanupFeedback, loadDiagnostics, hashLyrics } from "../src/diagnostics";
 import { createWorker, type WorkerEnv } from "../src/index";
 import type { RequestDiagnostics, BeautifulLyrics } from "../src/types";
 import { loadSourcePolicy } from "../src/source-policy";
 import type { LyricsService } from "../src/service";
-import { packOrigin, unpackOrigin } from "../src/origin-storage";
+import { unpackOrigin } from "../src/origin-storage";
 
 let mf: Miniflare;
 let db: D1Database;
@@ -37,6 +38,14 @@ async function login() {
   const response = await call("/admin/api/login", "POST", { password: env.ADMIN_PASSWORD });
   expect(response.status).toBe(200);
   return response.headers.get("Set-Cookie")!.split(";")[0]!;
+}
+function seedDiagnostics(log: RequestDiagnostics) {
+  return db.prepare(`INSERT INTO lyric_requests(id,created_at,spotify_id,song,artists,provider,outcome,data)
+    VALUES(?,?,?,?,?,?,?,?)`).bind(log.id, log.startedAt, log.track.id, log.track.name,
+    log.track.artists.join(", "), log.source?.Provider ?? "unknown", log.outcome, JSON.stringify(log)).run();
+}
+function packHistoricalOrigin(log: RequestDiagnostics): string {
+  return JSON.stringify({ encoding: "gzip-base64", data: gzipSync(JSON.stringify(log)).toString("base64") });
 }
 async function saveLegacyDiagnostics(log: RequestDiagnostics) {
   const { attempts, ...summary } = log;
@@ -181,11 +190,11 @@ describe("feedback with real local D1", () => {
     expect((await db.prepare("SELECT count FROM rate_limits").first<{ count: number }>())?.count).toBe(5);
     expect((await call("/reports", "POST", first)).status).toBe(200);
   });
-  it("copies diagnostics and fills in late waitUntil logs", async () => {
+  it("copies historical diagnostics into a report and keeps the copy after cleanup", async () => {
     const log = record();
+    await seedDiagnostics(log);
     const response = await call("/reports", "POST", payload({ requestId: log.id, source: log.source }));
     const { id } = await response.json() as { id: string };
-    await saveDiagnostics(db, log);
     expect(await loadDiagnostics(db, log.id)).toEqual(log);
     const cookie = await login();
     let detail = await (await call("/admin/api/reports/" + id, "GET", undefined, cookie)).json() as any;
@@ -195,19 +204,14 @@ describe("feedback with real local D1", () => {
     expect(detail.diagnostics).toEqual(log);
     expect((await db.prepare("SELECT * FROM provider_attempts").all()).results).toHaveLength(0);
   });
-  it("copies already persisted logs into new feedback", async () => {
-    const log = record(); await saveDiagnostics(db, log);
-    const { id } = await (await call("/reports", "POST", payload({ requestId: log.id }))).json() as { id: string };
-    expect((await db.prepare("SELECT diagnostics FROM lyric_reports WHERE id=?").bind(id).first<{ diagnostics: string }>())?.diagnostics).toBe(JSON.stringify(log));
-  });
-  it.each(["packed", "legacy"])("closes the race between %s diagnostics lookup and report insert", async format => {
+  it.each(["inline", "legacy"])("closes the race between %s diagnostics lookup and report insert", async format => {
     const log = record();
     const originalPrepare = db.prepare.bind(db);
     let inserted = false;
     const racedDb = { ...db, prepare: (sql: string) => {
       const statement = originalPrepare(sql);
       if (sql === "SELECT data FROM lyric_requests WHERE id=?") return { bind: () => ({ first: async () => {
-        if (!inserted) { inserted = true; await (format === "legacy" ? saveLegacyDiagnostics(log) : saveDiagnostics(db, log)); }
+        if (!inserted) { inserted = true; await (format === "legacy" ? saveLegacyDiagnostics(log) : seedDiagnostics(log)); }
         return null;
       } }) };
       return statement;
@@ -241,7 +245,7 @@ describe("feedback with real local D1", () => {
   });
   it("paginates 50 records without duplicates, applies filters and records processing history", async () => {
     const logs = Array.from({ length: 53 }, () => record({ startedAt: "2026-09-30T01:00:00.000Z" }));
-    for (const log of logs) await saveDiagnostics(db, log);
+    for (const log of logs) await seedDiagnostics(log);
     const cookie = await login();
     const page = await (await call("/admin/api/requests?q=Artist&source=netease&outcome=success&spotifyId=track", "GET", undefined, cookie)).json() as any;
     expect(page.items).toHaveLength(50);
@@ -259,9 +263,9 @@ describe("feedback with real local D1", () => {
   });
   it("cleans requests older than 14 days and retains recent requests and copied feedback logs", async () => {
     const recent = record({ startedAt: new Date(Date.now() - 13 * 86400_000).toISOString() });
-    await saveDiagnostics(db, recent);
+    await seedDiagnostics(recent);
     const old = record({ startedAt: new Date(Date.now() - 15 * 86400_000).toISOString() });
-    await saveDiagnostics(db, old);
+    await seedDiagnostics(old);
     const { id } = await (await call("/reports", "POST", payload({ requestId: old.id }))).json() as { id: string };
     await cleanupFeedback(db);
     expect(await loadDiagnostics(db, old.id)).toBeNull();
@@ -285,20 +289,36 @@ describe("feedback with real local D1", () => {
     expect(pending).toHaveLength(0);
     await Promise.all(pending);
   });
-  it("schedules full request logs through waitUntil", async () => {
+  it("links Workers Logs and preserves both feedback snapshots without persisting request or origin diagnostics", async () => {
     const pending: Promise<unknown>[] = [];
+    const batch = vi.fn(db.batch.bind(db));
+    const logs = vi.spyOn(console, "log").mockImplementation(() => {});
+    env.FEEDBACK_DB = { prepare: db.prepare.bind(db), batch } as unknown as D1Database;
     const handler = createWorker({ getLyrics: async () => providerLyrics() });
-    const response = await handler.fetch!(new Request(base + "/lyrics/track", { headers: { ...auth.headers } }), env,
-      { waitUntil: (promise: Promise<unknown>) => pending.push(promise) } as unknown as ExecutionContext);
-    const lyrics = await response.json() as BeautifulLyrics;
-    expect(pending.length).toBeGreaterThan(0);
-    await Promise.all(pending);
-    expect((await loadDiagnostics(db, lyrics.RequestId!))?.outcome).toBe("success");
+    let requestId: string;
+    try {
+      const response = await handler.fetch!(new Request(base + "/lyrics/track", { headers: { ...auth.headers } }), env,
+        { waitUntil: (promise: Promise<unknown>) => pending.push(promise) } as unknown as ExecutionContext);
+      expect(response.status).toBe(200);
+      const lyrics = await response.json() as BeautifulLyrics;
+      requestId = lyrics.RequestId!;
+      await Promise.all(pending);
+      expect(batch).not.toHaveBeenCalled();
+      const [origin, request] = logs.mock.calls.map(([line]) => JSON.parse(String(line)));
+      expect(origin).toMatchObject({ event: "lyrics-query", requestId });
+      expect(request).toMatchObject({ event: "lyrics-request", requestId, originRunId: origin.originRunId });
+    } finally { logs.mockRestore(); }
+    const displayed = { Type: "Static", Lines: [{ Text: "the displayed lyrics" }] };
+    const submitted = await call("/reports", "POST", payload({ requestId, displayed }));
+    expect(submitted.status).toBe(201);
+    const { id } = await submitted.json() as { id: string };
+    const detail = await call("/admin/api/reports/" + id, "GET", undefined, await login());
+    expect(await detail.json()).toMatchObject({ requestId, original, displayed, diagnosticsAvailable: false });
   });
-  it("keeps all provider attempts in one row and reads legacy logs", async () => {
+  it("reads both inline and legacy provider attempts", async () => {
     const log = record();
     log.attempts = Array.from({ length: 30 }, () => structuredClone(log.attempts[0]!));
-    await saveDiagnostics(db, log);
+    await seedDiagnostics(log);
     expect(await loadDiagnostics(db, log.id)).toEqual(log);
     expect((await db.prepare("SELECT * FROM provider_attempts").all()).results).toHaveLength(0);
     const legacy = record();
@@ -307,50 +327,8 @@ describe("feedback with real local D1", () => {
     const { id } = await (await call("/reports", "POST", payload({ requestId: legacy.id }))).json() as { id: string };
     expect(JSON.parse((await db.prepare("SELECT diagnostics FROM lyric_reports WHERE id=?").bind(id).first<{ diagnostics: string }>())!.diagnostics)).toEqual(legacy);
   });
-  it("records every request and copies full diagnostics into feedback despite obsolete sampling config", async () => {
-    const day = new Date().toISOString().slice(0, 10);
-    await db.prepare("INSERT INTO diagnostic_daily_budget(day,count) VALUES(?,1000)").bind(day).run();
-    const staleEnv = { ...env, DIAGNOSTICS_SUCCESS_SAMPLE_RATE: "0", DIAGNOSTICS_FAILURE_SAMPLE_RATE: "0", DIAGNOSTICS_DAILY_LIMIT: "0" };
-    const attempts = Array.from({ length: 30 }, () => structuredClone(record().attempts[0]!));
-    const handler = createWorker({ getLyrics: async (_id, _token, _metadata, _client, context) => {
-      context!.diagnostics!.attempts = structuredClone(attempts);
-      return providerLyrics();
-    } });
-    const responses = await Promise.all(Array.from({ length: 12 }, () => handler.fetch!(
-      new Request(base + "/lyrics/track", { headers: { ...auth.headers } }), staleEnv, {} as ExecutionContext)));
-    const lyrics = await Promise.all(responses.map(response => response.json() as Promise<BeautifulLyrics>));
-    for (const lyric of lyrics) {
-      const request = await loadDiagnostics(db, lyric.RequestId!);
-      expect(request?.attempts).toEqual([]);
-      expect(request?.origin?.attempts).toEqual(attempts);
-    }
-    expect((await db.prepare("SELECT count(*) AS n FROM lyric_requests").first<{ n: number }>())?.n).toBe(12);
-    expect((await db.prepare("SELECT count FROM diagnostic_daily_budget WHERE day=?").bind(day).first<{ count: number }>())?.count).toBe(1000);
-    const { id } = await (await call("/reports", "POST", payload({ requestId: lyrics[0]!.RequestId, lyricsHash: lyrics[0]!.LyricsHash }))).json() as { id: string };
-    const detail = await (await call("/admin/api/reports/" + id, "GET", undefined, await login())).json() as any;
-    expect(detail.original).toEqual(original);
-    expect(detail.diagnosticsAvailable).toBe(true);
-    expect(detail.diagnostics.attempts).toEqual([]);
-    expect(detail.diagnostics.origin.attempts).toEqual(attempts);
-  });
-  it("reduces actual D1 rows written while retaining ID lookups and time query indexes", async () => {
+  it("uses indexes for historical request ID lookups and time pagination", async () => {
     const log = record();
-    log.attempts = Array.from({ length: 10 }, () => structuredClone(log.attempts[0]!));
-    // Reproduce the original schema for the baseline, then apply the forward index migration.
-    await db.exec("CREATE INDEX requests_track ON lyric_requests(spotify_id,created_at DESC); CREATE INDEX requests_provider ON lyric_requests(provider,created_at DESC);");
-    let before = 0;
-    try { before = (await saveLegacyDiagnostics(record({ attempts: log.attempts }))).reduce((n, result) => n + result.meta.rows_written, 0); }
-    finally { await db.exec("DROP INDEX requests_track; DROP INDEX requests_provider;"); }
-    let after = 0;
-    const measuredDb = { prepare: db.prepare.bind(db), batch: async (statements: D1PreparedStatement[]) => {
-      const results = await db.batch(statements);
-      after += results.reduce((n, result) => n + result.meta.rows_written, 0);
-      return results;
-    } } as unknown as D1Database;
-    await saveDiagnostics(measuredDb, log);
-    expect(after).toBe(3); // One table row, primary key, and time index. No backfill writes without reports.
-    expect(before).toBe(25); // Five request writes plus two per provider attempt.
-    expect(await loadDiagnostics(db, log.id)).toEqual(log);
     const timePlan = await db.prepare("EXPLAIN QUERY PLAN SELECT id FROM lyric_requests ORDER BY created_at DESC,id DESC LIMIT 51").all<{ detail: string }>();
     expect(timePlan.results.map(row => row.detail).join(" ")).toContain("requests_time");
     const idPlan = await db.prepare("EXPLAIN QUERY PLAN SELECT data FROM lyric_requests WHERE id=?").bind(log.id).all<{ detail: string }>();
@@ -364,25 +342,30 @@ describe("feedback with real local D1", () => {
     expect(results[2]!.meta.rows_written).toBe(0);
     expect(results[2]!.meta.changes).toBe(0);
   });
-  it("drains legacy attempts across batches before removing expired parents in the same run", async () => {
-    const old = record({ startedAt: new Date(Date.now() - 15 * 86400_000).toISOString(), attempts: [] });
+  it("keeps a legacy request until its attempts fit within the daily cleanup limit", async () => {
+    const now = Date.now();
+    const old = record({ startedAt: new Date(now - 15 * 86400_000).toISOString(), attempts: [] });
     await saveLegacyDiagnostics(old);
-    await db.prepare(`WITH RECURSIVE ord(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM ord WHERE n<1004)
+    await db.prepare(`WITH RECURSIVE ord(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM ord WHERE n<3004)
       INSERT INTO provider_attempts(request_id,ordinal,data) SELECT ?,n,'{}' FROM ord`).bind(old.id).run();
-    await cleanupFeedback(db);
+    await cleanupFeedback(db, now);
+    expect(await loadDiagnostics(db, old.id)).toMatchObject({ id: old.id, attempts: Array(5).fill({}) });
+    await cleanupFeedback(db, now + 86400_000);
     expect(await loadDiagnostics(db, old.id)).toBeNull();
     expect((await db.prepare("SELECT * FROM provider_attempts").all()).results).toHaveLength(0);
   });
-  it("drains all expired rows beyond each batch limit while retaining unexpired data", async () => {
+  it("shares the UTC daily cleanup limit across concurrent runs and resumes the next day", async () => {
     const now = Date.now();
     const oldTime = new Date(now - 15 * 86400_000).toISOString();
     const recent = record();
     await saveLegacyDiagnostics(recent);
     const report = await (await call("/reports", "POST", payload({ requestId: recent.id }))).json() as { id: string };
     await db.batch([
-      db.prepare(`WITH RECURSIVE ord(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM ord WHERE n<2004)
+      db.prepare(`WITH RECURSIVE ord(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM ord WHERE n<3004)
         INSERT INTO lyric_requests(id,created_at,spotify_id,song,artists,provider,outcome,data)
         SELECT 'expired-'||n,?,'track','Song','Artist','netease','success','{}' FROM ord`).bind(oldTime),
+      db.prepare(`INSERT INTO lyric_origin_runs(id,created_at,spotify_id,data)
+        SELECT id,created_at,spotify_id,'{}' FROM lyric_requests WHERE created_at=?`).bind(oldTime),
       db.prepare(`WITH RECURSIVE ord(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM ord WHERE n<104)
         INSERT INTO lyric_reports(id,submission_id,created_at,spotify_id,song,artists,provider,category,data)
         SELECT 'expired-'||n,'submission-'||n,?,'track','Song','Artist','netease','other','{}' FROM ord`)
@@ -395,17 +378,22 @@ describe("feedback with real local D1", () => {
         INSERT INTO rate_limits(key,minute,count) SELECT 'expired-'||n,0,1 FROM ord`),
       db.prepare(`WITH RECURSIVE ord(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM ord WHERE n<104)
         INSERT INTO admin_sessions(id,expires) SELECT 'expired-'||n,0 FROM ord`),
-      db.prepare("INSERT INTO admin_sessions(id,expires) VALUES('current',?)").bind(now + 3600_000)
+      db.prepare("INSERT INTO admin_sessions(id,expires) VALUES('current',?)").bind(now + 2 * 86400_000)
     ]);
-    await cleanupFeedback(db);
+    await Promise.all([cleanupFeedback(db, now), cleanupFeedback(db, now)]);
+    expect((await db.prepare("SELECT count(*) AS n FROM lyric_requests WHERE created_at=?").bind(oldTime).first<{ n: number }>())?.n).toBe(5);
+    expect((await db.prepare("SELECT count(*) AS n FROM lyric_origin_runs").first<{ n: number }>())?.n).toBe(5);
+    expect((await db.prepare("SELECT key FROM rate_limits").all()).results).toHaveLength(1);
+    await cleanupFeedback(db, now + 86400_000);
     expect(await loadDiagnostics(db, recent.id)).toEqual(recent);
     expect((await db.prepare("SELECT id FROM lyric_requests").all()).results).toEqual([{ id: recent.id }]);
+    expect((await db.prepare("SELECT id FROM lyric_origin_runs").all()).results).toEqual([]);
     expect((await db.prepare("SELECT request_id FROM provider_attempts").all()).results).toEqual([{ request_id: recent.id }]);
     for (const [table, column] of [["lyric_reports", "id"], ["report_snapshots", "report_id"]]) {
       expect((await db.prepare(`SELECT ${column} AS id FROM ${table}`).all()).results).toEqual([{ id: report.id }]);
     }
     expect((await db.prepare("SELECT * FROM report_history").all()).results).toHaveLength(0);
-    expect((await db.prepare("SELECT key FROM rate_limits").all()).results).toHaveLength(1);
+    expect((await db.prepare("SELECT key FROM rate_limits").all()).results).toHaveLength(0);
     expect((await db.prepare("SELECT id FROM admin_sessions").all()).results).toEqual([{ id: "current" }]);
   });
   it("keeps completed cleanup batches committed when a later batch fails and resumes on retry", async () => {
@@ -421,19 +409,22 @@ describe("feedback with real local D1", () => {
     await cleanupFeedback(db);
     expect((await db.prepare("SELECT count(*) AS n FROM lyric_requests").first<{ n: number }>())?.n).toBe(0);
   });
-  it.each(["none", "failed", "cancelled"] as const)("persists %s lyric request outcomes without credentials", async outcome => {
+  it.each(["none", "failed", "cancelled"] as const)("logs %s lyric request outcomes without credentials", async outcome => {
     const handler = createWorker({ getLyrics: async () => { if (outcome === "failed") throw Error("PRIVATE token"); return undefined; } });
     const controller = new AbortController();
     if (outcome === "cancelled") controller.abort();
-    const response = await handler.fetch!(new Request(base + "/lyrics/track?track_name=Song&artist_name=Artist", {
-      headers: { ...auth.headers }, signal: controller.signal
-    }), env, {} as ExecutionContext);
-    expect(response.status).toBe(outcome === "failed" ? 502 : 200);
-    const row = await db.prepare("SELECT outcome,data FROM lyric_requests").first<{ outcome: string; data: string }>();
-    expect(row?.outcome).toBe(outcome);
-    expect(row?.data).not.toContain("PRIVATE");
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const response = await handler.fetch!(new Request(base + "/lyrics/track?track_name=Song&artist_name=Artist", {
+        headers: { ...auth.headers }, signal: controller.signal
+      }), env, {} as ExecutionContext);
+      expect(response.status).toBe(outcome === "failed" ? 502 : 200);
+      const lines = log.mock.calls.map(([line]) => String(line));
+      expect(lines.join("\n")).not.toContain("PRIVATE");
+      expect(lines.map(line => JSON.parse(line))).toContainEqual(expect.objectContaining({ event: "lyrics-request", outcome }));
+    } finally { log.mockRestore(); }
   });
-  it("does not let diagnostic write failures fail lyrics after a successful policy read", async () => {
+  it("serves lyrics with only read access to the policy database", async () => {
     const broken = { prepare: () => { throw Error("db offline"); } } as unknown as D1Database;
     env.FEEDBACK_DB = broken;
     expect((await call("/reports", "POST", payload())).status).toBe(503);
@@ -452,25 +443,18 @@ describe("feedback with real local D1", () => {
     const line: BeautifulLyrics = { Type: "Line", StartTime: 1, EndTime: 2, Content: [] };
     expect(await hashLyrics(line)).not.toBe(await hashLyrics({ ...line, StartTime: 1.1 }));
   });
-  it.each([
-    ["origin", "request", "report"], ["origin", "report", "request"],
-    ["request", "origin", "report"], ["request", "report", "origin"],
-    ["report", "origin", "request"], ["report", "request", "origin"]
-  ])("retains origin diagnostics when commits arrive as %j, %j, %j", async (...order) => {
+  it.each(["packed", "plaintext"])("archives historical %s origin diagnostics with a report", async format => {
     const requestId = crypto.randomUUID(), originId = crypto.randomUUID();
     const origin = record({ id: originId, originRunId: originId, triggerRequestId: requestId,
       startedAt: new Date(Date.now() - 15 * 86400_000).toISOString() });
     const request = record({ id: requestId, originRunId: originId, cache: "hit", attempts: [] });
-    let reportId = "";
-    for (const operation of order) {
-      if (operation === "origin") await saveOriginDiagnostics(db, origin);
-      if (operation === "request") await saveDiagnostics(db, request);
-      if (operation === "report") {
-        const response = await call("/reports", "POST", payload({ requestId }));
-        expect(response.status).toBe(201);
-        reportId = (await response.json() as { id: string }).id;
-      }
-    }
+    const storedOrigin = format === "packed" ? packHistoricalOrigin(origin) : JSON.stringify(origin);
+    await db.prepare("INSERT INTO lyric_origin_runs(id,created_at,spotify_id,data) VALUES(?,?,?,?)")
+      .bind(origin.id, origin.startedAt, origin.track.id, storedOrigin).run();
+    await seedDiagnostics(request);
+    const response = await call("/reports", "POST", payload({ requestId }));
+    expect(response.status).toBe(201);
+    const { id: reportId } = await response.json() as { id: string };
     expect(await loadDiagnostics(db, requestId)).toMatchObject({ attempts: [], origin, originStatus: "available" });
     const stored = await db.prepare("SELECT diagnostics,origin_run_id FROM lyric_reports WHERE id=?")
       .bind(reportId).first<{ diagnostics: string; origin_run_id: string }>();
@@ -491,7 +475,7 @@ describe("feedback with real local D1", () => {
   it("round-trips complete Unicode diagnostics and keeps older plaintext origins readable", async () => {
     const origin = record({ track: { id: "track", name: "成都 🎵", artists: ["赵雷"] } });
     origin.attempts = Array.from({ length: 20 }, () => structuredClone(origin.attempts[0]!));
-    const packed = await packOrigin(origin);
+    const packed = packHistoricalOrigin(origin);
     expect(packed.length).toBeLessThan(JSON.stringify(origin).length / 2);
     expect(await unpackOrigin(JSON.parse(packed))).toEqual(origin);
     expect(await unpackOrigin(origin)).toEqual(origin);

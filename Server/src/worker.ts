@@ -8,7 +8,7 @@ const runOrigin = createLyricsOrigin(defaultService);
 /** Only this named entrypoint is cached; no public route targets it. */
 export class LyricsOrigin extends WorkerEntrypoint<WorkerEnv> {
   fetch(request: Request): Promise<Response> {
-    return runOrigin(request, this.env, this.ctx);
+    return runOrigin(request, this.env);
   }
   async purgeTrack(trackId: string): Promise<void> {
     // Purges are scoped to the entrypoint that calls them.

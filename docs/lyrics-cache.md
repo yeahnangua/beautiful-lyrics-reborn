@@ -66,7 +66,7 @@ Cloudflare 自身合并同键并发请求，不增加分布式协调存储。因
 
 ## 日志、诊断与统计
 
-实际回源在 LyricsOrigin 输出一条带完整查询详情的业务日志；默认入口只为最终采用的缓存命中输出摘要，避免重复记录同一次查询。
+在 Workers Logs 里查看歌词排查日志。`LyricsOrigin` 为每次实际回源输出一条 `lyrics-query`，包含来源尝试和上游结果。默认入口为每次歌词请求输出一条摘要。缓存命中沿用 `lyrics-query`，其他请求使用 `lyrics-request`。
 
     [lyrics-query] 成都 — 赵雷 | ✅ | 命中缓存 | 来源：lrc.red | 逐字 | 18ms
     [lyrics-query] 成都 — 赵雷 | ✅ | 来源：lrc.red | 逐字 | 1320ms
@@ -74,9 +74,9 @@ Cloudflare 自身合并同键并发请求，不增加分布式协调存储。因
 
 耗时为示例。没有采用缓存时不显示缓存提示；查询失败、查询已取消保留文字。结构化 outcome 继续使用 success / none / failed / cancelled。
 
-RequestId 标识用户请求；originRunId 标识实际回源。命中日志使用当前 RequestId，关联生成缓存的 originRunId，不复制历史 queries。
+用反馈里的 `RequestId` 搜索字段 `requestId`，就能找到请求摘要。需要查看对应的来源尝试时，再用摘要中的 `originRunId` 查找回源日志。缓存命中和并发合并的请求都用各自的请求 ID，并关联同一次回源。
 
-lyric_requests 保存逐次请求摘要；lyric_origin_runs 保存完整查询诊断，采用 gzip + Base64 的 JSON 封装，读取时无损还原，也兼容明文记录。反馈可以保留这份封装或已还原的诊断快照；请求、查询和反馈任意先后到达都会补齐关联。普通诊断保留 14 天，反馈继续保留自身证据。
+新请求和回源诊断只写 Workers Logs。用户反馈仍保存原始歌词、显示歌词和请求 ID。历史 D1 诊断仍可读取，并按每日预算逐步清理。详细保留规则见 [歌词反馈与诊断后台](lyrics-feedback-and-diagnostics.md#数据库与保留期)。
 
 统计按执行位置分开：
 

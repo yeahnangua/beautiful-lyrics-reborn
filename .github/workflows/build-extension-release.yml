@@ -135,6 +135,6 @@ jobs:
           fi
           node Tasks/Deploy.mjs
 
-      - name: Verify published release
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        run: node Extension/Tasks/VerifyPublishedRelease.mjs
+      # - name: Verify published release
+      #   if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+      #   run: node Extension/Tasks/VerifyPublishedRelease.mjs

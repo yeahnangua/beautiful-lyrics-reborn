@@ -14,15 +14,19 @@ export async function startReleaseLoader(fallback, runtime = globalThis) {
   const readStored = () => {
     try { return JSON.parse(runtime.localStorage.getItem(storageKey)); } catch { return undefined; }
   };
-  const latest = async () => {
-    const response = await runtime.fetch(`${base}latest.json`, {
-      cache: "no-store", signal: AbortSignal.timeout(10000),
-      headers,
-    });
+  // The static pointer never invokes the Worker. It only answers GET, so the
+  // request must stay CORS-simple: custom headers would need an OPTIONS preflight.
+  const pointer = "https://lyrics.txw.qzz.io/Release/latest.json";
+  const readPointer = async (url, init) => {
+    const response = await runtime.fetch(url, { cache: "no-store", signal: AbortSignal.timeout(10000), ...init });
     if (!response.ok) throw new Error(`Version check failed (${response.status})`);
     const release = await response.json();
     if (!valid(release)) throw new Error("Invalid release descriptor");
     return release;
+  };
+  const latest = async () => {
+    try { return await readPointer(pointer); }
+    catch { return readPointer(`${base}latest.json`, { headers }); }
   };
   const downloadFrom = async (origin, release, controller = new AbortController()) => {
     const { signal } = controller;
@@ -131,4 +135,4 @@ export async function startReleaseLoader(fallback, runtime = globalThis) {
   }
 }
 
-await startReleaseLoader({"schema":1,"version":"5.3.1","sha256":"6999be9cc20cf0c787f03609911feac6b5af5f2c1217e7f6de45f02a96e97eb5","file":"beautiful-lyrics-reborn.6999be9cc20cf0c7.mjs","fullscreen":{"api":1,"sha256":"09e663dd764f53d4ef488bdde8a869fb16355d2de945ae7f8ff9215dc27b89f8","file":"beautiful-lyrics-reborn-fullscreen.09e663dd764f53d4.mjs"}});
+await startReleaseLoader({"schema":1,"version":"5.3.1","sha256":"50f6d35f8fd9b5cadc92f20ba3ce440251640aab8cd8b7e72966d8ea8d4f714e","file":"beautiful-lyrics-reborn.50f6d35f8fd9b5ca.mjs","fullscreen":{"api":1,"sha256":"09e663dd764f53d4ef488bdde8a869fb16355d2de945ae7f8ff9215dc27b89f8","file":"beautiful-lyrics-reborn-fullscreen.09e663dd764f53d4.mjs"}});

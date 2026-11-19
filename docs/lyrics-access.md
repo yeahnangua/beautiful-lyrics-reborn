@@ -36,7 +36,7 @@ token. Its signing key is independent of the administrator session secret.
 Verification and token/IP rate limiting run before source-policy
 queries, lyrics-cache reads, or upstream provider work. A warm cache grants no
 exception. Valid sessions do not query Spotify again until renewal; Spotify
-revocation may therefore take up to ten minutes to take effect.
+revocation may therefore take up to one hour to take effect.
 
 Both routes return `Cache-Control: private, no-store`, `CDN-Cache-Control: no-store`
 and `Cloudflare-CDN-Cache-Control: no-store`. Preflight is public and supports the

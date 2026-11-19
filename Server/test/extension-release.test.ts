@@ -22,7 +22,7 @@ describe("extension releases", () => {
     expect(response.headers.has("CF-Cache-Status")).toBe(false);
     expect(response.headers.has("Age")).toBe(false);
     expect(response.headers.has("X-Assets-Cache-Status")).toBe(false);
-    expect(f.fetch.mock.calls[0]?.[0].url).toBe("https://lyrics.txw.qzz.io/latest.json");
+    expect(f.fetch.mock.calls[0]?.[0].url).toBe("https://lyrics.txw.qzz.io/Release/latest.json");
     expect(f.fetch.mock.calls[0]?.[0].headers.has("If-None-Match")).toBe(false);
     expect(f.getLyrics).not.toHaveBeenCalled();
   });
@@ -70,7 +70,7 @@ describe("extension releases", () => {
     const f = fixture();
     const response = await f.worker.fetch!(new Request(`${verificationOrigin}/extension/${file}`), f.env, {} as ExecutionContext);
     expect(response.status).toBe(200);
-    expect(f.fetch.mock.calls[0]?.[0].url).toBe(`${verificationOrigin}/${file}`);
+    expect(f.fetch.mock.calls[0]?.[0].url).toBe(`${verificationOrigin}/Release/${file}`);
   });
 
   it.each([

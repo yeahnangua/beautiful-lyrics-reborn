@@ -15,7 +15,8 @@ export function createMetricsClient(runtime = globalThis, version = "unknown") {
     finally { sending = false; }
   };
   const allowed = new Set(["session", "fullscreen_first", "lyrics_load", "lyrics_display", "fullscreen_load", "fullscreen_mode"]);
-  const timer = runtime.setInterval(() => void flush(), 30000);
+  // Each flush is a billed Worker request; pagehide and a full batch still flush at once.
+  const timer = runtime.setInterval(() => void flush(), 10 * 60 * 1000);
   const leave = () => void flush(true);
   runtime.addEventListener?.("pagehide", leave);
   return {

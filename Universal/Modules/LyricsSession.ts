@@ -1,6 +1,7 @@
 export const LyricsSessionPath = "/auth/lyrics-session";
 export const LyricsSessionHeader = "X-Lyrics-Session";
-export const LyricsSessionLifetimeMs = 10 * 60 * 1000;
+// Matches the Spotify access token lifetime the session is bound to.
+export const LyricsSessionLifetimeMs = 60 * 60 * 1000;
 
 export type LyricsSession = { token: string; expiresAt: number };
 export type LyricsAuthErrorCode =

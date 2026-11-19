@@ -12,7 +12,7 @@ export async function extensionReleaseResponse(request: Request, assets?: Fetche
     return new Response("Not found", { status: 404, headers });
   }
   if (!assets) return new Response("Releases not configured", { status: 503, headers });
-  url.pathname = `/${file}`;
+  url.pathname = `/Release/${file}`;
   url.search = "";
   // Do not forward conditional headers: latest must always be the current pointer.
   let response: Response;

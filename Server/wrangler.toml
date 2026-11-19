@@ -67,9 +67,12 @@ invocation_logs = false
 enabled = false
 
 [assets]
-directory = "../Extension/Builds/Release"
+# /Release/* is answered by the asset layer without invoking (or billing) the
+# Worker; every other path, including the legacy /extension/* route, runs it.
+# Extension/Builds/_headers supplies the CORS and cache headers for those files.
+directory = "../Extension/Builds"
 binding = "RELEASE_ASSETS"
-run_worker_first = true
+run_worker_first = ["/*", "!/Release/*"]
 
 # Replace this local placeholder with the D1 UUID, or supply FEEDBACK_DATABASE_ID to Tasks/Deploy.mjs.
 [[d1_databases]]

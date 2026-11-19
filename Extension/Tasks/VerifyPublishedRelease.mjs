@@ -14,6 +14,12 @@ async function verify() {
   assert.equal(pointer.headers.get("cache-control"), "no-store");
   assert.equal(pointer.headers.get("access-control-allow-origin"), "*");
   assert.deepEqual(await pointer.json(), expected, "Live pointer must match this build");
+  // The loader polls this copy; it is served by static assets without the Worker.
+  const direct = await fetch(new URL("/Release/latest.json", base), { cache: "no-store", signal: AbortSignal.timeout(20000) });
+  assert.equal(direct.status, 200);
+  assert.equal(direct.headers.get("cache-control"), "no-store");
+  assert.equal(direct.headers.get("access-control-allow-origin"), "*");
+  assert.deepEqual(await direct.json(), expected, "Static pointer must match this build");
   const payload = await fetch(new URL(expected.file, base), { signal: AbortSignal.timeout(30000) });
   assert.equal(payload.status, 200);
   assert.match(payload.headers.get("content-type"), /javascript/);

@@ -171,8 +171,10 @@ The Marketplace entry is a small, stable loader. `cd Extension && deno task rele
 creates a SHA-256-named payload, `latest.json`, and the loader. The manifest entry
 path stays unchanged so Marketplace continues to recognize existing installs.
 
-The loader checks `https://lyrics.txw.qzz.io/extension/latest.json` at startup
-without caching and checks for updates every five minutes. It downloads each
+The loader checks `https://lyrics.txw.qzz.io/Release/latest.json` at startup
+without caching and checks for updates every five minutes. That copy is served by
+Cloudflare static assets without invoking the Worker; `/extension/latest.json`
+remains as the Worker-served fallback for older loaders. It downloads each
 payload concurrently from the Worker and `https://lyrics.20050129.xyz/extension/`,
 uses the first complete download that passes the full SHA-256 check, and cancels
 the other request. If both routes fail, it tries jsDelivr, then the last successfully

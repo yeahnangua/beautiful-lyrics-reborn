@@ -45,8 +45,13 @@ a pointer that advertises an asset from an unfinished upload.
 
 ## Runtime behavior
 
-The loader fetches `https://lyrics.txw.qzz.io/extension/latest.json` on startup
+The loader fetches `https://lyrics.txw.qzz.io/Release/latest.json` on startup
 with `cache: "no-store"`. Version checks always use this Worker origin.
+This path is excluded from `run_worker_first`, so Cloudflare static assets answer it
+without invoking (or billing) the Worker; its headers come from `Extension/Builds/_headers`.
+Static assets only answer GET/HEAD, so the request must not carry custom headers that
+would need a CORS preflight. If it fails, the loader falls back to
+`/extension/latest.json`, the Worker route that older loaders still use.
 The Worker reads the pointer from its current asset binding (not GitHub or jsDelivr)
 and returns `Cache-Control: no-store` and `CDN-Cache-Control: no-store`. Do not add a
 Cloudflare cache rule that overrides these headers on `/extension/latest.json`.

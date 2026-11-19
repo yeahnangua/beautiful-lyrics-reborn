@@ -9,7 +9,7 @@ export type MetricsEnv = {
   STATS_ACCOUNT_ID?: string;
   STATS_API_TOKEN?: string;
 };
-const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, User-Agent", "Cache-Control": "no-store" };
+const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, User-Agent", "Access-Control-Max-Age": "7200", "Cache-Control": "no-store" };
 const kinds = ["session", "fullscreen_first", "lyrics_load", "lyrics_display", "fullscreen_load", "fullscreen_mode"];
 const modes = ["classic", "cadenza", "partita", "cappella", "tilt", "claddagh", "monet", "diorama", "pendolo", "sonnet", "tempera", "lumiere", "still"];
 type ClientEvent = { kind: string; version: string; durationMs?: number; source?: string; outcome?: string; lyricsType?: string; view?: string; mode?: string };

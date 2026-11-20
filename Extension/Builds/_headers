@@ -3,6 +3,14 @@
   Access-Control-Allow-Origin: *
   Cache-Control: no-store
   CDN-Cache-Control: no-store
-/Release/*.mjs
+/Release/beautiful-lyrics-reborn.mjs
+  Access-Control-Allow-Origin: *
+  Cache-Control: no-store
+  CDN-Cache-Control: no-store
+# Only payloads with a content hash in the filename are immutable.
+/Release/beautiful-lyrics-reborn.*.mjs
+  Access-Control-Allow-Origin: *
+  Cache-Control: public, max-age=31536000, immutable
+/Release/beautiful-lyrics-reborn-fullscreen.*.mjs
   Access-Control-Allow-Origin: *
   Cache-Control: public, max-age=31536000, immutable

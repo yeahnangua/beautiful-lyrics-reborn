@@ -3,5 +3,5 @@
  * provider selection/matching, conversion, key normalization, or freshness.
  * Presentation, logging and unrelated deployments keep the same version.
  */
-export const lyricsCacheVersion = 5 as const;
+export const lyricsCacheVersion = 6 as const;
 export const lyricsCacheMetricVersion = "workers-cache-v" + lyricsCacheVersion;

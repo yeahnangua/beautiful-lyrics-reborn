@@ -453,7 +453,7 @@ describe("karaoke lyric conversion", () => {
         IsPartOfWord: true
       },
       {
-        Text: "'",
+        Text: "&apos;",
         StartTime: 2,
         EndTime: 2.5,
         IsPartOfWord: false

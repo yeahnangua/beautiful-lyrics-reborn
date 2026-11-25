@@ -63,6 +63,15 @@ function wordLyrics(text: string) {
 }
 
 describe("per-type source blocks", () => {
+  it("Apple supplements query only Apple and still enforce source policy", async () => {
+    const providers = createProviders();
+    vi.mocked(providers.applemusic.getLyrics).mockResolvedValue(wordLyrics("apple"));
+    const track = { id:"track",name:"Song",artists:["Artist"],appleMusicId:"123",lookup:"apple" as const };
+    expect(await createLyricsService(providers).getLyrics("track","token",track)).toMatchObject({Type:"Syllable",Source:{Provider:"applemusic"}});
+    expect(providers.qqmusic.getSyllableLyrics).not.toHaveBeenCalled();
+    expect(providers.spotify.getTrackMetadata).not.toHaveBeenCalled();
+    expect(await createLyricsService(providers).getLyrics("track","token",track,undefined,{sourceBlocks:[{provider:"applemusic",lyricsType:"Syllable"}]})).toBeUndefined();
+  });
   const track = { id: "track", name: "Song", artists: ["Artist"] };
   const line = { Type: "Line" as const, StartTime: 1, EndTime: 2, Content: [] };
   const plain = { Type: "Static" as const, Lines: [{ Text: "fallback" }] };
@@ -347,7 +356,7 @@ describe("lyrics service", () => {
     })).toEqual(contentEqual(lyrics));
   });
 
-  it("decodes leaked HTML entities in whatever lyrics a provider returns", async () => {
+  it("preserves provider text without decoding literal entities twice", async () => {
     const providers = createProviders();
     vi.mocked(providers.spotify.getLyrics).mockResolvedValue({
       Type: "Static",
@@ -357,7 +366,7 @@ describe("lyrics service", () => {
     const service = createLyricsService(providers);
     await expect(service.getLyrics("track", "token")).resolves.toEqual(contentEqual({
       Type: "Static",
-      Lines: [{ Text: "you're & I'm" }]
+      Lines: [{ Text: "you&apos;re &amp; I&#39;m" }]
     }));
   });
 
@@ -819,7 +828,7 @@ describe("lyrics service", () => {
         artists: ["Artist"],
         album: "Album",
         durationSeconds: 123,
-        isrc: "ISRC"
+        isrc: "USABC2400001"
       })
     ).resolves.toEqual(contentEqual({
       Type: "Static",
@@ -833,7 +842,7 @@ describe("lyrics service", () => {
       artists: ["Artist"],
       album: "Album",
       durationSeconds: 123,
-      isrc: "ISRC"
+      isrc: "USABC2400001"
     }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 
@@ -934,7 +943,7 @@ describe("worker route", () => {
 
     const response = await injectedWorker.fetch?.(
       new Request(
-        "http://localhost:8787/lyrics/track?track_name=Song&artist_name=Artist&album_name=Album&duration=123&isrc=ISRC",
+        "http://localhost:8787/lyrics/track?track_name=Song&artist_name=Artist&album_name=Album&duration=123&isrc=USABC2400001",
         {
           headers: {
             ...workerAuth.headers
@@ -959,7 +968,7 @@ describe("worker route", () => {
         artists: ["Artist"],
         album: "Album",
         durationSeconds: 123,
-        isrc: "ISRC"
+        isrc: "USABC2400001"
       },
       undefined, expect.objectContaining({ signal: expect.any(AbortSignal) })
     );

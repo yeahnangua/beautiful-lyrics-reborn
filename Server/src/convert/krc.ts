@@ -84,7 +84,7 @@ export function convertKrcToSyllableLyrics(krc: string | undefined): SyllableSyn
       OppositeAligned: false,
       Lead: {
         StartTime: first.StartTime,
-        EndTime: Math.max(...syllables.map((word) => word.EndTime)),
+        EndTime: syllables.reduce((value, word) => Math.max(value, word.EndTime), -Infinity),
         Syllables: syllables
       }
     });
@@ -96,7 +96,7 @@ export function convertKrcToSyllableLyrics(krc: string | undefined): SyllableSyn
   return {
     Type: "Syllable",
     StartTime: content[0]!.Lead.StartTime,
-    EndTime: Math.max(...content.map((line) => line.Lead.EndTime)),
+    EndTime: content.reduce((value, line) => Math.max(value, line.Lead.EndTime), -Infinity),
     Content: content
   };
 }

@@ -12,7 +12,7 @@ let modules: { type: "ESModule"; path: string; contents: string }[];
 // mocked fetch do not reject unsupported Worker options such as redirect:error.
 beforeAll(async () => {
   const dependencies = await Promise.all([
-    "../src/lyrics-auth.ts", "../../Universal/Modules/Async.ts",
+    "../src/request-boundaries.ts", "../src/lyrics-auth.ts", "../../Universal/Modules/Async.ts",
     "../../Universal/Modules/Http.ts", "../../Universal/Modules/LyricsSession.ts"
   ].map(async relative => {
     const path = fileURLToPath(new URL(relative, import.meta.url));

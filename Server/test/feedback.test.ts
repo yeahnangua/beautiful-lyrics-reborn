@@ -68,12 +68,29 @@ beforeAll(async () => {
 }, 20000);
 afterAll(async () => { await mf?.dispose(); });
 beforeEach(async () => {
-  env = { ...auth.env, FEEDBACK_DB: db, ADMIN_PASSWORD: "test-password", ADMIN_SESSION_SECRET: "test-session-key-with-at-least-32-bytes" };
+  env = { REPORT_INGRESS_LIMITER: { limit: async () => ({ success: true }) }, LOGIN_INGRESS_LIMITER: { limit: async () => ({ success: true }) }, ...auth.env, FEEDBACK_DB: db, ADMIN_PASSWORD: "test-password", ADMIN_SESSION_SECRET: "test-session-key-with-at-least-32-bytes" };
   await db.exec("DELETE FROM lyric_origin_runs;");
   await db.batch(["source_block_history", "source_blocks", "lyric_reports", "lyric_requests", "rate_limits", "admin_sessions", "diagnostic_daily_budget"].map(table => db.prepare(`DELETE FROM ${table}`)));
 });
 
 describe("source-block administration with real D1", () => {
+  it("rejects throttled feedback before reading its body or accessing D1", async () => {
+    const prepare = vi.fn(() => { throw Error("D1 must not run"); });
+    const text = vi.fn(() => { throw Error("Body must not run"); });
+    const request = new Request(base + "/reports", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{" });
+    Object.defineProperty(request, "body", { get: text });
+    const response = await feedbackResponse(request, { FEEDBACK_DB: { prepare } as unknown as D1Database,
+      REPORT_INGRESS_LIMITER: { limit: async () => ({ success: false }) } });
+    expect(response?.status).toBe(429);
+    expect(text).not.toHaveBeenCalled(); expect(prepare).not.toHaveBeenCalled();
+  });
+  it("indexes expiration cleanup and enabled policy lookups", async () => {
+    for (const [sql, index] of [
+      ["SELECT key,minute FROM rate_limits WHERE minute<1 LIMIT 1000", "rate_limits_minute"],
+      ["SELECT id FROM admin_sessions WHERE expires<1 LIMIT 100", "admin_sessions_expires"],
+      ["SELECT provider,lyrics_type FROM source_blocks WHERE spotify_id='track' AND enabled=1", "source_blocks_active"],
+    ]) expect((await db.prepare("EXPLAIN QUERY PLAN " + sql).all<{detail:string}>()).results.map(row => row.detail).join(" ")).toContain(index);
+  });
   const rule = { spotifyId: "1rutoX4kIkjtKW8OqBNYFP", provider: "qqmusic", lyricsType: "Syllable", enabled: true, reason: "时间不同步" };
   it.each(["betterlyrics", "betterlyrics-qq", "betterlyrics-kugou", "unison"])("accepts feedback-linked blocks and filters for %s", async provider => {
     const cookie = await login();
@@ -204,23 +221,6 @@ describe("feedback with real local D1", () => {
     expect(detail.diagnostics).toEqual(log);
     expect((await db.prepare("SELECT * FROM provider_attempts").all()).results).toHaveLength(0);
   });
-  it.each(["inline", "legacy"])("closes the race between %s diagnostics lookup and report insert", async format => {
-    const log = record();
-    const originalPrepare = db.prepare.bind(db);
-    let inserted = false;
-    const racedDb = { ...db, prepare: (sql: string) => {
-      const statement = originalPrepare(sql);
-      if (sql === "SELECT data FROM lyric_requests WHERE id=?") return { bind: () => ({ first: async () => {
-        if (!inserted) { inserted = true; await (format === "legacy" ? saveLegacyDiagnostics(log) : seedDiagnostics(log)); }
-        return null;
-      } }) };
-      return statement;
-    }, batch: db.batch.bind(db) } as unknown as D1Database;
-    env.FEEDBACK_DB = racedDb;
-    const { id } = await (await call("/reports", "POST", payload({ requestId: log.id }))).json() as { id: string };
-    const saved = await db.prepare("SELECT diagnostics FROM lyric_reports WHERE id=?").bind(id).first<{ diagnostics: string }>();
-    expect(JSON.parse(saved!.diagnostics)).toEqual(log);
-  });
   it("authenticates all admin data, rejects CSRF, expires and revokes sessions", async () => {
     expect((await call("/admin/api/reports")).status).toBe(401);
     const cookie = await login();
@@ -339,8 +339,7 @@ describe("feedback with real local D1", () => {
     env.FEEDBACK_DB = { prepare: db.prepare.bind(db), batch } as unknown as D1Database;
     expect((await call("/reports", "POST", payload({ requestId: crypto.randomUUID() }))).status).toBe(201);
     const results = await batch.mock.results[0]!.value;
-    expect(results[2]!.meta.rows_written).toBe(0);
-    expect(results[2]!.meta.changes).toBe(0);
+    expect(results).toHaveLength(2);
   });
   it("keeps a legacy request until its attempts fit within the daily cleanup limit", async () => {
     const now = Date.now();

@@ -186,10 +186,10 @@ describe("lrc.red provider", () => {
     } finally { vi.useRealTimers(); }
   });
   it.each([
-    ["0", 1000], ["0.5", 1000], ["1.25", 1250], [" 2 ", 2000], ["86400", 86_400_000],
-    ["Thu, 12 Nov 2026 12:00:00 GMT", 86_400_000], ["Wed, 11 Nov 2026 11:59:00 GMT", 1000],
+    ["0", 1000], ["0.5", 1000], ["1.25", 1250], [" 2 ", 2000], ["86400", 3_600_000],
+    ["Thu, 12 Nov 2026 12:00:00 GMT", 3_600_000], ["Wed, 11 Nov 2026 11:59:00 GMT", 1000],
     ["Wednesday, 11-Nov-26 12:00:10 GMT", 10000], ["Wed Nov 11 12:00:10 2026", 10000]
-  ] as const)("preserves the requested cooldown for Retry-After %s", async (value, delay) => {
+  ] as const)("bounds the requested cooldown for Retry-After %s", async (value, delay) => {
     vi.useFakeTimers();
     try {
       const now = Date.parse("2026-11-11T12:00:00Z");

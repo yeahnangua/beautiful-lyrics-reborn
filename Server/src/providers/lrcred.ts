@@ -1,11 +1,11 @@
-import OpenCC from "opencc-js";
+import { simplifyChinese } from "../text-normalization";
 import { convertLrcRedTtml } from "../convert/lrcred-ttml";
 import { contextFetch, recordUpstreamResult, withLyricRequestRetries } from "./request";
 import { recordMatch, withSource } from "./matched-title";
 import type { BeautifulLyrics, LrcRedProvider, TrackMetadata } from "../types";
 
 export const lrcRedUserAgent = "beautiful-lyrics-reborn (https://github.com/yeahnangua/beautiful-lyrics-reborn; mailto:1135746060@qq.com)";
-const simplify = OpenCC.Converter({ from: "tw", to: "cn" });
+const simplify = simplifyChinese;
 const normalized = (text: string) => simplify(text).normalize("NFKC").toLowerCase().replace(/[\p{P}\p{Z}\s]/gu, "");
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 const isrc = (value: unknown) => typeof value === "string" && /^[A-Z]{2}[A-Z0-9]{3}\d{7}$/i.test(value) ? value.toUpperCase() : undefined;
@@ -39,7 +39,7 @@ function retryAfterDeadline(value: string | null, now: number): number {
   if (/^\d+(?:\.\d+)?$/.test(text)) {
     const delay = Math.ceil(Number(text) * 1000);
     return Number.isSafeInteger(delay) && delay <= Number.MAX_SAFE_INTEGER - now
-      ? now + Math.max(1000, delay) : fallback;
+      ? now + Math.min(3_600_000, Math.max(1000, delay)) : fallback;
   }
   const imf = /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/;
   const obsolete = /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), \d{2}-(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-\d{2} \d{2}:\d{2}:\d{2} GMT$|^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ \d]\d \d{2}:\d{2}:\d{2} \d{4}$/;
@@ -47,7 +47,7 @@ function retryAfterDeadline(value: string | null, now: number): number {
   // The obsolete asctime format has no zone marker but HTTP dates are always UTC.
   const until = Date.parse(text.endsWith(" GMT") ? text : text + " GMT");
   if (!Number.isFinite(until) || imf.test(text) && new Date(until).toUTCString() !== text) return fallback;
-  return Math.max(now + 1000, until);
+  return Math.min(now + 3_600_000, Math.max(now + 1000, until));
 }
 
 export function createLrcRedProvider(fetchImpl: typeof fetch = fetch): LrcRedProvider {

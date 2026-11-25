@@ -3,6 +3,7 @@ import { contextFetch, getFetchContext, recordUpstreamResult } from "./request";
 import { convertLrcToLineLyrics } from "../convert/lrc";
 import { convertPlainTextToStatic } from "../convert/plain";
 import type { BeautifulLyrics, LrclibProvider, TrackMetadata } from "../types";
+import { simplifyChinese } from "../text-normalization";
 
 type FetchLike = typeof fetch;
 
@@ -17,6 +18,14 @@ type LrclibRecord = {
 };
 
 const lrclibSearchUrl = "https://lrclib.net/api/search";
+const normalize = (text: string) => simplifyChinese(text).normalize("NFKC").toLowerCase().replace(/[\p{P}\p{Z}\s]/gu, "");
+function matches(record: LrclibRecord, track: TrackMetadata): boolean {
+  if (!Number.isSafeInteger(record?.id) || record.id <= 0 || typeof record.trackName !== "string" || typeof record.artistName !== "string") return false;
+  if (normalize(record.trackName) !== normalize(track.name)) return false;
+  const artists = [record.artistName, ...record.artistName.split(/[、,，;；&/＋+]|(?:\s+(?:feat|ft|with)\.?\s+)/i)].map(normalize).filter(Boolean);
+  if (!track.artists.some(artist => artists.includes(normalize(artist)))) return false;
+  return track.durationSeconds === undefined || (Number.isFinite(record.duration) && record.duration! > 0 && Math.abs(record.duration! - track.durationSeconds) <= 5);
+}
 
 function firstArtist(track: TrackMetadata): string {
   return track.artists[0] ?? "";
@@ -76,18 +85,24 @@ function createLrclibProviderImplementation(fetchImpl: FetchLike = fetch): Lrcli
         recordUpstreamResult(context, { result: "invalid_payload" });
         return undefined;
       }
-      recordUpstreamResult(context, { resultCount: records.length, result: records.length > 0 ? "matched" : "no_results" });
-      for (const record of records) {
+      const candidates = records.filter(record => matches(record, track));
+      candidates.sort((a, b) => Number(!!b.syncedLyrics) - Number(!!a.syncedLyrics)
+        || Number(normalize(b.albumName ?? "") === normalize(track.album ?? "")) - Number(normalize(a.albumName ?? "") === normalize(track.album ?? ""))
+        || Math.abs((a.duration ?? 0) - (track.durationSeconds ?? 0)) - Math.abs((b.duration ?? 0) - (track.durationSeconds ?? 0)));
+      recordUpstreamResult(context, { resultCount: records.length, matchedCount: candidates.length, result: candidates.length ? "matched" : records.length ? "no_match" : "no_results" });
+      let fallback: BeautifulLyrics | undefined;
+      for (const record of candidates) {
         const source = { Provider: "lrclib", Transport: "direct", TrackId: String(record.id), ...(record.trackName ? { MatchedTitle: record.trackName } : {}) } as const;
         recordMatch(getFetchContext(fetchImpl), source);
         const lyrics = convertRecord(record, track.durationSeconds);
         if (lyrics !== undefined) {
           recordUpstreamResult(context, { result: "found" });
-          return withSource(lyrics, source);
+          if (lyrics.Type !== "Static") return withSource(lyrics, source);
+          fallback ??= withSource(lyrics, source);
         }
       }
-      if (records.length > 0) recordUpstreamResult(context, { result: "no_lyrics" });
-      return undefined;
+      if (candidates.length > 0) recordUpstreamResult(context, { result: fallback ? "found" : "no_lyrics" });
+      return fallback;
     }
   };
 }

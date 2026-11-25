@@ -3,7 +3,7 @@ import { contextFetch, getFetchContext } from "./request";
 // Copyright © 2026 f1nniboy. See NOTICE.md and LICENSES/lrcmux-MIT.txt.
 // Changed 2026-09-19: HTTPS, native fetch, strict matching, bounded requests,
 // and multiple candidates when a matching lyric file is unavailable.
-import OpenCC from "opencc-js";
+import { simplifyChinese } from "../text-normalization";
 import { convertLrcToLineLyrics } from "../convert/lrc";
 import { decodeBase64Text } from "../convert/base64";
 import { convertKrcToSyllableLyrics, decodeKrc } from "../convert/krc";
@@ -21,7 +21,7 @@ type Candidate = {
   product_from?: string;
 };
 
-const simplify = OpenCC.Converter({ from: "tw", to: "cn" });
+const simplify = simplifyChinese;
 const headers = { Accept: "application/json", "User-Agent": "Mozilla/5.0" };
 
 function normalize(text: string): string {

@@ -2,6 +2,7 @@ import type { BeautifulLyrics, RequestDiagnostics } from "./types";
 import { PluginFetch as fetch } from "../../Universal/Modules/Http";
 import { candidateSource } from "./source-policy";
 import { lyricsCacheMetricVersion } from "./cache-version";
+import { clientNetwork } from "./request-boundaries";
 
 export type MetricsEnv = {
   METRICS?: AnalyticsEngineDataset;
@@ -11,7 +12,7 @@ export type MetricsEnv = {
 };
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, User-Agent", "Access-Control-Max-Age": "7200", "Cache-Control": "no-store" };
 const kinds = ["session", "fullscreen_first", "lyrics_load", "lyrics_display", "fullscreen_load", "fullscreen_mode"];
-const modes = ["classic", "cadenza", "partita", "cappella", "tilt", "claddagh", "monet", "diorama", "pendolo", "sonnet", "tempera", "lumiere", "still"];
+const modes = ["classic", "cadenza", "partita", "cappella", "tilt", "claddagh", "monet", "diorama", "pendolo", "sonnet", "tempera", "lumiere", "still", "nebbia", "hanabi", "machi", "metaphor"];
 type ClientEvent = { kind: string; version: string; durationMs?: number; source?: string; outcome?: string; lyricsType?: string; view?: string; mode?: string };
 export function validateEvents(input: unknown): ClientEvent[] {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw Error("Invalid payload");
@@ -53,7 +54,7 @@ export async function metricsResponse(request: Request, env: MetricsEnv): Promis
   if (!request.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) return new Response("Expected JSON", { status: 415, headers: cors });
   if (env.METRICS_LIMITER) {
     try {
-      const { success } = await env.METRICS_LIMITER.limit({ key: request.headers.get("CF-Connecting-IP") ?? "local" });
+      const { success } = await env.METRICS_LIMITER.limit({ key: clientNetwork(request) });
       if (!success) return new Response("Rate limited", { status: 429, headers: { ...cors, "Retry-After": "60" } });
     } catch { return new Response("Metrics unavailable", { status: 503, headers: cors }); }
   }
@@ -98,7 +99,7 @@ export function recordProviderMetrics(env: MetricsEnv, record: RequestDiagnostic
   try {
     env.METRICS.writeDataPoint({ indexes: ["server:origin"],
       blobs: ["server", "origin", "v1", record.outcome, "", "", lyricsCacheMetricVersion],
-      doubles: [record.durationMs, record.attempts.reduce((total, attempt) => total + attempt.upstream.length, 0)] });
+      doubles: [record.durationMs, record.attempts.reduce((total, attempt) => total + attempt.upstream.filter(event => !event.reused).length, 0)] });
     for (const attempt of record.attempts) {
       if (attempt.stage === "metadata") continue;
       const source = attempt.source ?? candidateSource(attempt.provider, { Type: "Static", Lines: [] });
@@ -116,7 +117,7 @@ export async function queryMetrics(env: MetricsEnv, sql: string): Promise<Metric
   const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.STATS_ACCOUNT_ID}/analytics_engine/sql`, {
     method: "POST", headers: { Authorization: `Bearer ${env.STATS_API_TOKEN}` }, body: sql, signal: AbortSignal.timeout(10000),
   });
-  if (!response.ok) throw Error("Statistics unavailable");
+  if (!response.ok) { await response.body?.cancel(); throw Error("Statistics unavailable"); }
   const payload = await response.json() as { data?: MetricRow[] };
   if (!Array.isArray(payload.data)) throw Error("Invalid statistics response");
   return payload.data;
@@ -138,6 +139,14 @@ export const statisticsQueries = (days: number) => {
 export async function detailedStatistics(env: MetricsEnv, days: number) {
   if (!env.METRICS) return { available: false, server: [], providers: [], client: [], trend: [], latency: [], providerLatency: [], cache: [], origins: [] };
   const queries = statisticsQueries(days);
-  const entries = await Promise.all(Object.entries(queries).map(async ([key, sql]) => [key, await queryMetrics(env, sql)] as const));
+  const entries: [string, MetricRow[]][] = [];
+  const queue = Object.entries(queries);
+  await Promise.all(Array.from({ length: 3 }, async () => {
+    for (;;) {
+      const entry = queue.shift();
+      if (!entry) return;
+      entries.push([entry[0], await queryMetrics(env, entry[1])]);
+    }
+  }));
   return { available: true, ...Object.fromEntries(entries) };
 }

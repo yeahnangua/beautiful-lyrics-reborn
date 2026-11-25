@@ -2,7 +2,7 @@ import { contextFetch, getFetchContext } from "./request";
 // Inspired by Spicetify lyrics-plus/ProviderNetease.js (LGPL-2.1).
 // Adapted on 2026-09-19 for native fetch, direct NetEase endpoints, and YRC timing.
 // See NOTICE.md and LICENSES/Spicetify-LGPL-2.1.txt for attribution and license.
-import OpenCC from "opencc-js";
+import { simplifyChinese } from "../text-normalization";
 import { convertLrcToLineLyrics } from "../convert/lrc";
 import { convertYrcToSyllableLyrics } from "../convert/karaoke";
 import { withLyricRequestRetries, recordUpstreamResult } from "./request";
@@ -23,7 +23,7 @@ type Song = {
 type SearchResponse = { code?: number; result?: { songs?: Song[]; songCount?: number } };
 type LyricResponse = { code?: number; pureMusic?: boolean; yrc?: { lyric?: string }; lrc?: { lyric?: string } };
 
-const simplify = OpenCC.Converter({ from: "tw", to: "cn" });
+const simplify = simplifyChinese;
 const headers = {
   Accept: "application/json",
   Referer: "https://music.163.com/",

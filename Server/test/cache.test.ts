@@ -82,12 +82,12 @@ function cacheFixture(service: LyricsService, overrides: Partial<WorkerEnv> = {}
     }
     return withStatus(await pending, "MISS");
   });
-  const purgeTrack = vi.fn(async (trackId: string) => {
-    for (const key of entries.keys()) if (key.startsWith(trackCachePrefix(trackId))) entries.delete(key);
+  const purgeEntry = vi.fn(async (identity: Parameters<typeof cachePath>[0]) => {
+    entries.delete(cachePath(identity));
   });
-  const binding: OriginBinding = { fetch, purgeTrack };
+  const binding: OriginBinding = { fetch, purgeEntry };
   const worker = createWorker(service, undefined, { origin: () => binding });
-  return { env, worker, entries, fetch, purgeTrack, points,
+  return { env, worker, entries, fetch, purgeEntry, points,
     call: (req = request(), value = env) => worker.fetch!(req as Request<unknown, IncomingRequestCfProperties>, value, ctx) as Promise<Response> };
 }
 function successfulService() {
@@ -353,7 +353,7 @@ describe("Workers Cache content and request boundary", () => {
     expect(response.headers.get("X-Lyrics-Cache")).toBe("bypass");
     expect(fixture.fetch).toHaveBeenCalledTimes(3);
     expect(fixture.fetch.mock.calls[2]?.[1]).toEqual({ cache: "no-store" });
-    expect(fixture.purgeTrack).toHaveBeenCalledExactlyOnceWith("track");
+    expect(fixture.purgeEntry).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ trackId: "track" }));
     expect(service.getLyrics).toHaveBeenCalledTimes(2);
     expect(queryLogs()).toHaveLength(2);
     expect(queryLogs().every(log => !log.message.includes("命中缓存"))).toBe(true);
@@ -369,9 +369,27 @@ describe("Workers Cache content and request boundary", () => {
     const second = await readOriginRequest(fixture.fetch.mock.calls[1]![0]);
     expect(second.deadline).toBe(first.deadline);
     expect(second.triggerRequestId).toBe(first.triggerRequestId);
+    expect(fixture.purgeEntry).not.toHaveBeenCalled();
     fixture.fetch.mockRejectedValue(Error("cache still unavailable"));
     expect((await fixture.call()).status).toBe(502);
     expect(fixture.fetch).toHaveBeenCalledTimes(4);
+    expect(fixture.purgeEntry).not.toHaveBeenCalled();
+  });
+
+  it("rejects oversized metadata before reading policy and never purges a healthy sibling", async () => {
+    const fixture = cacheFixture(successfulService());
+    await fixture.call(request({ apple_id: "1" }));
+    await fixture.call(request({ apple_id: "2" }));
+    expect(fixture.entries.size).toBe(2);
+    const bad = [...fixture.entries.values()][0]!;
+    bad.response = Response.json({ broken: true });
+    await fixture.call(request({ apple_id: "1" }));
+    await drain();
+    expect(fixture.entries.size).toBe(1);
+    const count = fixture.fetch.mock.calls.length;
+    expect((await fixture.call(request({ track_name: "x".repeat(501) }))).status).toBe(400);
+    expect(fixture.fetch).toHaveBeenCalledTimes(count);
+    expect(fixture.purgeEntry).toHaveBeenCalledTimes(1);
   });
 
   it("uses no-store on every internal call when caching is switched off", async () => {

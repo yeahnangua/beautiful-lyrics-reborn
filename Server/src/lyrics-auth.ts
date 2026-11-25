@@ -1,5 +1,6 @@
 import { Abortable, CreateAbortScope } from "../../Universal/Modules/Async";
 import { PluginFetch } from "../../Universal/Modules/Http";
+import { clientNetwork } from "./request-boundaries";
 import { LyricsSessionHeader, LyricsSessionLifetimeMs, RetryAfterSeconds,
   type LyricsSession, type LyricsAuthErrorCode } from "../../Universal/Modules/LyricsSession";
 
@@ -142,7 +143,7 @@ function spotifyClientHeaders(request: Request, accessToken: string): HeadersIni
 }
 
 const ipKey = (request: Request): Promise<string> =>
-  digest(`lyrics-ip:v1:${request.headers.get("CF-Connecting-IP") ?? "local"}`);
+  digest(`lyrics-ip:v2:${clientNetwork(request)}`);
 
 async function verifySpotifyLyrics(fetchImpl: typeof fetch, request: Request, accessToken: string,
   signal: AbortSignal, now: () => number): Promise<void> {
@@ -152,14 +153,14 @@ async function verifySpotifyLyrics(fetchImpl: typeof fetch, request: Request, ac
   for (const track of spotifyProbeTracks) {
     // Workers supports manual/follow only. Never forward credentials to a redirect.
     const response = await fetchImpl(`https://spclient.wg.spotify.com/color-lyrics/v2/track/${track}?format=json&vocalRemoval=false&market=from_token`, init);
-    if (response.status === 401) throw new AuthError(401, "invalid_spotify_token");
-    if (response.status === 403) throw new AuthError(403, "spotify_forbidden");
-    if (response.status === 429) throw new AuthError(429, "rate_limited", RetryAfterSeconds(response.headers.get("Retry-After"), now()));
-    if (response.status === 404) {
-      await response.body?.cancel();
-      continue;
+    if (response.status !== 200) {
+      await response.body?.cancel().catch(() => {});
+      if (response.status === 401) throw new AuthError(401, "invalid_spotify_token");
+      if (response.status === 403) throw new AuthError(403, "spotify_forbidden");
+      if (response.status === 429) throw new AuthError(429, "rate_limited", RetryAfterSeconds(response.headers.get("Retry-After"), now()));
+      if (response.status === 404) continue;
+      throw new AuthError(503, "auth_unavailable");
     }
-    if (response.status !== 200) throw new AuthError(503, "auth_unavailable");
     const body = await response.json() as { lyrics?: { lines?: { words?: unknown }[] } } | null;
     if (!Array.isArray(body?.lyrics?.lines)
       || !body.lyrics.lines.some(line => typeof line?.words === "string" && line.words.trim())) throw new AuthError(503, "auth_unavailable");

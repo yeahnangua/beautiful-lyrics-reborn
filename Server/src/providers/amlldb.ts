@@ -1,5 +1,5 @@
 import { contextFetch } from "./request";
-import OpenCC from "opencc-js";
+import { simplifyChinese } from "../text-normalization";
 import { convertTtmlToSyllableLyrics } from "../convert/ttml";
 import type { AmllDbProvider, SyllableSyncedLyrics, TrackMetadata } from "../types";
 
@@ -16,7 +16,7 @@ type AmllDbSearchResult = {
 const amllDbSpotifyBaseUrl = "https://amll-ttml-db.stevexmh.net/spotify";
 const amllDbSearchUrl = "https://amlldb.bikonoo.com/api/search-lyrics";
 const amllDbRawLyricsBaseUrl = "https://amlldb.bikonoo.com/raw-lyrics";
-const traditionalToSimplified = OpenCC.Converter({ from: "tw", to: "cn" });
+const traditionalToSimplified = simplifyChinese;
 
 function buildSpotifyTtmlUrl(trackId: string): string {
   return `${amllDbSpotifyBaseUrl}/${encodeURIComponent(trackId)}?format=ttml`;

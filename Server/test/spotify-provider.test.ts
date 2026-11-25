@@ -54,7 +54,7 @@ describe("Spotify provider", () => {
               artist: [],
               date: { year: 2024 }
             },
-            duration: 181,
+            duration: 181000,
             external_id: [{ type: "isrc", id: "TESTISRC" }]
           }),
           { status: 200 }

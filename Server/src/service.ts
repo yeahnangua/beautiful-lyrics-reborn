@@ -1,4 +1,4 @@
-import { decodeEntitiesDeep } from "./convert/entities";
+import { RequestScheduler } from "./providers/request-scheduler";
 import { matchedTitle } from "./providers/matched-title";
 import { abortable, requestScope } from "./providers/request";
 import { FirstQualified } from "../../Universal/Modules/Async";
@@ -18,13 +18,14 @@ export type LyricsService = {
 export function createLyricsService(providers: ProviderClients): LyricsService {
   return {
     async getLyrics(trackId, accessToken, suppliedTrackMetadata, clientContext, context = {}) {
+      context = { ...context, scheduler: context.scheduler ?? new RequestScheduler() };
       const available = new Map<string, BeautifulLyrics>();
       let metadata = suppliedTrackMetadata;
       let stage: ProviderAttempt["stage"] = "syllable";
       const blocks = context.sourceBlocks ?? [];
       const finish = (result: Candidate | undefined) => {
         if (!result || context.signal?.aborted) return undefined;
-        const lyrics = decodeEntitiesDeep(result[1]);
+        const lyrics = structuredClone(result[1]);
         const source: LyricsSource = candidateSource(result[0], lyrics);
         if (!source.MatchedTitle && matchedTitle(result[1])) source.MatchedTitle = matchedTitle(result[1])!;
         lyrics.Source = source;
@@ -80,6 +81,13 @@ export function createLyricsService(providers: ProviderClients): LyricsService {
       };
       const first = (candidates: Promise<Candidate>[], accept: (lyrics: BeautifulLyrics) => boolean) =>
         FirstQualified(candidates, candidate => accept(candidate[1]));
+
+      if (metadata?.lookup === "apple") {
+        const scope = requestScope(10_000, context);
+        try { return finish(await run("applemusic", request => providers.applemusic.getLyrics(metadata!, request), scope)); }
+        catch { return undefined; }
+        finally { scope.cancel(); scope.dispose(); }
+      }
 
       // Metadata and every syllable source share the same 15-second budget.
       const syllable = requestScope(15_000, context);

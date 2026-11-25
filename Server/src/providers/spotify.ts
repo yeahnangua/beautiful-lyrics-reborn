@@ -43,6 +43,7 @@ const spotifyBase62Alphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLM
 
 function spotifyHeaders(accessToken: string, clientContext?: SpotifyClientContext): HeadersInit {
   return {
+    Accept: "application/json",
     Authorization: `Bearer ${accessToken}`,
     "App-Platform": clientContext?.appPlatform ?? "WebPlayer",
     "Spotify-App-Version": clientContext?.appVersion ?? "1.2.0"
@@ -57,7 +58,7 @@ async function getJson(
   operation: "lyrics" | "metadata"
 ): Promise<unknown | undefined> {
   const response = await fetchImpl(url, {
-    headers: spotifyHeaders(accessToken, clientContext)
+    headers: spotifyHeaders(accessToken, clientContext), redirect: "manual", cache: "no-store"
   });
   recordUpstreamResult(getFetchContext(fetchImpl), { operation });
 
@@ -126,7 +127,7 @@ function convertInternalTrack(trackId: string, payload: SpotifyInternalTrackResp
   }
 
   if (payload.duration !== undefined) {
-    track.durationSeconds = payload.duration;
+    if (Number.isFinite(payload.duration) && payload.duration > 0) track.durationSeconds = payload.duration / 1000;
   }
 
   const isrc = payload.external_id?.find((externalId) => externalId.type === "isrc")?.id;

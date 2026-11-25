@@ -74,6 +74,7 @@ export type SyllableSyncedLyrics = LyricsProvenance & TimeMetadata & {
 export type BeautifulLyrics = StaticSyncedLyrics | LineSyncedLyrics | SyllableSyncedLyrics;
 
 export type TrackMetadata = {
+  lookup?: "apple";
   id: string;
   name: string;
   artists: string[];
@@ -90,6 +91,7 @@ export type SpotifyClientContext = {
 };
 
 export type RequestContext = {
+  scheduler?: import("./providers/request-scheduler").RequestScheduler;
   sourceBlocks?: readonly SourceBlock[];
   signal?: AbortSignal;
   deadline?: number;
@@ -173,6 +175,7 @@ export type UpstreamDetails = {
   matchedCount?: number;
 };
 export type UpstreamEvent = UpstreamDetails & {
+  reused?: boolean;
   endpoint: string;
   durationMs: number;
   status?: number;

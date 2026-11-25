@@ -58,8 +58,8 @@ function wordVocal(element: Element): SyllableVocal | undefined {
     IsPartOfWord: index < parts.length - 1 && !/\s$/u.test(part.text) && !/^\s/u.test(parts[index + 1]!.text)
   }));
   return {
-    StartTime: Math.min(...syllables.map(part => part.StartTime)),
-    EndTime: Math.max(...syllables.map(part => part.EndTime)), Syllables: syllables
+    StartTime: syllables.reduce((value, part) => Math.min(value, part.StartTime), Infinity),
+    EndTime: syllables.reduce((value, part) => Math.max(value, part.EndTime), -Infinity), Syllables: syllables
   };
 }
 
@@ -123,10 +123,10 @@ export function convertLrcRedTtml(ttml: string): BeautifulLyrics | undefined {
     if (!groups.length) return undefined;
     if (hasWordTiming && hint !== "line") {
       const vocals = groups.flatMap(group => [group.Lead, ...(group.Background ?? [])]);
-      return { Type: "Syllable", StartTime: Math.min(...vocals.map(vocal => vocal.StartTime)),
-        EndTime: Math.max(...vocals.map(vocal => vocal.EndTime)), Content: groups };
+      return { Type: "Syllable", StartTime: vocals.reduce((value, vocal) => Math.min(value, vocal.StartTime), Infinity),
+        EndTime: vocals.reduce((value, vocal) => Math.max(value, vocal.EndTime), -Infinity), Content: groups };
     }
-    return { Type: "Line", StartTime: Math.min(...lines.map(line => line.StartTime)),
-      EndTime: Math.max(...lines.map(line => line.EndTime)), Content: lines };
+    return { Type: "Line", StartTime: lines.reduce((value, line) => Math.min(value, line.StartTime), Infinity),
+      EndTime: lines.reduce((value, line) => Math.max(value, line.EndTime), -Infinity), Content: lines };
   } catch { return undefined; }
 }

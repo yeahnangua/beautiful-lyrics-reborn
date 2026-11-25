@@ -52,12 +52,12 @@ function sanitizeVocalGroup(raw: unknown): SyllableVocal | undefined {
   if (!isRecord(raw) || !Array.isArray(raw.Syllables)) return undefined;
   const syllables = raw.Syllables.map(sanitizeSyllableMetadata).filter(defined);
   if (syllables.length === 0) return undefined;
-  const start = finiteSeconds(raw.StartTime) ?? Math.min(...syllables.map(part => part.StartTime));
-  const end = finiteSeconds(raw.EndTime) ?? Math.max(...syllables.map(part => part.EndTime));
+  const start = finiteSeconds(raw.StartTime) ?? syllables.reduce((value, part) => Math.min(value, part.StartTime), Infinity);
+  const end = finiteSeconds(raw.EndTime) ?? syllables.reduce((value, part) => Math.max(value, part.EndTime), -Infinity);
   if (end < start) return undefined;
   return {
-    StartTime: Math.min(start, ...syllables.map(part => part.StartTime)),
-    EndTime: Math.max(end, ...syllables.map(part => part.EndTime)),
+    StartTime: syllables.reduce((value, part) => Math.min(value, part.StartTime), start),
+    EndTime: syllables.reduce((value, part) => Math.max(value, part.EndTime), end),
     Syllables: syllables
   };
 }
@@ -80,8 +80,8 @@ function sanitizeSyllableLyrics(body: Record<string, unknown>): SyllableSyncedLy
   const last = content[content.length - 1];
   if (first === undefined || last === undefined) return undefined;
   const vocals = content.flatMap(group => [group.Lead, ...(group.Background ?? [])]);
-  return { Type: "Syllable", StartTime: Math.min(...vocals.map(vocal => vocal.StartTime)),
-    EndTime: Math.max(...vocals.map(vocal => vocal.EndTime)), Content: content };
+  return { Type: "Syllable", StartTime: vocals.reduce((value, vocal) => Math.min(value, vocal.StartTime), Infinity),
+    EndTime: vocals.reduce((value, vocal) => Math.max(value, vocal.EndTime), -Infinity), Content: content };
 }
 
 function sanitizeLineLyrics(body: Record<string, unknown>): LineSyncedLyrics | undefined {
@@ -99,7 +99,7 @@ function sanitizeLineLyrics(body: Record<string, unknown>): LineSyncedLyrics | u
   const first = content[0];
   const last = content[content.length - 1];
   if (first === undefined || last === undefined) return undefined;
-  return { Type: "Line", StartTime: Math.min(...content.map(line => line.StartTime)), EndTime: Math.max(...content.map(line => line.EndTime)), Content: content };
+  return { Type: "Line", StartTime: content.reduce((value, line) => Math.min(value, line.StartTime), Infinity), EndTime: content.reduce((value, line) => Math.max(value, line.EndTime), -Infinity), Content: content };
 }
 
 function sanitizeStaticLyrics(body: Record<string, unknown>): StaticSyncedLyrics | undefined {
@@ -178,6 +178,7 @@ function createSpicyLyricsProviderImplementation(fetchImpl: typeof fetch): Spicy
         return undefined;
       }
       const response = await fetchImpl(lyricsUrl + encodeURIComponent(track.id), {
+        redirect: "manual", cache: "no-store",
         headers: {
           Accept: "application/json",
           Authorization: `Bearer ${key}`,

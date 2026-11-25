@@ -1,8 +1,8 @@
 import { contextFetch, getFetchContext } from "./request";
-import OpenCC from "opencc-js";
+import { simplifyChinese } from "../text-normalization";
 import { convertLrcToLineLyrics } from "../convert/lrc";
 import { decodeBase64Text } from "../convert/base64";
-import { decryptQrc } from "qrc-decoder";
+import { decryptQrc } from "../vendor/qrc-codec.mjs";
 import { convertQrcXmlToSyllableLyrics } from "../convert/karaoke";
 import type { QqMusicProvider, BeautifulLyrics, TrackMetadata } from "../types";
 import { withLyricRequestRetries, recordUpstreamResult } from "./request";
@@ -47,7 +47,7 @@ type QqMusicLyricResponse = {
 };
 
 const musicuUrl = "https://u.y.qq.com/cgi-bin/musicu.fcg";
-const traditionalToSimplified = OpenCC.Converter({ from: "tw", to: "cn" });
+const traditionalToSimplified = simplifyChinese;
 const languageTags = new Set([
   "粤",
   "粤语",

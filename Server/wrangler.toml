@@ -55,6 +55,22 @@ namespace_id = "823606"
 simple = { limit = 300, period = 60 }
 
 # Required, independent signing secret (at least 32 random bytes):
+[[ratelimits]]
+name = "REPORT_INGRESS_LIMITER"
+namespace_id = "823607"
+simple = { limit = 30, period = 60 }
+
+[[ratelimits]]
+name = "LOGIN_INGRESS_LIMITER"
+namespace_id = "823608"
+simple = { limit = 10, period = 60 }
+
+[[ratelimits]]
+name = "STATS_LIMITER"
+namespace_id = "823609"
+simple = { limit = 10, period = 60 }
+
+# Required, independent signing secret (at least 32 random bytes):
 # wrangler secret put LYRICS_SESSION_SECRET
 
 [observability.logs]

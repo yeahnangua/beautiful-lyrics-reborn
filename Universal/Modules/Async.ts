@@ -43,7 +43,8 @@ const UnwrapParent = (parent?: AbortParent) => {
 export function CreateAbortScope(milliseconds: number, parent?: AbortParent): AbortScope {
 	const inherited = UnwrapParent(parent)
 	const controller = new AbortController()
-	const cancel = () => controller.abort(inherited.signal?.reason)
+	let timer: ReturnType<typeof setTimeout> | undefined
+	const cancel = () => { controller.abort(inherited.signal?.reason); detach() }
 	// A nested scope may never outlive its parent's absolute deadline.
 	const deadline = Math.min(Date.now() + milliseconds, inherited.deadline)
 	const detach = () => {
@@ -52,16 +53,16 @@ export function CreateAbortScope(milliseconds: number, parent?: AbortParent): Ab
 	}
 	inherited.signal?.addEventListener("abort", cancel, { once: true })
 	if (inherited.signal?.aborted) cancel()
-	if (deadline <= Date.now()) controller.abort(new DOMException("Request timed out", "TimeoutError"))
-	const timer = setTimeout(
-		() => controller.abort(new DOMException("Request timed out", "TimeoutError")),
+	if (deadline <= Date.now()) { controller.abort(new DOMException("Request timed out", "TimeoutError")); detach() }
+	if (!controller.signal.aborted) timer = setTimeout(
+		() => { controller.abort(new DOMException("Request timed out", "TimeoutError")); detach() },
 		Math.max(0, deadline - Date.now())
 	)
 	return {
 		Signal: controller.signal,
 		Deadline: deadline,
 		Remaining: () => deadline - Date.now(),
-		Cancel: (reason?: unknown) => controller.abort(reason),
+		Cancel: (reason?: unknown) => { controller.abort(reason); detach() },
 		Detach: detach,
 		Destroy() { detach(); controller.abort() }
 	}

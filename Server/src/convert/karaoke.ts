@@ -96,7 +96,7 @@ function parseQrcLine(line: string): KaraokeLine | undefined {
       break;
     }
 
-    const text = decodeHtmlEntities(remainder.slice(0, timingMatch.index));
+    const text = remainder.slice(0, timingMatch.index);
     const startMs = Number(timingMatch[1]);
     const durationMs = Number(timingMatch[2]);
     if (Number.isFinite(startMs) && Number.isFinite(durationMs) && text.length > 0) {

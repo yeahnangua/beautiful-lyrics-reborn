@@ -3,11 +3,14 @@ import { hydrateOriginDiagnostics, loadDiagnostics, sha256 } from "./diagnostics
 import { sourceProviders } from "./source-policy";
 import type { BeautifulLyrics, LyricsSource, TrackMetadata } from "./types";
 import { listSourceBlocks, putSourceBlock, sourceBlockDetail, SourceBlockError } from "./source-blocks";
+import { clientNetwork } from "./request-boundaries";
 
 export type FeedbackEnv = {
   FEEDBACK_DB?: D1Database;
   ADMIN_PASSWORD?: string;
   ADMIN_SESSION_SECRET?: string;
+  REPORT_INGRESS_LIMITER?: RateLimit;
+  LOGIN_INGRESS_LIMITER?: RateLimit;
 };
 const reportCors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, User-Agent", "Access-Control-Max-Age": "7200" };
 const statuses = ["pending", "in_progress", "resolved", "ignored"];
@@ -110,12 +113,16 @@ function reportPayload(input: Record<string, unknown>) {
     lyricsOffset: numeric(input.lyricsOffset), extensionVersion: text(input.extensionVersion, 80),
     fromCache: input.fromCache, original: snapshot(input.original), displayed: snapshot(input.displayed) };
 }
-async function rateLimit(db: D1Database, request: Request, kind: string): Promise<void> {
-  const key = await sha256(kind + ":" + (request.headers.get("CF-Connecting-IP") ?? "local"));
+async function ingress(request: Request, limiter: RateLimit | undefined): Promise<void> {
+  if (!limiter) throw new HttpError(503, "Request limiter unavailable");
+  if (!(await limiter.limit({ key: clientNetwork(request) })).success) throw new HttpError(429, "Too many requests; retry in a minute");
+}
+async function rateLimit(db: D1Database, request: Request, kind: string, limit = 5): Promise<void> {
+  const key = await sha256(kind + ":" + (kind === "login-global" ? "all" : clientNetwork(request)));
   const minute = Math.floor(Date.now() / 60000);
   const row = await db.prepare(`INSERT INTO rate_limits(key,minute,count) VALUES(?,?,1)
-    ON CONFLICT(key,minute) DO UPDATE SET count=count+1 WHERE count<5 RETURNING count`).bind(key, minute).first<{ count: number }>();
-  if (!row || row.count > 5) throw new HttpError(429, "Too many requests; retry in a minute");
+    ON CONFLICT(key,minute) DO UPDATE SET count=count+1 WHERE count<? RETURNING count`).bind(key, minute, limit).first<{ count: number }>();
+  if (!row || row.count > limit) throw new HttpError(429, "Too many requests; retry in a minute");
 }
 async function signature(secret: string, data: string): Promise<string> {
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
@@ -203,6 +210,7 @@ export async function feedbackResponse(request: Request, env: FeedbackEnv): Prom
     if (!db) throw new HttpError(503, "Feedback storage is unavailable; retry later");
     if (isReport) {
       if (request.method !== "POST") throw new HttpError(405, "Method not allowed");
+      await ingress(request, env.REPORT_INGRESS_LIMITER);
       const payload = reportPayload(await body(request));
       const previous = await db.prepare("SELECT id FROM lyric_reports WHERE submission_id=?").bind(payload.submissionId).first<{ id: string }>();
       if (previous) return json({ id: previous.id }, 200, headers);
@@ -217,22 +225,7 @@ export async function feedbackResponse(request: Request, env: FeedbackEnv): Prom
           JSON.stringify(data), diagnostics ? JSON.stringify(diagnostics) : null, diagnostics?.originRunId ?? null),
         db.prepare(`INSERT INTO report_snapshots(report_id,original,displayed) SELECT id,?,? FROM lyric_reports WHERE submission_id=?
           ON CONFLICT(report_id) DO NOTHING`).bind(JSON.stringify(original), JSON.stringify(displayed), payload.submissionId),
-        // Close the race where logging committed after the first lookup but before this batch.
-        db.prepare(`UPDATE lyric_reports SET diagnostics=(SELECT CASE WHEN json_type(data,'$.attempts')='array' THEN data
-          ELSE json_set(data,'$.attempts',json(COALESCE(
-          (SELECT json_group_array(json(data)) FROM (SELECT data FROM provider_attempts WHERE request_id=? ORDER BY ordinal)),'[]'))) END
-          FROM lyric_requests WHERE id=?) WHERE submission_id=? AND diagnostics IS NULL
-          AND EXISTS(SELECT 1 FROM lyric_requests WHERE id=?)`)
-          .bind(payload.requestId, payload.requestId, payload.submissionId, payload.requestId),
-        // Resolve both races inside this transaction: request diagnostics may
-        // arrive before the report, and origin diagnostics may arrive first.
-        db.prepare("UPDATE lyric_reports SET origin_run_id=COALESCE(origin_run_id,json_extract(diagnostics,'$.originRunId')) " +
-          "WHERE submission_id=? AND diagnostics IS NOT NULL").bind(payload.submissionId),
-        db.prepare("UPDATE lyric_reports SET diagnostics=json_set(diagnostics,'$.origin'," +
-          "json((SELECT data FROM lyric_origin_runs WHERE id=origin_run_id)),'$.originStatus','available') " +
-          "WHERE submission_id=? AND origin_run_id IS NOT NULL AND diagnostics IS NOT NULL " +
-          "AND (json_type(diagnostics,'$.origin') IS NULL OR json_type(diagnostics,'$.origin')='null') " +
-          "AND EXISTS(SELECT 1 FROM lyric_origin_runs WHERE id=origin_run_id)").bind(payload.submissionId)
+
       ]);
       const saved = await db.prepare("SELECT id FROM lyric_reports WHERE submission_id=?").bind(payload.submissionId).first<{ id: string }>();
       if (!saved) throw new Error("Missing committed report");
@@ -241,7 +234,9 @@ export async function feedbackResponse(request: Request, env: FeedbackEnv): Prom
     if (!env.ADMIN_PASSWORD || !env.ADMIN_SESSION_SECRET || env.ADMIN_SESSION_SECRET.length < 32) throw new HttpError(503, "Admin authentication is not configured");
     if (request.method !== "GET") sameOrigin(request);
     if (url.pathname === "/admin/api/login" && request.method === "POST") {
+      await ingress(request, env.LOGIN_INGRESS_LIMITER);
       await rateLimit(db, request, "login");
+      await rateLimit(db, request, "login-global", 60);
       const passwordInput = (await body(request, 4096)).password;
       text(passwordInput, 1024);
       const password = passwordInput as string;

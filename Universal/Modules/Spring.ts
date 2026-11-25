@@ -173,6 +173,7 @@ export default class Spring {
 	public GetGoal(): number {
 		return this.Goal
 	}
+	public GetPosition(): number { return this.Position }
 
 	public SetGoal(goal: number, replacePosition?: boolean) {
 		this.Goal = goal

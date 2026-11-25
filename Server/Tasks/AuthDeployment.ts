@@ -8,7 +8,7 @@ export function assertLyricsAuthDeployment(config: string, secretNames: string[]
   }
   const blocks = config.match(/\[\[ratelimits\]\][\s\S]*?(?=\n\[|$)/g) ?? [];
   const namespaces = new Set<string>();
-  for (const name of ["LYRICS_SESSION_LIMITER", "LYRICS_TOKEN_LIMITER", "LYRICS_IP_LIMITER"]) {
+  for (const name of ["LYRICS_SESSION_LIMITER", "LYRICS_TOKEN_LIMITER", "LYRICS_IP_LIMITER", "REPORT_INGRESS_LIMITER", "LOGIN_INGRESS_LIMITER", "STATS_LIMITER"]) {
     const matches = blocks.filter(block => new RegExp(`^\\s*name\\s*=\\s*"${name}"\\s*$`, "m").test(block));
     const namespace = matches[0]?.match(/^\s*namespace_id\s*=\s*"(\d+)"\s*$/m)?.[1];
     if (matches.length !== 1 || !namespace || namespaces.has(namespace)) throw new Error(`Configure a separate rate limit binding for ${name}.`);

@@ -18,7 +18,9 @@ import { unisonProvider } from "./providers/unison";
 import { createLyricsService, type LyricsService } from "./service";
 import type { BeautifulLyrics, SpotifyClientContext, TrackMetadata } from "./types";
 import { dashboardHtml } from "./dashboard";
-import { cacheIdentity, cacheStatus, createOriginRequest, originBudgetMs, readOriginResponse, type OriginBinding, type OriginContext } from "./cache";
+import { cacheIdentity, cacheStatus, createOriginRequest, originBudgetMs, readOriginResponse, LyricsCacheError, type OriginBinding, type OriginContext } from "./cache";
+import { validateLyricsInput } from "./request-boundaries";
+import { cachedStatistics } from "./statistics-cache";
 import { createLyricsOrigin, keepAlive } from "./lyrics-origin";
 import { Abortable, CreateAbortScope } from "../../Universal/Modules/Async";
 import { lyricsCacheVersion } from "./cache-version";
@@ -106,6 +108,7 @@ function extractTrackMetadata(url: URL, trackId: string): TrackMetadata | undefi
     name: trackName,
     artists: artistNames
   };
+  if (url.searchParams.get("lookup") === "apple") trackMetadata.lookup = "apple";
 
   const albumName = nonEmptyParameter(url, "album_name");
   if (albumName !== undefined) {
@@ -138,6 +141,7 @@ function extractTrackMetadata(url: URL, trackId: string): TrackMetadata | undefi
 }
 
 export type WorkerEnv = FeedbackEnv & MetricsEnv & LyricsAuthEnv & {
+  STATS_LIMITER?: RateLimit;
   RELEASE_ASSETS?: Fetcher;
   STATS?: AnalyticsEngineDataset;
   STATS_ACCOUNT_ID?: string;
@@ -252,12 +256,13 @@ export function createWorker(service: LyricsService, auth = createLyricsAuth(), 
       if (request.method === "GET" && url.pathname === "/") {
         return new Response(dashboardHtml, {
           status: 200,
-          headers: { ...corsHeaders, "Content-Type": "text/html; charset=utf-8" }
+          headers: { ...corsHeaders, "Content-Type": "text/html; charset=utf-8", "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'", "Referrer-Policy": "no-referrer" }
         });
       }
 
       if (request.method === "GET" && url.pathname === "/stats") {
-        try { return await statsResponse(env, url); }
+        try { return await cachedStatistics(request, env.STATS_LIMITER, target => statsResponse(env, target)); }
         catch { return new Response("Statistics unavailable", { status: 503, headers: { ...corsHeaders, "Cache-Control": "no-store" } }); }
       }
 
@@ -270,6 +275,8 @@ export function createWorker(service: LyricsService, auth = createLyricsAuth(), 
         });
       }
 
+      try { validateLyricsInput(request, url); }
+      catch { return new Response("Invalid lyrics request metadata", { status: 400, headers: lyricsResponseHeaders }); }
       const authorized = await auth.authorize(request, env);
       if (authorized instanceof Response) return authorized;
       const { accessToken } = authorized;
@@ -322,7 +329,7 @@ export function createWorker(service: LyricsService, auth = createLyricsAuth(), 
             response.headers.set("CF-Cache-Status", "BYPASS");
             return response;
           },
-          purgeTrack: async () => {}
+          purgeEntry: async () => {}
         };
         const scope = CreateAbortScope(originBudgetMs, request.signal);
         try {
@@ -337,12 +344,18 @@ export function createWorker(service: LyricsService, auth = createLyricsAuth(), 
             const bypass = env.LYRICS_CACHE_MODE === "off" || attempt > 0;
             if (bypass) diagnostics.cache = "bypass";
             const originRunId = crypto.randomUUID();
+            let corruptHit = false;
             // Parse and verify the body as part of the fill lifetime, even when
             // this caller disconnects while another caller is waiting for it.
             const pending = (async () => {
               const response = await origin.fetch(createOriginRequest(normalized.identity, { ...context, originRunId }, accessToken),
                 bypass ? { cache: "no-store" } : undefined);
-              const entry = await readOriginResponse(response, normalized.identity, sourceBlocks);
+              let entry;
+              try { entry = await readOriginResponse(response, normalized.identity, sourceBlocks); }
+              catch (error) {
+                corruptHit = response.headers.get("CF-Cache-Status")?.toUpperCase() === "HIT" && error instanceof LyricsCacheError;
+                throw error;
+              }
               return { entry, status: bypass ? "bypass" as const : cacheStatus(response),
                 rawStatus: response.headers.get("CF-Cache-Status") };
             })();
@@ -370,9 +383,11 @@ export function createWorker(service: LyricsService, auth = createLyricsAuth(), 
               scope.Signal.throwIfAborted();
               if (attempt > 0 || env.LYRICS_CACHE_MODE === "off") throw new Error("Lyrics cache unavailable");
               console.warn("Lyrics cache response unavailable; bypassing once");
-              const purge = Promise.resolve().then(() => origin.purgeTrack(trackId))
-                .catch(() => console.warn("Lyrics cache purge failed"));
-              keepAlive(ctx, purge);
+              if (corruptHit) {
+                const purge = Promise.resolve().then(() => origin.purgeEntry(normalized.identity))
+                  .catch(() => console.warn("Lyrics cache purge failed"));
+                keepAlive(ctx, purge);
+              }
             }
           }
         } finally { scope.Destroy(); }

@@ -36,7 +36,7 @@ export type OriginEnvelope = CacheIdentity & {
 };
 export type OriginBinding = {
   fetch(request: Request, init?: { cache?: "no-store" }): Promise<Response>;
-  purgeTrack(trackId: string): Promise<unknown>;
+  purgeEntry(identity: CacheIdentity): Promise<unknown>;
 };
 export class LyricsCacheError extends Error {
   constructor() { super("Invalid lyrics cache response"); }
@@ -59,8 +59,11 @@ function normalizeMetadata(trackId: string, metadata?: TrackMetadata): TrackMeta
   if (metadata.id !== trackId || typeof metadata.name !== "string" || !Array.isArray(metadata.artists)
     || !metadata.artists.every(artist => typeof artist === "string")) throw new LyricsCacheError();
   const name = metadata.name.trim(), artists = metadata.artists.map(artist => artist.trim()).filter(Boolean);
+  if (name.length > 500 || artists.length > 30 || artists.some(artist => artist.length > 300)
+    || new TextEncoder().encode(JSON.stringify(metadata)).length > 14_000) throw new LyricsCacheError();
   if (!name || !artists.length) return undefined;
   const result: TrackMetadata = { id: trackId, name, artists };
+  if (metadata.lookup === "apple") result.lookup = "apple";
   for (const key of ["album", "isrc"] as const) {
     if (typeof metadata[key] === "string" && metadata[key].trim()) result[key] = metadata[key].trim();
   }
@@ -75,6 +78,7 @@ function normalizeMetadata(trackId: string, metadata?: TrackMetadata): TrackMeta
   return result;
 }
 function normalizeBlocks(blocks: readonly SourceBlock[]): SourceBlock[] {
+  if (blocks.length > 300) throw new LyricsCacheError();
   const values = new Map<string, SourceBlock>();
   for (const block of blocks) {
     if (!block || typeof block.provider !== "string" || !/^[a-z0-9._-]{1,50}$/.test(block.provider)
@@ -89,18 +93,18 @@ export async function cacheIdentity(trackId: string, metadata: TrackMetadata | u
   const track = normalizeMetadata(trackId, metadata);
   const sourceBlocks = normalizeBlocks(blocks);
   const canonical = track ? [track.name, track.artists, track.album ?? null, track.durationSeconds ?? null,
-    track.isrc ?? null, track.appleMusicId ?? null, track.appleMusicTitle ?? null] : null;
+    track.isrc ?? null, track.appleMusicId ?? null, track.appleMusicTitle ?? null, track.lookup ?? null] : null;
   const [metadataHash, policyHash] = await Promise.all([sha256(JSON.stringify(canonical)), sha256(JSON.stringify(sourceBlocks))]);
   return { identity: { trackId, metadataHash, policyHash }, metadata: track, sourceBlocks };
 }
 
 function encodeContext(value: OriginContext): string {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
-  if (bytes.length > 48_000) throw new LyricsCacheError();
+  if (bytes.length > 16_000) throw new LyricsCacheError();
   return btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join(""));
 }
 function decodeContext(value: string | null): OriginContext {
-  if (!value || value.length > 64_000) throw new LyricsCacheError();
+  if (!value || value.length > 21_336) throw new LyricsCacheError();
   try {
     return JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(Uint8Array.from(atob(value), char => char.charCodeAt(0))));
   } catch { throw new LyricsCacheError(); }
@@ -131,6 +135,8 @@ export async function readOriginRequest(request: Request): Promise<OriginInput> 
   if (context.clientContext && (typeof context.clientContext !== "object"
     || (context.clientContext.appPlatform !== undefined && typeof context.clientContext.appPlatform !== "string")
     || (context.clientContext.appVersion !== undefined && typeof context.clientContext.appVersion !== "string"))) throw new LyricsCacheError();
+  if (context.clientContext?.appPlatform && !/^[a-z0-9_-]{1,64}$/i.test(context.clientContext.appPlatform)
+    || context.clientContext?.appVersion && !/^[a-z0-9._+-]{1,64}$/i.test(context.clientContext.appVersion)) throw new LyricsCacheError();
   const normalized = await cacheIdentity(match[1]!, context.metadata, context.sourceBlocks);
   if (normalized.identity.metadataHash !== match[2] || normalized.identity.policyHash !== match[3]) throw new LyricsCacheError();
   return { ...normalized.identity, sourceBlocks: normalized.sourceBlocks, deadline: context.deadline,
@@ -173,7 +179,8 @@ export function isCacheableLyrics(value: unknown): value is BeautifulLyrics {
 export async function readOriginResponse(response: Response, identity: CacheIdentity,
   blocks: readonly SourceBlock[], now = Date.now()): Promise<OriginEnvelope> {
   let entry: OriginEnvelope;
-  try { entry = await response.json() as OriginEnvelope; } catch { throw new LyricsCacheError(); }
+  try { entry = await response.json() as OriginEnvelope; }
+  catch (error) { if (error instanceof SyntaxError) throw new LyricsCacheError(); throw error; }
   if (!entry || entry.schema !== lyricsCacheVersion || entry.trackId !== identity.trackId
     || entry.metadataHash !== identity.metadataHash || entry.policyHash !== identity.policyHash
     || !uuidPattern.test(entry.originRunId) || !Number.isFinite(entry.generatedAt)) throw new LyricsCacheError();

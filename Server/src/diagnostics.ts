@@ -52,6 +52,7 @@ export function logLyricsQuery(record: RequestDiagnostics, lyricsType?: Beautifu
       blockAction: attempt.blockAction,
       matches: attempt.matches?.slice(0, 3).map(match => ({ id: match.TrackId ?? match.LyricsId, title: brief(match.MatchedTitle) })),
       requests: attempt.upstream.map(upstream => ({
+        reused: upstream.reused,
         endpoint: upstream.endpoint.split("?")[0]?.slice(0, 300),
         operation: upstream.operation,
         status: upstream.status,

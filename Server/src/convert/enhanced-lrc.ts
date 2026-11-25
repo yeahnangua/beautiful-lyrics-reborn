@@ -20,7 +20,8 @@ function normalizeWordText(value: string): string {
 }
 
 function parseEnhancedLine(rawLine: string): Omit<EnhancedLrcLine, "words"> & { timedParts: Array<{ time: number; text: string }> } | undefined {
-  const lineMatch = lineTimestampPattern.exec(rawLine.trim());
+  rawLine = rawLine.trim();
+  const lineMatch = lineTimestampPattern.exec(rawLine);
   if (lineMatch === null) {
     return undefined;
   }
@@ -70,7 +71,8 @@ export function convertEnhancedLrcToSyllableLyrics(
 
   const lines: EnhancedLrcLine[] = parsedLines.map((line, lineIndex) => {
     const nextLine = parsedLines[lineIndex + 1];
-    const fallbackEndTime = durationSeconds ?? line.lineTime + 5;
+    const lastStart = line.timedParts.at(-1)?.time ?? line.lineTime;
+    const fallbackEndTime = durationSeconds !== undefined && durationSeconds > lastStart ? durationSeconds : lastStart + 5;
     const lineEndTime = Math.max(line.lineTime, nextLine?.lineTime ?? fallbackEndTime);
     const words = line.timedParts
       .map((part, partIndex) => {

@@ -1,4 +1,4 @@
-import OpenCC from "opencc-js";
+import { simplifyChinese } from "../text-normalization";
 import { convertLrcRedTtml } from "../convert/lrcred-ttml";
 import { convertLrcToLineLyrics, parseLrcTimestamp } from "../convert/lrc";
 import { convertEnhancedLrcToSyllableLyrics } from "../convert/enhanced-lrc";
@@ -12,7 +12,7 @@ export type UnisonProvider = {
 };
 
 const baseUrl = "https://unison.betterlyrics.org";
-const simplify = OpenCC.Converter({ from: "tw", to: "cn" });
+const simplify = simplifyChinese;
 const normalized = (value: string) => simplify(value).normalize("NFKD").toLowerCase().replace(/[\p{M}\p{P}\p{Z}\s]/gu, "");
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 const validDuration = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value > 0;
@@ -98,7 +98,7 @@ function retryAfter(response: Response): number {
   const raw = response.headers.get("Retry-After");
   const seconds = raw && /^\d+(?:\.\d+)?$/.test(raw) ? Number(raw) : undefined;
   const until = seconds === undefined ? raw ? Date.parse(raw) : NaN : Date.now() + seconds * 1000;
-  return Number.isFinite(until) ? Math.max(Date.now() + 1000, until) : Date.now() + 30_000;
+  return Number.isFinite(until) ? Math.min(Date.now() + 3_600_000, Math.max(Date.now() + 1000, until)) : Date.now() + 30_000;
 }
 
 type Cached = { etag: string; lyrics: BeautifulLyrics; expiresAt: number; bytes: number; linked: boolean };

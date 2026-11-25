@@ -133,7 +133,7 @@ Deploy to Cloudflare Workers:
 ```bash
 cd Server
 npx wrangler login
-npx wrangler deploy
+node Tasks/Deploy.mjs
 ```
 
 The default `wrangler.toml` binds the Worker to `lyrics.txw.qzz.io`.

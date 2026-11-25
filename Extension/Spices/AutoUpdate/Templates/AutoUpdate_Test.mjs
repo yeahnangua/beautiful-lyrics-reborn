@@ -1,4 +1,5 @@
 // Define our port
+const Session = "__DEV_SESSION__"
 const Port = -1 // This is replaced by the build-script
 
 // Wait for Spicetify/Snackbar to load
@@ -51,13 +52,13 @@ const UpdateVersion = (toVersion) => {
 	{
 		activeStyling = document.createElement("link")
 		activeStyling.rel = "stylesheet"
-		activeStyling.href = `http://localhost:${Port}/bundle@${toVersion}.css`
+		activeStyling.href = `http://localhost:${Port}/bundle@${toVersion}.css?session=${Session}`
 		document.body.appendChild(activeStyling)
 	}
 
 	// Handle importing process
 	{
-		import(`http://localhost:${Port}/bundle@${toVersion}.mjs`)
+		import(`http://localhost:${Port}/bundle@${toVersion}.mjs?session=${Session}`)
 		.then(
 			module => {
 				// Handle our module
@@ -69,12 +70,7 @@ const UpdateVersion = (toVersion) => {
 						Spicetify.Snackbar.enqueueSnackbar(
 							Spicetify.React.createElement(
 								"div",
-								{
-									dangerouslySetInnerHTML: {
-										__html: `<h3>${module.UpdateNotice.Name} Updated!</h3>
-										<span style = 'opacity: 0.75;'>Version ${fromVersion} -> ${toVersion}</span>`.trim()
-									}
-								}
+								null, `${module.UpdateNotice.Name} updated: ${fromVersion} → ${toVersion}`
 							), {
 								variant: "success",
 								autoHideDuration: 5000
@@ -97,7 +93,7 @@ const UpdateVersion = (toVersion) => {
 
 // Now handle receiving our version updates
 {
-	const webSocket = new WebSocket(`ws://localhost:${Port}/ws`)
+	const webSocket = new WebSocket(`ws://localhost:${Port}/ws?session=${Session}`)
 	webSocket.onmessage = event => UpdateVersion(parseInt(event.data))
 	webSocket.onclose = () => console.log("STOPPED AUTO-UPDATING!")
 	webSocket.onopen = () => webSocket.send("")

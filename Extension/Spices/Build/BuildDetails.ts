@@ -13,7 +13,7 @@ if (BuildName.match(/^[\w_-]+$/) === null) {
 	throw new Error(`Invalid Build-Name (${BuildName})`)
 }
 export const SpicetifyEntryPoint: string = `${BuildName}.mjs`
-export const SpicetifyEntryPointPath: string = join(await GetSpicetifyExtensionsDirectory(), SpicetifyEntryPoint)
+export const GetSpicetifyEntryPointPath = async (): Promise<string> => join(await GetSpicetifyExtensionsDirectory(), SpicetifyEntryPoint)
 
 export const BuildVersion: string = buildJSON.Version
 if (BuildVersion.match(/^\d+\.\d+\.\d+$/) === null) {

@@ -1,3 +1,4 @@
+import { ReadTestAsset } from "./ServeTest.ts"
 // Standard imports
 import { parseArgs } from "jsr:@std/cli@0.223.0"
 import { exists } from "jsr:@std/fs@0.223.0"
@@ -11,7 +12,7 @@ import { keypress, type KeyPressEvent } from "jsr:@codemonument/cliffy@1.0.0-rc.
 import { ToggleExtension, Apply, RemoveExtension } from "../Spicetify/Terminal.ts"
 
 // Build Imports
-import { SpicetifyEntryPoint, SpicetifyEntryPointPath } from "../Build/BuildDetails.ts"
+import { SpicetifyEntryPoint, GetSpicetifyEntryPointPath } from "../Build/BuildDetails.ts"
 import Bundle from "../Build/Bundle.ts"
 
 // Web-Module Imports
@@ -20,6 +21,8 @@ import { Signal } from "@Universal/Modules/Signal.ts"
 // Return our function which is really just used to handle custom port definition
 export default async function() {
 	// Validate our options
+	const sessionToken = crypto.randomUUID()
+	const SpicetifyEntryPointPath = await GetSpicetifyEntryPointPath()
 	const options = parseArgs<{port: number}>(Deno.args)
 	if (options.port === undefined) {
 		throw new Error("You must specify a port to Test with (--port=X).")
@@ -118,7 +121,9 @@ export default async function() {
 
 	// Deno's native server handles WebSocket upgrades in the test runtime.
 	const HandleRequest = async (request: Request): Promise<Response> => {
-		const pathname = new URL(request.url).pathname
+		const url = new URL(request.url)
+		if (url.searchParams.get("session") !== sessionToken) return new Response("Forbidden", {status:403})
+		const pathname = url.pathname
 		if (pathname === "/ws") {
 			if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
 				return new Response("Needs to be a WebSocket connection.", { status: 400 })
@@ -132,16 +137,7 @@ export default async function() {
 			return response
 		}
 
-		const fullPath = join("./Builds/Test", pathname.slice(1))
-		if (!(await exists(fullPath, { isFile: true }))) {
-			return new Response("Not Found", { status: 404, headers: { "Access-Control-Allow-Origin": "*" } })
-		}
-
-		const contentType = (extname(fullPath) === ".css") ? "text/css"
-			: (extname(fullPath) === ".mjs") ? "text/javascript" : "text/plain"
-		return new Response(await Deno.readTextFile(fullPath), {
-			headers: { "Access-Control-Allow-Origin": "*", "Content-Type": contentType }
-		})
+		return ReadTestAsset(request, "./Builds/Test", sessionToken)
 	}
 
 	// Handle creating our auto-update entry-point
@@ -164,7 +160,7 @@ export default async function() {
 		// Now create our new file with the placeholder port updated to the actual port 
 		await Deno.writeTextFile(
 			SpicetifyEntryPointPath,
-			autoUpdateTemplate.replace("-1", options.port.toString())
+			autoUpdateTemplate.replace("-1", options.port.toString()).replace("__DEV_SESSION__", sessionToken)
 		)
 
 		// Apply the extension

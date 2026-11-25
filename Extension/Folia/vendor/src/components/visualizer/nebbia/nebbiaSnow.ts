@@ -201,4 +201,3 @@ export class NebbiaSnow {
         return [this.inst, count + more];
     }
 }
-

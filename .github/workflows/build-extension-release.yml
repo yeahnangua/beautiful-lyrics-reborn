@@ -52,42 +52,36 @@ jobs:
         working-directory: Extension/Folia
         run: npm ci
 
-      - name: Stub Spicetify for CI build
-        run: |
-          mkdir -p "$RUNNER_TEMP/bin"
-          cat > "$RUNNER_TEMP/bin/spicetify" <<'SH'
-          #!/usr/bin/env sh
-          if [ "$1" = "-c" ]; then
-            echo "$RUNNER_TEMP/spicetify/config-xpui.ini"
-            exit 0
-          fi
-
-          echo "spicetify stub only supports -c during CI builds" >&2
-          exit 1
-          SH
-          chmod +x "$RUNNER_TEMP/bin/spicetify"
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-
       - name: Build release bundle
         working-directory: Extension
-        run: deno task release
+        run: |
+          node Tasks/PrepareRelease.mjs
+          deno task release
 
       - name: Remove old release bundles
-        run: node Extension/Tasks/PruneRelease.mjs
+        run: |
+          if git show-ref --verify --quiet refs/remotes/origin/releases; then
+            RELEASE_HISTORY_REF=origin/releases node Extension/Tasks/PruneRelease.mjs
+          else
+            node Extension/Tasks/PruneRelease.mjs
+          fi
 
       - name: Typecheck extension
         working-directory: Extension
-        run: deno check Source/main.ts Spices/Build/Bundle.ts
+        run: deno check Source/main.ts Source/Modules/FullscreenRuntimeOnline.ts Spices/Build/Bundle.ts Tasks/*.ts
 
       - name: Test extension runtime and loader
-        run: node --test Extension/Tests/*.test.mjs
+        run: |
+          node --test Extension/Tests/*.test.mjs
+          cd Extension
+          deno test --allow-read --allow-write Tests/DebugServer.test.ts
 
       - name: Typecheck and test Folia visualizers
         working-directory: Extension/Folia
         run: |
           npm run typecheck
           npx playwright install --with-deps chromium
-          npm run test:ui -- --grep-invert 'fullscreen\.spec\.ts'
+          npm run test:ui
 
       - name: Test Worker
         working-directory: Server
@@ -106,35 +100,11 @@ jobs:
           LYRICS_AUTH_COMPATIBILITY_VERIFIED: ${{ vars.LYRICS_AUTH_COMPATIBILITY_VERIFIED }}
         run: node Tasks/CheckLyricsAuth.mjs
 
-      - name: Commit release bundle
+      - name: Stage, verify and publish release
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        run: |
-          git add Extension/Builds/Release
-          if git diff --cached --quiet; then
-            echo "Release bundle is already up to date."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "build: update extension release bundle"
-          git push
-
-      - name: Publish Worker and immutable release assets
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        working-directory: Server
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           FEEDBACK_DATABASE_ID: ${{ secrets.FEEDBACK_DATABASE_ID }}
           LYRICS_AUTH_COMPATIBILITY_VERIFIED: ${{ vars.LYRICS_AUTH_COMPATIBILITY_VERIFIED }}
-        run: |
-          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
-            echo "::error::Configure CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID to publish the update pointer and assets."
-            exit 1
-          fi
-          node Tasks/Deploy.mjs
-
-      - name: Verify published release
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        run: node Extension/Tasks/VerifyPublishedRelease.mjs
+        run: node Extension/Tasks/PublishRelease.mjs

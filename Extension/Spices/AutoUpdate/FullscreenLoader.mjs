@@ -1,10 +1,10 @@
 // No cache or network work happens until load() is called by a fullscreen entry.
 export function createFullscreenLoader(release, runtime = globalThis) {
   let module, pending, pendingSignal;
-  const origins = ["https://lyrics.txw.qzz.io/extension/", "https://lyrics.20050129.xyz/extension/"];
-  const cdn = "https://cdn.jsdelivr.net/gh/yeahnangua/beautiful-lyrics-reborn@main/Extension/Builds/Release/";
+  const origins = ["https://lyrics.txw.qzz.io/Release/", "https://lyrics.20050129.xyz/Release/"];
+  const cdn = "https://cdn.jsdelivr.net/gh/yeahnangua/beautiful-lyrics-reborn@releases/Extension/Builds/Release/";
   const cacheKey = origins[0] + release.file;
-  const valid = () => release.api === 1 && /^[a-f0-9]{64}$/.test(release.sha256)
+  const valid = () => [1, 2].includes(release.api) && /^[a-f0-9]{64}$/.test(release.sha256)
     && release.file === `beautiful-lyrics-reborn-fullscreen.${release.sha256.slice(0, 16)}.mjs`;
   const verified = async bytes => {
     const digest = await runtime.crypto.subtle.digest("SHA-256", bytes);
@@ -27,7 +27,7 @@ export function createFullscreenLoader(release, runtime = globalThis) {
     try {
       return await Promise.race([aborted, (async () => {
         signal.throwIfAborted();
-        const response = await runtime.fetch(origin + release.file, { signal, headers: { "User-Agent": "beautiful-lyrics-reborn" } });
+        const response = await runtime.fetch(origin + release.file, { signal });
         if (!response.ok) throw Error("Fullscreen download failed");
         const bytes = await verified(await response.arrayBuffer());
         signal.throwIfAborted();

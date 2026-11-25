@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { createHash, webcrypto } from "node:crypto";
 import { startReleaseLoader } from "../Spices/AutoUpdate/ReleaseLoader.mjs";
 
-const worker = "https://lyrics.txw.qzz.io/extension/";
+const worker = "https://lyrics.txw.qzz.io/Release/";
 const pointer = "https://lyrics.txw.qzz.io/Release/latest.json";
-const domestic = "https://lyrics.20050129.xyz/extension/";
-const cdn = "https://cdn.jsdelivr.net/gh/yeahnangua/beautiful-lyrics-reborn@main/Extension/Builds/Release/";
+const domestic = "https://lyrics.20050129.xyz/Release/";
+const cdn = "https://cdn.jsdelivr.net/gh/yeahnangua/beautiful-lyrics-reborn@releases/Extension/Builds/Release/";
 const deferred = () => {
   let resolve;
   const promise = new Promise(done => { resolve = done; });
@@ -58,7 +58,7 @@ test("loads latest once and keeps one update notice visible until its close butt
   // The static pointer only answers GET, so its request must not need a preflight.
   assert.equal(f.calls[0].url, pointer);
   assert.equal(f.calls[0].options.headers, undefined);
-  assert.ok(f.calls.slice(1).every(call => call.options.headers["User-Agent"] === "beautiful-lyrics-reborn"));
+  assert.ok(f.calls.slice(1).every(call => !call.options.headers?.["User-Agent"]));
   assert.deepEqual(f.calls.filter(call => call.url.endsWith("latest.json")).map(call => call.url), [pointer]);
   f.runtime.fetch = async () => Response.json(f.old); // Rollback is also an update.
   await f.tick(); await f.tick();
@@ -98,14 +98,14 @@ test("a stale loader uses last successful release when pointer is unavailable", 
   assert.equal(f.runtime.__beautifulLyricsRebornLoader.build, f.fresh.sha256);
 });
 
-test("falls back to the Worker pointer when the static pointer is unavailable", async () => {
+test("falls back to the domestic pointer when the static pointer is unavailable", async () => {
   const f = fixture();
   const fetcher = f.runtime.fetch;
   f.runtime.fetch = async (url, options) => url === pointer ? (f.calls.push({ url, options }), new Response("Missing", { status: 404 })) : fetcher(url, options);
   await startReleaseLoader(f.old, f.runtime);
   assert.equal(f.runtime.__beautifulLyricsRebornLoader.build, f.fresh.sha256);
-  assert.deepEqual(f.calls.slice(0, 2).map(call => call.url), [pointer, `${worker}latest.json`]);
-  assert.equal(f.calls[1].options.headers["User-Agent"], "beautiful-lyrics-reborn");
+  assert.deepEqual(f.calls.slice(0, 2).map(call => call.url), [pointer, `${domestic}latest.json`]);
+  assert.equal(f.calls[1].options.headers, undefined);
 });
 
 test("existing schema-one loader accepts a split release without requesting its fullscreen runtime", async () => {

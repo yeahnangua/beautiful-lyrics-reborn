@@ -46,7 +46,7 @@ export default async (bundleConfiguration: BundleConfiguration = {}): Promise<un
   // Compile Folia's TSX, image globs and isolated Tailwind before esbuild embeds it.
   if (!bundleConfiguration.FullscreenRelease) {
   const foliaBuild = new Deno.Command("node", {
-    args: [resolve(Deno.cwd(), "Folia/build.mjs")], stdout: "inherit", stderr: "inherit",
+    args: [resolve(Deno.cwd(), "Folia/build.mjs")], env: { FOLIA_INLINE_ASSETS: "1" }, stdout: "inherit", stderr: "inherit",
   }).spawn()
   if (!(await foliaBuild.status).success) throw new Error("Folia build failed. Run npm ci in Extension/Folia first.")
   }
@@ -82,6 +82,7 @@ export default async (bundleConfiguration: BundleConfiguration = {}): Promise<un
 	})
 
 	{
+		const resolverIndex = plugins.length
 		plugins.push(...denoPlugins({ configPath: resolve(Deno.cwd(), "./deno.json") }))
 
 		const postCSSProcessor = PostCSS(
@@ -92,7 +93,7 @@ export default async (bundleConfiguration: BundleConfiguration = {}): Promise<un
 		)
 		const absoluteSourcePath = resolve("./Source")
 		plugins.splice(
-			1, 0,
+			resolverIndex, 0,
 			{
 				name: SCSSInlineStyleNamespace,
 				setup(build) {

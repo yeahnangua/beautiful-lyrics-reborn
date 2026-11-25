@@ -1,48 +1,32 @@
-// Run from any directory after deploying; an optional origin supports local smoke tests.
-import { readFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
-import assert from "node:assert/strict";
-
-const base = new URL("/extension/", process.argv[2] ?? "https://beautiful-lyrics-reborn-server.1135746060.workers.dev");
-const expected = JSON.parse(await readFile(new URL("../Builds/Release/latest.json", import.meta.url), "utf8"));
-async function verify() {
-  const pointer = await fetch(new URL("latest.json", base), { cache: "no-store", signal: AbortSignal.timeout(20000) });
-  if (pointer.status !== 200) {
-    const detail = (await pointer.text()).slice(0, 300).replace(/\s+/g, " ");
-    throw new Error(`Update endpoint HTTP ${pointer.status}; cf-ray=${pointer.headers.get("cf-ray")}; cf-mitigated=${pointer.headers.get("cf-mitigated")}; ${detail}`);
-  }
-  assert.equal(pointer.headers.get("cache-control"), "no-store");
-  assert.equal(pointer.headers.get("access-control-allow-origin"), "*");
-  assert.deepEqual(await pointer.json(), expected, "Live pointer must match this build");
-  // The loader polls this copy; it is served by static assets without the Worker.
-  const direct = await fetch(new URL("/Release/latest.json", base), { cache: "no-store", signal: AbortSignal.timeout(20000) });
-  assert.equal(direct.status, 200);
-  assert.equal(direct.headers.get("cache-control"), "no-store");
-  assert.equal(direct.headers.get("access-control-allow-origin"), "*");
-  assert.deepEqual(await direct.json(), expected, "Static pointer must match this build");
-  const payload = await fetch(new URL(expected.file, base), { signal: AbortSignal.timeout(30000) });
-  assert.equal(payload.status, 200);
-  assert.match(payload.headers.get("content-type"), /javascript/);
-  assert.match(payload.headers.get("cache-control"), /immutable/);
-  assert.equal(createHash("sha256").update(Buffer.from(await payload.arrayBuffer())).digest("hex"), expected.sha256);
-  if (expected.fullscreen) {
-    const runtime = await fetch(new URL(expected.fullscreen.file, base), { signal: AbortSignal.timeout(60000) });
-    assert.equal(runtime.status, 200);
-    assert.match(runtime.headers.get('content-type'), /javascript/);
-    assert.match(runtime.headers.get('cache-control'), /immutable/);
-    assert.equal(createHash('sha256').update(Buffer.from(await runtime.arrayBuffer())).digest('hex'), expected.fullscreen.sha256);
-  }
-  console.log(`Verified published release ${expected.version} (${expected.sha256.slice(0, 16)})`);
+import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import assert from 'node:assert/strict';
+const args=process.argv.slice(2),assetsOnly=args.includes('--assets-only'),cdnOnly=args.includes('--cdn-only');
+const expectedPath=args.includes('--expected')?args[args.indexOf('--expected')+1]:new URL('../Builds/Release/latest.json',import.meta.url);
+const expected=JSON.parse(await readFile(expectedPath,'utf8'));
+const local=args.find(arg=>/^https?:/.test(arg));
+const hosts=local?[local]:['https://beautiful-lyrics-reborn-server.1135746060.workers.dev','https://lyrics.txw.qzz.io','https://lyrics.20050129.xyz'];
+const cdn='https://cdn.jsdelivr.net/gh/yeahnangua/beautiful-lyrics-reborn@releases/Extension/Builds/Release/';
+async function get(url){const response=await fetch(url,{cache:'no-store',signal:AbortSignal.timeout(60000)});assert.equal(response.status,200,'HTTP status '+url);return response}
+async function payload(base,item){
+ const response=await get(new URL(item.file,base));
+ assert.match(response.headers.get('content-type')??'',item.file.endsWith('.json')?/json/:/javascript/);
+ if(!cdnOnly){assert.match(response.headers.get('cache-control')??'',/immutable/);assert.equal(response.headers.get('access-control-allow-origin'),'*')}
+ assert.equal(createHash('sha256').update(Buffer.from(await response.arrayBuffer())).digest('hex'),item.sha256,'Checksum '+item.file);
 }
-
-// Allow a short deployment propagation window, but never accept a stale release.
-for (let attempt = 1; attempt <= 4; attempt++) {
-  try {
-    await verify();
-    break;
-  } catch (error) {
-    if (attempt === 4) throw error;
-    console.warn(`Verification attempt ${attempt} failed: ${error.message}`);
-    await new Promise(resolve => setTimeout(resolve, 5000));
+async function verify(){
+ const files=[expected,expected.fullscreen,...Object.values(expected.fullscreen?.assets??{})].filter(Boolean);
+ if(cdnOnly){for(const item of files)await payload(cdn,item);return}
+ for(const host of hosts){
+  for(const prefix of ['/Release/','/extension/']){
+   const base=new URL(prefix,host);
+   if(!assetsOnly){const pointer=await get(new URL('latest.json',base));assert.equal(pointer.headers.get('cache-control'),'no-store');assert.equal(pointer.headers.get('access-control-allow-origin'),'*');assert.deepEqual(await pointer.json(),expected)}
+   for(const item of files){if(prefix==='/extension/'&&item.file.endsWith('.json'))continue;await payload(base,item)}
   }
+  if(!assetsOnly){const loader=await get(new URL('/Release/beautiful-lyrics-reborn.mjs',host));assert.equal(loader.headers.get('cache-control'),'no-store');assert.equal(loader.headers.get('access-control-allow-origin'),'*');assert.match(loader.headers.get('content-type')??'',/javascript/);await loader.body?.cancel()}
+ }
+}
+for(let attempt=0;;attempt++){
+ try{await verify();console.log('Verified release '+expected.version+' '+expected.sha256.slice(0,16));break}
+ catch(error){if(attempt===3)throw error;console.warn(error.message);await new Promise(resolve=>setTimeout(resolve,5000))}
 }

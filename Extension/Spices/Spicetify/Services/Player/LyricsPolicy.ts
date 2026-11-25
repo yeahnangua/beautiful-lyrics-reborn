@@ -12,10 +12,14 @@ export const IsCachedLyricsBlocked = (lyrics: CachedLyrics, blocks: readonly Sou
 )
 
 // Query only when reusing a local response; fresh lyrics are already filtered by the Worker.
+const pendingPolicies = new Map<string, Promise<SourceBlock[]>>()
 export const ShouldRefreshCachedLyrics = async (spotifyId: string, lyrics: CachedLyrics, parent: AbortSignal): Promise<boolean> => {
-  const scope = CreateAbortScope(2000, parent)
+  parent.throwIfAborted()
+  const scope = CreateAbortScope(2000)
   try {
-    const blocks = await Abortable(scope.Signal, async () => {
+    let pending = pendingPolicies.get(spotifyId)
+    if (!pending) {
+      pending = Abortable(scope.Signal, async () => {
       const response = await fetch(`https://lyrics.txw.qzz.io/lyrics-policy/${encodeURIComponent(spotifyId)}`, {
         cache: "no-store", signal: scope.Signal
       })
@@ -27,13 +31,17 @@ export const ShouldRefreshCachedLyrics = async (spotifyId: string, lyrics: Cache
         return typeof item.provider === "string" && ["Syllable", "Line", "Static"].includes(item.lyricsType)
       })) throw new Error("Invalid source policy")
       return payload.blocks as SourceBlock[]
-    })
+      }).finally(() => { pendingPolicies.delete(spotifyId); scope.Destroy() })
+      pendingPolicies.set(spotifyId, pending)
+      void pending.catch(() => {})
+    }
+    const blocks = await Abortable(parent, () => pending!)
     return IsCachedLyricsBlocked(lyrics, blocks)
   } catch {
     // Preserve offline playback and compatibility with older servers.
     return false
   } finally {
-    scope.Destroy()
+    if (!pendingPolicies.has(spotifyId)) scope.Destroy()
     parent.throwIfAborted()
   }
 }

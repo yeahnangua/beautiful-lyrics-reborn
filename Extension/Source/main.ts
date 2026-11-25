@@ -65,7 +65,7 @@ const Load = async () => {
 				font.load().then(font => document.fonts.add(font))
 			)
 		}
-		await Promise.allSettled(fontPromises)
+			void Promise.allSettled(fontPromises).then(() => globalThis.dispatchEvent(new Event("resize")))
 	}
 
 	await OnSpotifyReady
@@ -247,9 +247,6 @@ const Load = async () => {
 	{ // Handle our Debugging (gives Linux an opportunity to get this information)
 		const OnGetSpotifyAndSpicetifyInformation = () => {
 			SpotifyInternalFetch.get("sp://desktop/v1/version")
-			.catch(
-				(error) => ShowNotification(`Failed to Copy Spotify/Spicetify Information (${error})`, "error", 10)
-			)
 			.then(
 				(
 					response: {
@@ -272,18 +269,14 @@ const Load = async () => {
 						Spicetify Custom Apps: [${Spotify.Config.custom_apps.join(", ")}]
 					`.trim().replace(/\t/g, "")
 					{
-						navigator.clipboard.writeText(informationFormat)
-						.catch(
-							(error) => ShowNotification(`Failed to Copy Spotify/Spicetify Information (${error})`, "error", 10)
-						)
+							return navigator.clipboard.writeText(informationFormat)
 						.then(
 							() => ShowNotification("Copied Spotify/Spicetify Information", "success", 5)
 						)
 					}
-				}
-			)
-			
-		}
+					}
+				).catch(error => ShowNotification(`Failed to copy information (${error})`, "error", 10))
+			}
 		bindKeyCombo("shift+b+l>i", OnGetSpotifyAndSpicetifyInformation)
 		GlobalMaid.Give(() => unbindKeyCombo("shift+b+l>i", OnGetSpotifyAndSpicetifyInformation))
 	

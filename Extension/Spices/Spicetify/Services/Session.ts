@@ -168,19 +168,16 @@ export const SpotifyFetch = (url: string): Promise<Response> => {
 	)
 }
 
-// Easy way to show a custom HTML notification
+// Notifications are plain text, including errors supplied by upstream services.
 export const ShowNotification = (
-	html: string, variant: ("info" | "success" | "warning" | "error" | "default"),
+	text: string, variant: ("info" | "success" | "warning" | "error" | "default"),
 	hideAfter: number
 ): void => {
 	SpotifySnackbar.enqueueSnackbar(
 		Spotify.React.createElement(
 			"div",
-			{
-				dangerouslySetInnerHTML: {
-					__html: html.trim()
-				}
-			}
+			null,
+			text.trim()
 		), {
 			variant: variant,
 			autoHideDuration: (hideAfter * 1000)

@@ -28,8 +28,8 @@ const AutoScrollingStopsAfter = (1 / 30) // Determines how long after the last a
 // Helper Method
 const GetTotalElementHeight = (element: HTMLElement): number => {
 	const style = globalThis.getComputedStyle(element)
-	const marginTop = parseFloat(style.marginTop)
-	const marginBottom = parseFloat(style.marginBottom)
+	const marginTop = parseFloat(style.marginTop) || 0
+	const marginBottom = parseFloat(style.marginBottom) || 0
 
 	return (element.offsetHeight + marginTop + marginBottom)
 }
@@ -92,6 +92,10 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 			)
 		)
 		resizeObserver.observe(this.ScrollContainer)
+		resizeObserver.observe(this.LyricsContainer)
+		const remeasure = () => { this.UpdateLyricHeights(); if (this.LyricsAreSynced) this.MoveToActiveLyrics() }
+		globalThis.addEventListener("resize", remeasure)
+		this.Maid.Give(() => globalThis.removeEventListener("resize", remeasure))
 
 		// Immediately update our heights
 		this.UpdateLyricHeights()
@@ -161,6 +165,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 	}
 
 	private UpdateLyricHeights() {
+		if (!this.ScrollContainer.isConnected || this.ScrollContainer.offsetHeight === 0) return
 		// Clear our heights
 		this.GroupDimensions = []
 
@@ -229,6 +234,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 	}
 
 	private MoveToActiveLyrics(redetermineBlur?: true) {
+		if (!this.ScrollContainer.isConnected || this.ScrollContainer.offsetHeight === 0 || this.GroupDimensions.length !== this.VocalGroups.length) return
 		// We can't move to any active-lyrics if we aren't synced
 		if (this.LyricsAreSynced === false) {
 			return
@@ -246,12 +252,12 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 
 		// Grab the margin that the lyrics-container adds at the top (this affects our scroll-position)
 		const lyricsContainerStyle = globalThis.getComputedStyle(this.LyricsContainer)
-		const lyricsContainerMarginTop = parseInt(lyricsContainerStyle.marginTop!)
+		const lyricsContainerMarginTop = parseFloat(lyricsContainerStyle.marginTop!) || 0
 		
 		// Check if we have an offset defined
 		const offset = (
 			(lyricsContainerStyle.getPropertyValue("--use-offset") === "1")
-			? parseInt(lyricsContainerStyle.lineHeight!)
+			? (parseFloat(lyricsContainerStyle.lineHeight!) || 0)
 			: 0
 		)
 
@@ -315,7 +321,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 			// Now if we are not blocked we can proceed
 			if (this.AutoScrollBlocked === false) {
 				// Set our scroll to the distance from the minimum
-				scrollY = ((center - viewportCenter) + lyricsContainerMarginTop + offset)
+				scrollY = ((center - viewportCenter) + lyricsContainerMarginTop)
 			}
 		} else if (currentScrollTop > 0) {
 			scrollY = 0
@@ -328,8 +334,12 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 	}
 
 	private ScrollTo(yPosition: number) {
+		if (!Number.isFinite(yPosition)) return
+		const target = Math.max(0, Math.min(yPosition, this.ScrollerObject.scrollHeight - this.ScrollerObject.clientHeight))
+		if (Math.abs(this.ScrollerObject.scrollTop - target) < 0.5) { this.AutoScrolling = false; return }
 		this.AutoScrolling = true
-		this.ScrollerObject.scrollTop = yPosition
+		this.ScrollerObject.scrollTop = target
+		this.Maid.Give(Timeout(AutoScrollingStopsAfter, () => this.AutoScrolling = false), "WaitForAutoScroll")
 		this.Scroller.scrollY()
 	}
 

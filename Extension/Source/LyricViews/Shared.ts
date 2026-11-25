@@ -2,7 +2,7 @@
 import seedrandom from "npm:seedrandom"
 
 // JSR
-import * as THREE from "jsr:@3d/three"
+import { BackgroundRenderer } from "./BackgroundRenderer.ts"
 
 // Web-Modules
 import { Signal } from "@Universal/Modules/Signal.ts"
@@ -16,11 +16,7 @@ import {
 	SongContext, SongContextChanged
 } from "@Spices/Spicetify/Services/Player/mod.ts"
 
-// Shaders
-import {
-	GetShaderUniforms, type ShaderUniforms,
-	VertexShader, FragmentShader
-} from "./Shaders.ts"
+
 
 // Our store
 export const Store = GetInstantStore<
@@ -77,7 +73,7 @@ export const GetCoverArtForSong = (): [string, (number | undefined)] => {
 	)
 	if (coverArt === undefined) {
 		return [
-			"https://images.socalifornian.live/SongPlaceholderFull.png",
+			`data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="#6649a8"/><circle cx="160" cy="80" r="110" fill="#a76d8e"/></svg>')}`,
 			(75 + ((360 - 75) * seedrandom(Song?.Uri)()))
 		]
 	} else {
@@ -92,8 +88,12 @@ const GenerateBlurredCoverArt = async () => {
 	const [coverArt, placeholderHueShift] = GetCoverArtForSong()
 
 	const image = new Image()
+	image.crossOrigin = "anonymous"
 	image.src = coverArt
-	try { await image.decode() } catch { return }
+	try { await image.decode() } catch {
+        image.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="#6649a8"/></svg>')
+        try { await image.decode() } catch { return }
+    }
 
 	const originalSize = Math.min(image.width, image.height) // Crop to a square
 	const blurExtent = Math.ceil(3 * 40) // Blur spread extent
@@ -137,114 +137,34 @@ GenerateBlurredCoverArt()
 SongChanged.Connect(GenerateBlurredCoverArt)
 SongContextChanged.Connect(GenerateBlurredCoverArt) // We might use Playlist cover instead
 
-// Setup Referential Renderer Objects
-const RenderCamera = new THREE.OrthographicCamera(
-	-1, 1, 1, -1, 0.1, 10
-) as ( THREE.OrthographicCamera & { position: THREE.Vector3 } )
-RenderCamera.position.z = 1
-const MeshGeometry = new THREE.PlaneGeometry(2, 2)
-
 export const ApplyDynamicBackground = (element: HTMLElement, maid: Maid) => {
-	// Give our element the class
-	{
-		element.classList.toggle(BackgroundClassName, true)
-		maid.Give(() => element.classList.toggle(BackgroundClassName, false))
-
-		// Handle re-adding our class IF we are removed
-		const observer = maid.Give(new MutationObserver(() => element.classList.toggle(BackgroundClassName, true)))
-		observer.observe(
-			element,
-			{ attributes: true, attributeFilter: ['class'], childList: false, subtree: false }
-		)
-	}
-
-	const renderScene = new THREE.Scene()
-	const materialUniforms = GetShaderUniforms()
-	const meshMaterial = new THREE.ShaderMaterial(
-		{
-			uniforms: materialUniforms,
-			vertexShader: VertexShader,
-			fragmentShader: FragmentShader,
-		}
-	) as (THREE.MeshBasicMaterial & THREE.ShaderMaterial & { uniforms: ShaderUniforms })
-	const sceneMesh = new THREE.Mesh(MeshGeometry, meshMaterial)
-	renderScene.add(sceneMesh)
-
-	let active = true
-	let currentTexture: THREE.CanvasTexture | undefined
-	const renderer = new THREE.WebGLRenderer({ alpha: true })
-	const rendererElement = renderer.domElement
-	renderer.setPixelRatio(globalThis.devicePixelRatio)
-	rendererElement.classList.add(`${BackgroundClassName}-Container`)
-	maid.Give(
-		() => {
-			active = false
-			currentTexture?.dispose()
-			currentTexture = undefined
-			meshMaterial.dispose()
-			renderScene.remove(sceneMesh)
-			renderer.dispose()
-			renderer.forceContextLoss()
-		}
-	)
-	maid.Give(rendererElement)
-
-	const UpdateBackgroundImages = () => {
-		if (!active || !Blurred_CovertArt) return
-		const texture = new THREE.CanvasTexture(Blurred_CovertArt)
-		texture.minFilter = THREE.NearestFilter
-		texture.magFilter = THREE.NearestFilter
-		const previousTexture = currentTexture
-		currentTexture = texture
-		materialUniforms.BlurredCoverArt.value = texture
-		previousTexture?.dispose()
-		renderer.render(renderScene, RenderCamera)
-	}
-	UpdateBackgroundImages()
-	maid.Give(CoverArtBlurred.Connect(UpdateBackgroundImages))
-
-	{
-		const UpdateDimensions = () => {
-			const width = element.clientWidth
-			const height = element.clientHeight
-			renderer.setSize(width, height)
-	
-			const scaledWidth = (width * globalThis.devicePixelRatio)
-			const scaledHeight = (height * globalThis.devicePixelRatio)
-	
-			const largestAxis = ((scaledWidth > scaledHeight) ? "X" : "Y")
-			const largestAxisSize = ((scaledWidth > scaledHeight) ? scaledWidth : scaledHeight)
-
-			materialUniforms.BackgroundCircleOrigin.value.set((scaledWidth / 2), (scaledHeight / 2))
-			materialUniforms.BackgroundCircleRadius.value = (largestAxisSize * 1.5)
-
-			materialUniforms.CenterCircleOrigin.value.set((scaledWidth / 2), (scaledHeight / 2))
-			materialUniforms.CenterCircleRadius.value = (
-				largestAxisSize
-				* ((largestAxis === "X") ? 1 : 0.75)
-			)
-	
-			materialUniforms.LeftCircleOrigin.value.set(0, scaledHeight)
-			materialUniforms.LeftCircleRadius.value = (largestAxisSize * 0.75)
-			
-			materialUniforms.RightCircleOrigin.value.set(scaledWidth, 0)
-			materialUniforms.RightCircleRadius.value = (
-				largestAxisSize
-				* ((largestAxis === "X") ? 0.65 : 0.5)
-			)
-		}
-		maid.Give(OnPreRender(UpdateDimensions))
-		const sizeObserver = maid.Give(new ResizeObserver(UpdateDimensions))
-		sizeObserver.observe(element)
-	}
-
-	const RenderUpdate = () => {
-		if (!active) return
-		materialUniforms.Time.value = (performance.now() / 3500)
-		renderer.render(renderScene, RenderCamera)
-		maid.Give(OnPreRender(RenderUpdate), "BackgroundFrame")
-	}
-	RenderUpdate()
-
-	element.prepend(renderer.domElement)
+ element.classList.add(BackgroundClassName)
+ maid.Give(() => element.classList.remove(BackgroundClassName))
+ let renderer: BackgroundRenderer
+ try { renderer = new BackgroundRenderer() } catch { return }
+ const canvas = renderer.canvas
+ canvas.classList.add(BackgroundClassName + '-Container')
+ element.prepend(canvas); maid.Give(canvas)
+ let active = true, visible = true, frame: number | undefined
+ const stop = () => { if (frame !== undefined) cancelAnimationFrame(frame); frame = undefined }
+ const render = () => {
+   frame = undefined
+   if (!active || !visible || document.hidden || !element.isConnected) return
+   renderer.render()
+   frame = requestAnimationFrame(render)
+ }
+ const update = () => {
+   stop()
+   if (!active || !visible || document.hidden) return
+   renderer.resize(element.clientWidth, element.clientHeight)
+   if (Blurred_CovertArt) { try { renderer.setImage(Blurred_CovertArt) } catch { return } }
+   render()
+ }
+ const observer = maid.Give(new ResizeObserver(update)); observer.observe(element)
+ const visibility = maid.Give(new IntersectionObserver(entries => { visible = entries.some(entry => entry.isIntersecting); update() }))
+ visibility.observe(element)
+ document.addEventListener('visibilitychange', update)
+ maid.Give(CoverArtBlurred.Connect(update))
+ maid.Give(() => { active = false; stop(); document.removeEventListener('visibilitychange', update); renderer.destroy() })
+ update()
 }

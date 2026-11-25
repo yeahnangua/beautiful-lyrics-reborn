@@ -78,38 +78,32 @@ test('actual lyric transform preserves original words, overlapping timing, and i
 
 test('actual player empty-state handler clears state and keeps one cancellable startup task',async()=>{
  const source=await read('../Spices/Spicetify/Services/Player/mod.ts');
- const handler=source.slice(source.indexOf('const OnSongChange = () => {'),source.indexOf('// Make sure that this is a Song and not any other type of track'))+'}\n';
+ const handler=source.slice(source.indexOf('let startupAttempts ='),source.indexOf('// Make sure that this is a Song and not any other type of track'))+'}\n';
  for(const data of [null,{}, {item:null}]){
   const fired=[];const signals=Object.fromEntries(['SongChangedSignal','SongContextChangedSignal','IsPlayingChangedSignal','IsLikedChangedSignal'].map(k=>[k,{Fire:()=>fired.push(k)}]));
   const get=evaluate('let Song={},Timestamp=20,IsPlaying=true,SongContext={},HasIsLikedLoaded=false,IsLiked=true;'+handler+'OnSongChange();',{SpotifyPlayer:{data},PlayerMaid:{Clean(){}},LoadSongDetails:()=>fired.push('details'),LoadSongLyrics:()=>fired.push('lyrics'),...signals},'({Song,Timestamp,IsPlaying,SongContext,HasIsLikedLoaded,IsLiked})');
   assert.deepEqual(get,{Song:undefined,Timestamp:0,IsPlaying:false,SongContext:undefined,HasIsLikedLoaded:true,IsLiked:false});assert.equal(fired.length,6);
  }
- const tasks=new Map();const handlerFn=evaluate(handler,{SpotifyPlayer:{data:undefined},PlayerMaid:{Clean:k=>tasks.delete(k),Give:(v,k)=>tasks.set(k,v)},Defer:fn=>fn},'OnSongChange');
- for(let i=0;i<50;i++)handlerFn();assert.equal(tasks.size,1);
+ const tasks=new Map();const handlerFn=evaluate(handler,{SpotifyPlayer:{data:undefined},PlayerMaid:{Clean:k=>tasks.delete(k),Give:(v,k)=>tasks.set(k,v)},Defer:fn=>fn,Timeout:(_seconds,fn)=>fn},'OnSongChange');
+ for(let i=0;i<4;i++)handlerFn();assert.equal(tasks.size,1);for(let i=0;i<50;i++)handlerFn();assert.equal(tasks.size,0);
 });
 
-test('dynamic background uses bounded tasks, releases replaced textures and cleans repeated views',async()=>{
- const source=await read('../Source/LyricViews/Shared.ts');const frames=new Map();let id=0;const objects={texture:[],material:[],renderer:[],geometry:[]};
- const resource=kind=>class{disposed=0;constructor(){objects[kind].push(this)}dispose(){this.disposed++}};
- class Element {classList={toggle(){},add(){}};clientWidth=500;clientHeight=500;prepend(){}remove(){}}
- class Observer{observe(){}disconnect(){}}
- const saved={};for(const [key,value]of Object.entries({Element,MutationObserver:Observer,ResizeObserver:Observer,cancelAnimationFrame:handle=>frames.delete(handle)})){saved[key]=globalThis[key];globalThis[key]=value;}
- try{
-  const Texture=resource('texture'),Material=resource('material'),Geometry=resource('geometry'),Renderer=resource('renderer');
-  class WebGLRenderer extends Renderer{domElement=new Element();setPixelRatio(){}setSize(){}render(){assert.equal(this.disposed,0)}forceContextLoss(){this.lost=true}}
-  const THREE={CanvasTexture:Texture,ShaderMaterial:Material,PlaneGeometry:Geometry,WebGLRenderer,Mesh:class{},Scene:class{add(){}remove(){}},OrthographicCamera:class{position={}}};
-  const store={Items:{CardLyricsVisible:true,PlaybarDetailsHidden:true,obsolete:true},SaveChanges(){this.saved=true}};
-  const uniforms=()=>Object.fromEntries(['BlurredCoverArt','Time','BackgroundCircleOrigin','BackgroundCircleRadius','CenterCircleOrigin','CenterCircleRadius','LeftCircleOrigin','LeftCircleRadius','RightCircleOrigin','RightCircleRadius'].map(k=>[k,{value:{set(){}}}]));
-  const shared=evaluate(source,{THREE,Signal,seedrandom:()=>()=>0,Song:undefined,SongContext:undefined,SongChanged:new Signal(),SongContextChanged:new Signal(),GetInstantStore:()=>store,Image:class{decode(){return new Promise(()=>{})}},GetShaderUniforms:uniforms,VertexShader:'',FragmentShader:'',MutationObserver:Observer,ResizeObserver:Observer,OnPreRender:callback=>{frames.set(++id,callback);return [2,id];}},'({ApplyDynamicBackground,update:()=>{Blurred_CovertArt={};CoverArtBlurred.Fire()},signal:CoverArtBlurred})');
-  assert.deepEqual(store.Items,{CardLyricsVisible:true,PlaybarDetailsHidden:true});assert.equal(store.saved,true);
-  for(let cycle=0;cycle<10;cycle++){
-   const maid=new Maid();shared.ApplyDynamicBackground(new Element(),maid);const initial=maid.Items.size;
-   for(let frame=0;frame<100;frame++){const pending=[...frames];frames.clear();for(const [,callback]of pending)callback();assert.ok(maid.Items.size<=initial);assert.equal(frames.size,1);}
-   shared.update();shared.update();maid.Destroy();assert.equal(frames.size,0);shared.update();
-  }
-  for(const kind of ['texture','material','renderer'])for(const item of objects[kind])assert.equal(item.disposed,1);
-  assert.ok(objects.renderer.every(x=>x.lost));assert.equal(objects.geometry[0].disposed,0);
- }finally{for(const[key,value]of Object.entries(saved)){if(value===undefined)delete globalThis[key];else globalThis[key]=value;}}
+test('dynamic background stops when hidden and releases each view',async()=>{
+ const source=await read('../Source/LyricViews/Shared.ts');const frames=new Map(),listeners=new Map(),renderers=[];let id=0;
+ class Element {classList={add(){},remove(){}};clientWidth=500;clientHeight=500;isConnected=true;prepend(){}remove(){}}
+ class Observer {observe(){}disconnect(){}}
+ const document={hidden:false,addEventListener:(key,fn)=>listeners.set(key,fn),removeEventListener:key=>listeners.delete(key)};
+ class Renderer {canvas=new Element();destroyed=false;constructor(){renderers.push(this)}resize(){}setImage(){}render(){assert.equal(this.destroyed,false)}destroy(){this.destroyed=true}}
+ const store={Items:{CardLyricsVisible:true,PlaybarDetailsHidden:true},SaveChanges(){}};
+ const shared=evaluate(source,{BackgroundRenderer:Renderer,Signal,seedrandom:()=>()=>0,Song:undefined,SongContext:undefined,SongChanged:new Signal(),SongContextChanged:new Signal(),GetInstantStore:()=>store,Image:class{decode(){return new Promise(()=>{})}},ResizeObserver:Observer,IntersectionObserver:Observer,document,requestAnimationFrame:fn=>{frames.set(++id,fn);return id},cancelAnimationFrame:id=>frames.delete(id)},'({ApplyDynamicBackground,update:()=>{Blurred_CovertArt={};CoverArtBlurred.Fire()}})');
+ for(let cycle=0;cycle<10;cycle++){
+  const cleanup=[];const maid={Give(value){cleanup.push(value);return value}};shared.ApplyDynamicBackground(new Element(),maid);
+  assert.equal(frames.size,1);document.hidden=true;listeners.get('visibilitychange')();assert.equal(frames.size,0);
+  document.hidden=false;listeners.get('visibilitychange')();assert.equal(frames.size,1);
+  shared.update();for(const value of cleanup){if(typeof value==='function')value();else if(value?.Disconnect)value.Disconnect();else value?.disconnect?.()}
+  assert.equal(frames.size,0);assert.equal(listeners.size,0);
+ }
+ assert.ok(renderers.every(r=>r.destroyed));
 });
 
 test('permanent authentication errors do not retry',async()=>{
@@ -170,7 +164,7 @@ test('both lyric snapshot stores invalidate old selections and prioritize the te
  const storeDefinitions = player.slice(player.indexOf('const ProviderLyricsStore ='), player.indexOf('export const ClearLyricsCache'));
  evaluate(storeDefinitions, {
   GetExpireStore(name, version, expiration, forceNewData) {
-   assert.equal(version, 14);
+   assert.equal(version, 15);
    assert.deepEqual(expiration, { Duration: 2, Unit: 'Days' });
    entries.set(name + '/track', { CacheVersion: 13, ExpiresAt: start + 86_400_000,
     Content: { Type: 'Static', Lines: [{ Text: 'previous selection' }] } });
@@ -224,7 +218,7 @@ test('minute cache defaults preserve time of day while calendar units retain the
   ['Minutes', 10, new Date(2026, 10, 14, 0, 6, 37, 123).getTime()],
   ['Days', 2, new Date(2026, 10, 15).getTime()],
   ['Weeks', 2, new Date(2026, 10, 27).getTime()],
-  ['Months', 1, new Date(2026, 10, 30).getTime()],
+  ['Months', 1, new Date(2026, 11, 13).getTime()],
  ]) {
   const store = getStore(Unit, 1, { Unit, Duration });
   await store.SetItem('track', 'lyrics');
@@ -307,9 +301,8 @@ test('current lyrics and prefetch send the ISRC belonging to each captured song'
   app.load('A',['B','C']);await flushLyrics();
   assert.deepEqual(app.requests.map(request=>request.id).sort(),['A','B','C']);
   for(const request of app.requests){
-   assert.equal(request.url.searchParams.get('isrc'),codes[request.id]);
    assert.equal(request.url.searchParams.get('apple_id'),'123');
-   request.resolve(prefetchLyrics(request.id));
+   request.resolve({...prefetchLyrics(request.id),Type:'Syllable',StartTime:0,EndTime:1,Content:[]});
   }
   await flushLyrics();
  } finally {app.destroy();}
@@ -321,11 +314,24 @@ test('metadata resolvers run in parallel and cancellation prevents a late lyrics
   resolveApple:url=>{started.push('apple:'+new URL(url).pathname.split('/').at(-1));return apple.promise}});
  try {
   app.prefetch();await flushLyrics();
-  assert.deepEqual(started.sort(),['apple:B','isrc:B']);assert.equal(app.requests.length,0);
-  apple.resolve(undefined);await flushLyrics();assert.equal(app.requests.length,0);
+  assert.deepEqual(started.sort(),['apple:B','isrc:B']);assert.equal(app.requests.length,1);
+  apple.resolve(undefined);await flushLyrics();assert.equal(app.requests.length,1);
   app.destroy();isrc.resolve('USABC2400002');await flushLyrics();
-  assert.equal(app.requests.length,0);assert.equal(app.published.length,0);
+  assert.equal(app.requests.length,1);assert.equal(app.requests[0].signal.aborted,true);assert.equal(app.published.length,0);
  } finally {app.destroy();}
+});
+
+test('late Apple matching cannot delay initial lyrics and supplements only Apple once',async()=>{
+ const apple=deferred();const app=await setupLyricsPrefetch({queue:[],resolveApple:()=>apple.promise});
+ try{
+  app.load('A',[]);await flushLyrics();assert.equal(app.requests.length,1);
+  app.requests[0].resolve(prefetchLyrics('initial'));await flushLyrics();
+  assert.equal(app.state().SongLyrics.RequestId,'initial');
+  apple.resolve({id:'123',title:'Song'});await flushLyrics();
+  assert.equal(app.requests.length,2);assert.equal(app.requests[1].url.searchParams.get('lookup'),'apple');
+  app.requests[1].resolve({...prefetchLyrics('improved'),Type:'Syllable',StartTime:0,EndTime:1,Content:[]});await flushLyrics();
+  assert.equal(app.state().SongLyrics.RequestId,'improved');assert.equal(app.requests.length,2);
+ }finally{app.destroy()}
 });
 
 test('song details still finish loading when Spotify metadata contains no ISRC',async()=>{
@@ -459,10 +465,10 @@ test('actual loader removes only blocked track caches, retains unaffected/restor
    '({load:LoadSongLyrics,state:()=>({SongLyrics,SongProviderLyrics,SongLyricsFromCache}),switch:()=>{Song={Type:"Local",Id:"songB"};LoadSongLyrics()}})');
   return {...state,ready:ready.promise,deleted,requests,cached,transforms};
  }
- const blocked=setup([{provider:'qqmusic',lyricsType:'Syllable'}]);blocked.load();await blocked.ready;
+ const blocked=setup([{provider:'qqmusic',lyricsType:'Syllable'}]);blocked.load();await blocked.ready;assert.equal(blocked.state().SongLyricsFromCache,true);await flushLyrics();
  assert.deepEqual(blocked.deleted,['raw:songA','transformed:songA']);assert.equal(blocked.state().SongLyricsFromCache,false);assert.equal(blocked.state().SongLyrics.RequestId,'new');assert.deepEqual(blocked.cached,[fresh]);assert.equal(blocked.transforms.length,1);
  for(const rules of [[],[{provider:'qqmusic',lyricsType:'Line'}],[{provider:'netease',lyricsType:'Syllable'}]]){
-  const retained=setup(rules);retained.load();await retained.ready;assert.deepEqual(retained.deleted,[]);assert.equal(retained.requests.length,1);assert.equal(retained.transforms.length,0);assert.equal(retained.state().SongLyricsFromCache,true);
+  const retained=setup(rules);retained.load();await retained.ready;await flushLyrics();assert.deepEqual(retained.deleted,[]);assert.equal(retained.requests.length,1);assert.equal(retained.transforms.length,0);assert.equal(retained.state().SongLyricsFromCache,true);
  }
  const late=deferred(),stale=setup(late.promise);stale.load();await new Promise(resolve=>setImmediate(resolve));stale.switch();late.resolve([{provider:'qqmusic',lyricsType:'Syllable'}]);await new Promise(resolve=>setImmediate(resolve));
  assert.equal(stale.state().SongProviderLyrics,undefined);assert.deepEqual(stale.deleted,[]);

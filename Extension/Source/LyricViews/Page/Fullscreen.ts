@@ -197,7 +197,7 @@ export default class PageView implements Giveable {
       liked: IsLiked, volume: SpotifyPlayer.getVolume(), canSeek: !!Song && Song.Type !== "DJ",
       canLike: Song?.Type === "Streamed", canPlaylist: !!Song && Song.Type !== "DJ",
       canFeedback: Song?.Type === "Streamed" && !!SongLyrics && !!SongProviderLyrics && HaveSongLyricsLoaded,
-      fullscreen: !!document.fullscreenElement, audioStatus: this.analysis.status,
+      fullscreen: !!document.fullscreenElement, audioStatus: this.analysis.status, beats: this.analysis.beats(),
       lyrics: this.cachedLyrics,
     }
   }

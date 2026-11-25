@@ -156,7 +156,12 @@ export const SetIsPlaying = (isPlaying: boolean): (false | void) => (
 	(isPlaying !== IsPlaying)
 	&& (isPlaying ? SpotifyPlayer.play() : SpotifyPlayer.pause())
 )
-export const SeekTo = (timestamp: number): void => SpotifyPlayer.seek(timestamp * 1000)
+export const SeekTo = (timestamp: number): void => {
+ if (!Number.isFinite(timestamp)) return
+ SpotifyPlayer.seek(timestamp * 1000)
+ Timestamp = Math.max(0, timestamp)
+ TimeSteppedSignal.Fire(0, true)
+}
 export const GetTimestampString = (): string => {
 	if (Song?.Type === "DJ") {
 		throw new Error("Cannot get Timestamp of a DJ track")
@@ -322,9 +327,9 @@ const LoadSongDetails = () => {
 }
 
 // Handle our Lyrics
-// Version 14 invalidates incorrect recording matches and LRC timing boundaries.
+// Version 15 invalidates incorrect LRCLIB matches and entity/timing boundaries.
 const ProviderLyricsStore = GetExpireStore<ProviderLyrics | false>(
-	"Player_ProviderLyrics", 14,
+	"Player_ProviderLyrics", 15,
 	{
 		Duration: 2,
 		Unit: "Days"
@@ -332,7 +337,7 @@ const ProviderLyricsStore = GetExpireStore<ProviderLyrics | false>(
 	true
 )
 const TransformedLyricsStore = GetExpireStore<TransformedLyrics | false>(
-	"Player_TransformedLyrics", 14,
+	"Player_TransformedLyrics", 15,
 	{
 		Duration: 2,
 		Unit: "Days"
@@ -398,12 +403,18 @@ const BuildLyricsRequestURL = (songId: string, songDuration: number, track = Spo
 	if (Number.isFinite(songDuration) && songDuration > 0) {
 		url.searchParams.set("duration", String(songDuration))
 	}
+	if (Song?.Type === "Streamed" && Song.Id === songId && SongDetails?.IsLocal === false && SongDetails.ISRC) {
+		url.searchParams.set("isrc", SongDetails.ISRC)
+	}
 
 	return url.toString()
 }
 // iTunes rate-limits Cloudflare's shared egress IPs, so the Apple Music id is resolved
 // client-side from the user's own IP and handed to the server via apple_id.
+const appleMusicMatches = new Map<string, {id:string;title:string}>()
 const ResolveAppleMusicId = (lyricsRequestURL: string, parent: AbortSignal): Promise<{ id: string; title: string } | undefined> => {
+	const cachedMatch = appleMusicMatches.get(lyricsRequestURL)
+	if (cachedMatch) return Promise.resolve(cachedMatch)
 	const lyricsUrl = new URL(lyricsRequestURL)
 	const trackName = lyricsUrl.searchParams.get("track_name")
 	const artistNames = lyricsUrl.searchParams.getAll("artist_name").filter(name => name.trim())
@@ -450,7 +461,7 @@ const ResolveAppleMusicId = (lyricsRequestURL: string, parent: AbortSignal): Pro
 					? undefined : { id: String(matched.trackId), title: matched.trackName })
 			}
 		)
-	)).catch(() => undefined).finally(() => scope.Destroy())
+	 )).then(value => { if (value) { appleMusicMatches.set(lyricsRequestURL, value); while (appleMusicMatches.size > 128) appleMusicMatches.delete(appleMusicMatches.keys().next().value!) } return value }).catch(() => undefined).finally(() => scope.Destroy())
 }
 let lyricsController: AbortController | undefined
 PlayerMaid.Give(() => lyricsController?.abort())
@@ -463,43 +474,54 @@ PlayerMaid.Give(() => {
 	lyricsPrefetches.clear()
 })
 const FetchProviderLyrics = async (
-	songId: string, lyricsRequestURL: string, parent: AbortSignal, remainingRetries = 1
+ songId: string, lyricsRequestURL: string, parent: AbortSignal, remainingRetries = 1,
+ onInitial?: (lyrics: ProviderLyrics) => Promise<void>
 ): Promise<ProviderLyrics | false> => {
-	const [appleMusicTrack, isrc] = await Abortable(parent, () => Promise.all([
-		ResolveAppleMusicId(lyricsRequestURL, parent), ResolveTrackIsrc(songId, parent)
-	]))
-	const requestUrl = new URL(lyricsRequestURL)
-	if (isrc) requestUrl.searchParams.set("isrc", isrc)
-	if (appleMusicTrack) {
-		requestUrl.searchParams.set("apple_id", appleMusicTrack.id)
-		requestUrl.searchParams.set("apple_title", appleMusicTrack.title)
-	}
-	const scope = CreateAbortScope(35_000, parent)
-	let providerLyrics: ProviderLyrics | false | undefined
-	try {
-		providerLyrics = await Abortable(scope.Signal, async () => {
-			const response = await FetchLyrics(requestUrl.toString(), {
-				method: "GET", cache: "no-store", signal: scope.Signal,
-				headers: {
-					"X-Spotify-App-Platform": SpotifyPlatform.PlatformData.app_platform,
-					"X-Spotify-App-Version": SpotifyPlatform.version
-				}
-			})
-			if (!response.ok) throw new Error(`Lyrics request failed: ${response.status} ${response.statusText}`)
-			const text = await response.text()
-			return text.length === 0 ? undefined : JSON.parse(text)
-		})
-	} finally { scope.Destroy() }
-	parent.throwIfAborted()
-	if (!providerLyrics && remainingRetries > 0) {
-		await Delay(1000, parent)
-		return FetchProviderLyrics(songId, lyricsRequestURL, parent, remainingRetries - 1)
-	}
-	if (providerLyrics) {
-		await ProviderLyricsStore.SetItem(songId, providerLyrics, LyricsCacheExpiration(providerLyrics))
-			.catch(error => console.warn("Could not cache lyrics", error))
-	}
-	return providerLyrics ?? false
+ let resolvedIsrc: string | undefined
+ let resolvedApple: {id:string;title:string} | undefined
+ const apple = ResolveAppleMusicId(lyricsRequestURL, parent).then(value => { resolvedApple = value; return value }, () => undefined)
+ void ResolveTrackIsrc(songId, parent).then(value => { resolvedIsrc = value }, () => undefined)
+ const send = async (url: URL): Promise<ProviderLyrics | false> => {
+  const scope = CreateAbortScope(35_000, parent)
+  try {
+   return await Abortable(scope.Signal, async () => {
+    const response = await FetchLyrics(url.toString(), {method:'GET',cache:'no-store',signal:scope.Signal,
+     headers:{'X-Spotify-App-Platform':SpotifyPlatform.PlatformData.app_platform,'X-Spotify-App-Version':SpotifyPlatform.version}})
+    if (!response.ok) throw new Error('Lyrics request failed (' + response.status + ')')
+    const text = await response.text()
+    return text ? JSON.parse(text) : false
+   })
+  } finally { scope.Destroy() }
+ }
+ const url = new URL(lyricsRequestURL)
+ await Promise.resolve()
+ if (resolvedIsrc) url.searchParams.set('isrc',resolvedIsrc)
+ if (resolvedApple) { url.searchParams.set('apple_id',resolvedApple.id);url.searchParams.set('apple_title',resolvedApple.title) }
+ // Both enrichments run concurrently; neither blocks the first lyrics request.
+ let result = await send(url)
+ parent.throwIfAborted()
+ if (result && result.Type !== 'Syllable' && onInitial) await onInitial(result)
+ if (!result || result.Type !== 'Syllable') {
+  const matched = await Abortable(parent, () => apple)
+  if (matched) {
+   const supplement = new URL(lyricsRequestURL)
+   supplement.searchParams.set('lookup','apple')
+   supplement.searchParams.set('apple_id',matched.id)
+   supplement.searchParams.set('apple_title',matched.title)
+   if (resolvedIsrc) supplement.searchParams.set('isrc',resolvedIsrc)
+   const candidate = await send(supplement).catch(() => false as const)
+   parent.throwIfAborted()
+   const quality = (lyrics: ProviderLyrics | false) => !lyrics ? 0 : lyrics.Type === 'Static' ? 1 : lyrics.Type === 'Line' ? 2 : 3
+   if (quality(candidate) > quality(result)) result = candidate
+  } else if (!result && remainingRetries > 0) {
+   await Delay(1000,parent)
+   if (resolvedIsrc) url.searchParams.set('isrc',resolvedIsrc)
+   result = await send(url)
+  }
+ }
+ parent.throwIfAborted()
+ if (result) await ProviderLyricsStore.SetItem(songId,result,LyricsCacheExpiration(result)).catch(error=>console.warn('Could not cache lyrics',error))
+ return result
 }
 // Warm the lyrics cache for the upcoming queue so the next song loads from cache.
 const PrefetchUpcomingLyrics = () => {
@@ -537,7 +559,7 @@ const PrefetchUpcomingLyrics = () => {
 		promise.catch(() => undefined)
 	}
 }
-const LoadSongLyrics = () => {
+const LoadSongLyrics = (skipCache = false) => {
 	BeginLyricsMeasurement()
 	const measurementStarted = performance.now()
 	let measurementSource = "network"
@@ -557,6 +579,12 @@ const LoadSongLyrics = () => {
 	let fromCache = false
 	let originalLyrics: ProviderLyrics | undefined
 	const lyricsRequestURL = BuildLyricsRequestURL(songAtUpdate.Id, songAtUpdate.Duration)
+		const showInitial = async (lyrics: ProviderLyrics) => {
+			const transformed = await TransformProviderLyrics(lyrics)
+			if (controller.signal.aborted || Song !== songAtUpdate) return
+			originalLyrics = lyrics; SongProviderLyrics = lyrics; SongLyrics = transformed; HaveSongLyricsLoaded = true; SongLyricsFromCache = false
+			SongLyricsLoadedSignal.Fire()
+		}
 	const FetchSongLyrics = async (remainingRetries = 1): Promise<ProviderLyrics | false> => {
 		const prefetch = lyricsPrefetches.get(songAtUpdate.Id)
 		if (prefetch !== undefined) {
@@ -568,13 +596,13 @@ const LoadSongLyrics = () => {
 			controller.signal.throwIfAborted()
 			if (lyrics) { measurementSource = "prefetch"; return lyrics }
 		}
-		return FetchProviderLyrics(songAtUpdate.Id, lyricsRequestURL, controller.signal, remainingRetries)
+			return FetchProviderLyrics(songAtUpdate.Id, lyricsRequestURL, controller.signal, remainingRetries, showInitial)
 	}
 
 	// Now go through the process of loading our lyrics
 	{
 		// First determine if we have our lyrics stored already
-		ProviderLyricsStore.GetItem(songAtUpdate.Id)
+		(skipCache ? Promise.resolve(undefined) : ProviderLyricsStore.GetItem(songAtUpdate.Id))
 		.catch(() => undefined)
 		.then(
 			async providerLyrics => {
@@ -582,14 +610,7 @@ const LoadSongLyrics = () => {
 				if ((providerLyrics === undefined) || (providerLyrics === false)) {
 					return FetchSongLyrics(1)
 				} else {
-					if (await ShouldRefreshCachedLyrics(songAtUpdate.Id, providerLyrics, controller.signal)) {
-						await Promise.all([
-							ProviderLyricsStore.DeleteItem(songAtUpdate.Id),
-							TransformedLyricsStore.DeleteItem(songAtUpdate.Id)
-						]).catch(() => console.warn("Could not remove blocked lyrics cache"))
-						controller.signal.throwIfAborted()
-						return FetchSongLyrics(1)
-					}
+
 					controller.signal.throwIfAborted()
 					fromCache = true
 					measurementSource = "cache"
@@ -611,6 +632,7 @@ const LoadSongLyrics = () => {
 		)
 		.then(
 			([storedProviderLyrics, storedTransformedLyrics]): Promise<TransformedLyrics | undefined> => {
+					if (storedProviderLyrics && storedProviderLyrics === originalLyrics && Song === songAtUpdate && SongLyrics) return Promise.resolve(SongLyrics)
 				if (storedProviderLyrics === false) {
 					return Promise.resolve(undefined)
 				}
@@ -645,9 +667,18 @@ const LoadSongLyrics = () => {
 				}
 
 				// Update our lyrics
-				SongLyrics = transformedLyrics, SongProviderLyrics = originalLyrics, SongLyricsFromCache = fromCache, HaveSongLyricsLoaded = true
+					const changed = SongLyrics !== transformedLyrics || SongProviderLyrics !== originalLyrics || !HaveSongLyricsLoaded
+					SongLyrics = transformedLyrics, SongProviderLyrics = originalLyrics, SongLyricsFromCache = fromCache, HaveSongLyricsLoaded = true
 				EmitMetric("lyrics_load", { durationMs: Math.round(performance.now() - measurementStarted), source: measurementSource, outcome: transformedLyrics ? "success" : "none", lyricsType: transformedLyrics?.Type ?? "none" })
-				SongLyricsLoadedSignal.Fire()
+					if (changed) SongLyricsLoadedSignal.Fire()
+                    if (fromCache && originalLyrics) {
+                        const capturedLyrics = originalLyrics
+                        void ShouldRefreshCachedLyrics(songAtUpdate.Id, capturedLyrics, controller.signal).then(async blocked => {
+                            if (!blocked || controller.signal.aborted || Song !== songAtUpdate || SongProviderLyrics !== capturedLyrics) return
+                            await Promise.all([ProviderLyricsStore.DeleteItem(songAtUpdate.Id), TransformedLyricsStore.DeleteItem(songAtUpdate.Id)]).catch(() => console.warn("Could not delete blocked lyrics cache"))
+                            if (!controller.signal.aborted && Song === songAtUpdate) LoadSongLyrics(true)
+                        }).catch(() => {})
+                    }
 			}
 		)
 		.catch(
@@ -694,7 +725,7 @@ OnSpotifyReady.then(
 			const trackPromises = new Map<string, Promise<unknown>>()
 			SpotifyRequestBuilder.build = (...buildArguments: unknown[]) => {
 				const builder = originalBuildMethod.call(SpotifyRequestBuilder, ...buildArguments)
-				
+
 				const originalOnAfterSendMethod = builder.onAfterSend
 				let removeTrackPromiseId: (string | undefined)
 				builder.onAfterSend = (...onAfterSendArguments: unknown[]) => {
@@ -723,6 +754,8 @@ OnSpotifyReady.then(
 					if (isTrackInformationRequest) {
 						const trackPromiseId = `${builder.host}${builder.path}`
 						trackPromises.set(trackPromiseId, sendPromise)
+                        const release = () => { if (trackPromises.get(trackPromiseId) === sendPromise) trackPromises.delete(trackPromiseId) }
+                        void Promise.resolve(sendPromise).then(release, release)
 						removeTrackPromiseId = trackPromiseId
 					}
 
@@ -740,10 +773,12 @@ OnSpotifyReady.then(
 
 		// Handle song updates
 		{
-			const OnSongChange = () => {
+			let startupAttempts = 0
+				const OnSongChange = () => {
 				PlayerMaid.Clean("SongChangeUpdate")
 				if (SpotifyPlayer.data === undefined) {
-					return PlayerMaid.Give(Defer(OnSongChange), "SongChangeUpdate")
+					if (startupAttempts++ < 8) return PlayerMaid.Give(Timeout(Math.min(2, 0.05 * 2 ** startupAttempts), OnSongChange), "SongChangeUpdate")
+                        return
 				}
 				if (SpotifyPlayer.data === null || SpotifyPlayer.data.item == null) {
 					Song = undefined
@@ -760,9 +795,7 @@ OnSpotifyReady.then(
 					IsLikedChangedSignal.Fire()
 					return
 				}
-				if (SpotifyPlayer.data.context === undefined) {
-					return PlayerMaid.Give(Defer(OnSongChange), "SongChangeUpdate")
-				}
+                    startupAttempts = 0
 
 				// Make sure that this is a Song and not any other type of track
 				const track = SpotifyPlayer.data.item
@@ -775,10 +808,10 @@ OnSpotifyReady.then(
 					Timestamp = 0
 
 					// Create our song-information
-					const metadata = track.metadata as unknown as TrackMetadata
+					const metadata = (track.metadata ?? {}) as unknown as TrackMetadata
 					const uri = SpotifyURI.from(track.uri)
-					Song = Object.freeze(
-						isDJ ? {
+					Song = !isDJ && metadata.is_local !== "true" && !uri?.id ? undefined : Object.freeze(
+                            isDJ ? {
 							Type: "DJ",
 
 							Uri: track.uri,
@@ -823,14 +856,13 @@ OnSpotifyReady.then(
 				SongChangedSignal.Fire()
 
 				// Determine if our context changed
-				if ((SpotifyPlayer.data.hasContext === false) && (SongContext !== undefined)) {
-					SongContext = undefined
-					SongContextChangedSignal.Fire()
+				if (!SpotifyPlayer.data.hasContext || !SpotifyPlayer.data.context?.uri) {
+                        if (SongContext !== undefined) { SongContext = undefined; SongContextChangedSignal.Fire() }
 				} else if (
 					(SongContext === undefined)
 					|| (SongContext.Uri !== SpotifyPlayer.data.context.uri)
 				) {
-					const contextMetadata = SpotifyPlayer.data.context.metadata as unknown as {
+					const contextMetadata = (SpotifyPlayer.data.context.metadata ?? {}) as unknown as {
 						context_description: string;
 						image_url: string;
 					}
@@ -874,7 +906,7 @@ OnSpotifyReady.then(
 			SpotifyPlayer.addEventListener("songchange", OnSongChange)
 			PlayerMaid.Give(() => SpotifyPlayer.removeEventListener("songchange", OnSongChange))
 		}
-		
+
 		// Hande loop/shuffle updates
 		{
 			const OnUpdate = () => {
@@ -920,7 +952,7 @@ OnSpotifyReady.then(
 
 					// If we pause then stop our automatic-sync since we are guaranteed to be synced on play
 					if (IsPlaying === false) {
-						PlayerMaid.Clean("AutomaticSync")
+						PlayerMaid.Clean("TimestampPositionSync")
 					}
 				}
 			}
@@ -934,6 +966,8 @@ OnSpotifyReady.then(
 			// Handle position syncing
 			type SyncedPosition = ({ StartedSyncAt?: number; Position: number; })
 			let syncedPosition: (SyncedPosition | undefined)
+			let runFrame: (() => void) | undefined
+			let lastPausedPosition: number | undefined
 			const positionController = new AbortController()
 			PlayerMaid.Give(() => positionController.abort())
 			let positionRevision = 0
@@ -942,11 +976,22 @@ OnSpotifyReady.then(
 			let canSyncNonLocalTimestamp = (IsPlaying ? syncTimings.length : 0)
 			const resetPositionSync = () => {
 				positionRevision++
+				lastPausedPosition = undefined
 				syncedPosition = undefined
 				canSyncNonLocalTimestamp = IsPlaying ? syncTimings.length : 0
+				PlayerMaid.Clean("Timestep")
+				if (IsPlaying) runFrame?.()
 			}
-			PlayerMaid.Give(SongChangedSignal.Connect(resetPositionSync))
-			PlayerMaid.Give(IsPlayingChangedSignal.Connect(resetPositionSync))
+				PlayerMaid.Give(SongChangedSignal.Connect(() => {
+					resetPositionSync()
+					PlayerMaid.Clean("TimestampPositionSync")
+					void RequestPositionSync()
+				}))
+			PlayerMaid.Give(IsPlayingChangedSignal.Connect(() => {
+                    resetPositionSync()
+                    PlayerMaid.Clean("TimestampPositionSync")
+                    void RequestPositionSync()
+                }))
 
 			const RequestPositionSync = async () => {
 				if (positionController.signal.aborted) return
@@ -968,13 +1013,14 @@ OnSpotifyReady.then(
 					const position = state.positionAsOfTimestamp + (IsPlaying ? Date.now() - state.timestamp : 0)
 					if (!Number.isFinite(position)) throw new Error("Playback position unavailable")
 					syncedPosition = IsPlaying ? { StartedSyncAt: sampledAt, Position: position } : { Position: position }
+					if (!IsPlaying) runFrame?.()
 					if (isLocallyPlaying === false) canSyncNonLocalTimestamp = Math.max(0, canSyncNonLocalTimestamp - 1)
 					nextSyncDelay = isLocallyPlaying || canSyncNonLocalTimestamp === 0
 						? 1 / 30 : syncTimings[syncTimings.length - canSyncNonLocalTimestamp]
 				} catch { /* Playback may disconnect temporarily; retry while frames continue. */ }
 				finally {
 					scope.Destroy()
-					if (!positionController.signal.aborted) {
+					if (!positionController.signal.aborted && IsPlaying && revision === positionRevision) {
 						PlayerMaid.Give(Timeout(nextSyncDelay, () => void RequestPositionSync()), "TimestampPositionSync")
 					}
 				}
@@ -1016,11 +1062,11 @@ OnSpotifyReady.then(
 					if (IsPlaying) {
 						if (
 							(syncedTimestamp === undefined)
-							|| (Math.abs(syncedTimestamp - Timestamp) < 0.075)
+							|| (Math.abs(syncedTimestamp - (Timestamp + deltaTime)) < 0.075)
 						) {
 							newTimestamp = (Timestamp + deltaTime), fireDeltaTime = deltaTime
 						} else {
-							newTimestamp = syncedTimestamp
+							newTimestamp = syncedTimestamp, fireDeltaTime = 0
 						}
 					} else if (
 						(syncedTimestamp !== undefined)
@@ -1040,12 +1086,19 @@ OnSpotifyReady.then(
 				lastUpdatedAt = updatedAt
 
 				// Schedule us for another update
-				PlayerMaid.Give(Defer(Update), "Timestep")
+				if (IsPlaying) PlayerMaid.Give(Defer(Update), "Timestep")
 			}
-			
+			runFrame = () => { lastUpdatedAt = performance.now(); Update() }
+
 			// Rendering must start even if the first remote sync fails or hangs.
-			void RequestPositionSync()
-			Update()
+                const onPositionUpdate = () => {
+                  const position = SpotifyPlatform.PlayerAPI._state.positionAsOfTimestamp
+                  if (!IsPlaying && position !== lastPausedPosition) { lastPausedPosition = position; void RequestPositionSync() }
+                }
+                SpotifyPlatform.PlayerAPI._events.addListener("update", onPositionUpdate)
+                PlayerMaid.Give(() => SpotifyPlatform.PlayerAPI._events.removeListener("update", onPositionUpdate))
+                void RequestPositionSync()
+                Update()
 		}
 	}
 )

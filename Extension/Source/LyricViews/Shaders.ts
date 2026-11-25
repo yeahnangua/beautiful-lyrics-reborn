@@ -1,6 +1,3 @@
-// JSR
-import * as THREE from "jsr:@3d/three"
-
 // Shaders
 const Uniforms = `
 uniform float Time;
@@ -18,22 +15,7 @@ uniform float LeftCircleRadius;
 uniform vec2 RightCircleOrigin;
 uniform float RightCircleRadius;
 `
-export type ShaderUniforms = {
-	Time: { value: number };
-	BlurredCoverArt: { value: THREE.Texture };
 
-	BackgroundCircleOrigin: { value: THREE.Vector2 };
-	BackgroundCircleRadius: { value: number };
-
-	CenterCircleOrigin: { value: THREE.Vector2 };
-	CenterCircleRadius: { value: number };
-
-	LeftCircleOrigin: { value: THREE.Vector2 };
-	LeftCircleRadius: { value: number };
-
-	RightCircleOrigin: { value: THREE.Vector2 };
-	RightCircleRadius: { value: number };
-}
 
 export const VertexShader = `
 void main() {
@@ -118,23 +100,3 @@ void main() {
 	}
 }
 `;
-
-const ShaderUniformStructure: Map<string, string> = new Map()
-for (const match of Uniforms.matchAll(/uniform\s+(\w+)\s+(\w+);/g)) {
-	const uniformType = match[1]
-	const uniformName = match[2]
-	ShaderUniformStructure.set(uniformName, uniformType)
-}
-export const GetShaderUniforms = (): ShaderUniforms => {
-	const uniforms: Record<string, unknown> = {}
-	for (const [uniformName, uniformType] of ShaderUniformStructure.entries()) {
-		if (uniformType === "float") {
-			uniforms[uniformName] = { value: 0 };
-		} else if (uniformType === "vec2") {
-			uniforms[uniformName] = { value: new THREE.Vector2() };
-		} else if (uniformType === "sampler2D") {
-			uniforms[uniformName] = { value: null };
-		}
-	}
-	return uniforms as ShaderUniforms
-}

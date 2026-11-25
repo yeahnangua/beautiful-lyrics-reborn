@@ -136,6 +136,19 @@ export const GetExpireStore = <ItemType>(
 	if (RetrievedExpireStores.has(storeName)) {
 		throw new Error(`Can't retrieve ExpireStore (${storeName}) twice.`)
 	}
+	RetrievedExpireStores.add(storeName)
+	// Sweep only this extension-owned store, yielding between small batches.
+	void (async () => {
+		const cache = await caches.open(storeName)
+		const keys = await cache.keys()
+		for (let i = 0; i < keys.length; i += 32) {
+			await Promise.all(keys.slice(i, i + 32).map(async key => {
+				const item = await cache.match(key).then(response => response?.json()).catch(() => undefined)
+				if (!item || item.CacheVersion !== version || !Number.isFinite(item.ExpiresAt) || item.ExpiresAt <= Date.now()) await cache.delete(key)
+			}))
+			if (i + 32 < keys.length) await new Promise(resolve => setTimeout(resolve, 0))
+		}
+	})().catch(() => {})
 
 	// Return our public interface
 	return Object.freeze(
@@ -146,20 +159,23 @@ export const GetExpireStore = <ItemType>(
 				(IsDevelopment && forceNewData) ? Promise.resolve(undefined)
 				: (
 					GetFromCacheAPI<ExpireItem<ItemType>>(storeName, itemName)
+						.catch(async () => { await caches.open(storeName).then(cache => cache.delete(`/${itemName}`)).catch(() => {}); return undefined })
 					.then(
 						expireItem => {
 							// If we don't have an item then just force-return
-							if (expireItem === undefined) {
+							if (expireItem === undefined || expireItem === null || typeof expireItem !== "object") {
 								return undefined
 							}
 			
 							// Check if we're on the same version
 							if (expireItem.CacheVersion !== version) {
+								void caches.open(storeName).then(cache => cache.delete(`/${itemName}`)).catch(() => {})
 								return undefined
 							}
 			
 							// Check if we're expired
-							if (expireItem.ExpiresAt < Date.now()) {
+							if (!Number.isFinite(expireItem.ExpiresAt) || expireItem.ExpiresAt <= Date.now()) {
+								void caches.open(storeName).then(cache => cache.delete(`/${itemName}`)).catch(() => {})
 								return undefined
 							}
 			
@@ -182,8 +198,10 @@ export const GetExpireStore = <ItemType>(
 					} else if (expirationSettings.Unit == "Weeks") {
 						expireAtDate.setDate(expireAtDate.getDate() + (expirationSettings.Duration * 7))
 					} else {
+						const day = expireAtDate.getDate()
+						expireAtDate.setDate(1)
 						expireAtDate.setMonth(expireAtDate.getMonth() + expirationSettings.Duration)
-						expireAtDate.setDate(0)
+						expireAtDate.setDate(Math.min(day, new Date(expireAtDate.getFullYear(), expireAtDate.getMonth() + 1, 0).getDate()))
 					}
 				}
 				const expireAt = expireAtDate.getTime()

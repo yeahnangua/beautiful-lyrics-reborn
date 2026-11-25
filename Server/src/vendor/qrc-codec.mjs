@@ -1249,4 +1249,3 @@ function encryptQrc(plaintext) {
 }
 //#endregion
 export { decryptQrc, encryptQrc };
-

@@ -1,3 +1,18 @@
+const rootSubscribers = new Set<() => void>()
+let rootObserver: MutationObserver | undefined, rootFrame: number | undefined
+const ObserveSpotifyRoot = (callback: () => void) => {
+ rootSubscribers.add(callback)
+ if (!rootObserver) {
+  rootObserver = new MutationObserver(records => {
+    const anchor = '.main-nowPlayingBar-extraControls,[data-testid="now-playing-bar"],.Root__right-sidebar,#Desktop_PanelContainer_Id'
+    const related = records.some(record => record.target instanceof Element && record.target.closest(anchor)
+      || [...record.addedNodes, ...record.removedNodes].some(node => node instanceof Element && (node.matches(anchor) || node.querySelector(anchor))))
+    if (related && rootFrame === undefined) rootFrame = requestAnimationFrame(() => { rootFrame = undefined; for (const update of rootSubscribers) update() })
+  })
+  rootObserver.observe(document.body, {childList:true,subtree:true})
+ }
+ return () => { rootSubscribers.delete(callback); if (!rootSubscribers.size) { rootObserver?.disconnect();rootObserver=undefined;if(rootFrame!==undefined)cancelAnimationFrame(rootFrame);rootFrame=undefined } }
+}
 // Spotify can ship unmapped CSS classes before Spicetify catches up. Prefer
 // semantic anchors when its legacy playback/sidebar selectors are unavailable.
 export const FindPlaybarControls = (root: Document = document): HTMLElement | null => (
@@ -9,6 +24,7 @@ export const FindPlaybarControls = (root: Document = document): HTMLElement | nu
 export const BindPlaybarElements = (buttons: HTMLButtonElement[], visible: () => boolean) => {
 	const hidden = new Map<HTMLElement, string>()
 	const mount = () => {
+		for (const node of hidden.keys()) if (!node.isConnected) hidden.delete(node)
 		if (!visible()) return
 		const controls = FindPlaybarControls()
 		if (!controls) return
@@ -21,13 +37,12 @@ export const BindPlaybarElements = (buttons: HTMLButtonElement[], visible: () =>
 			nativeFullscreen.style.display = "none"
 		}
 	}
-	const observer = new MutationObserver(mount)
-	observer.observe(document.body, { childList: true, subtree: true })
+	const stop = ObserveSpotifyRoot(mount)
 	mount()
 	return {
 		Update: mount,
 		Destroy() {
-			observer.disconnect()
+			stop()
 			for (const [element, display] of hidden) element.style.display = display
 		},
 	}
@@ -58,8 +73,7 @@ export const BindNowPlayingContents = (changed: (contents: HTMLDivElement | unde
 		previous = contents
 		changed(contents)
 	}
-	const observer = new MutationObserver(update)
-	observer.observe(document.body, { childList: true, subtree: true })
+	const stop = ObserveSpotifyRoot(update)
 	update()
-	return () => observer.disconnect()
+	return () => stop()
 }

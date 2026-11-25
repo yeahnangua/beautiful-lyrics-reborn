@@ -20,11 +20,12 @@ function fixture(t, { resume = async () => {}, local = false, timeoutMs = 2000 }
       if (destroyed) { dispose(item); return item; }
       dispose(tasks.get(key)); tasks.set(key, item); return item;
     },
+    Clean(key) { dispose(tasks.get(key)); tasks.delete(key); },
     Destroy() { destroyed = true; for (const item of tasks.values()) dispose(item); tasks.clear(); },
   };
   t.after(() => maid.Destroy());
   const platform = { PlaybackAPI: { _isLocal: local }, PlayerAPI: {
-    _contextPlayer: { resume }, _state: { positionAsOfTimestamp: 10000, timestamp: 100000 },
+    _events:{addListener(){},removeListener(){}}, _contextPlayer: { resume }, _state: { positionAsOfTimestamp: 10000, timestamp: 100000 },
   } };
   const mocks = {
     SpotifyPlatform: platform, PlayerMaid: maid, SongChangedSignal: songChanged, IsPlayingChangedSignal: playingChanged,
@@ -85,17 +86,31 @@ test('local and paused playback use state directly without remote resume calls',
   let calls = 0;
   const app = fixture(t, { local: true, resume: async () => { calls++; } });
   app.run('Timestep'); assert.equal(app.snapshot().Timestamp, 10);
-  app.pause(); app.advance(300); app.platform.PlayerAPI._state.positionAsOfTimestamp = 25000;
-  app.run('TimestampPositionSync'); await flush(); app.run('Timestep');
+  app.platform.PlayerAPI._state.positionAsOfTimestamp = 25000; app.pause(); app.advance(300);
+  await flush();
+  assert.equal(app.tasks.has('TimestampPositionSync'),false);
+  assert.equal(app.tasks.has('Timestep'),false);
   assert.equal(app.snapshot().Timestamp, 25); assert.equal(calls, 0);
 });
 
 test('old song syncs and teardown cannot publish late positions or restart timers', async t => {
   const pending = deferred();
   const app = fixture(t, { resume: () => pending.promise });
-  await flush(); app.changeSong(); pending.resolve(); await flush();
+  await flush(); app.platform.PlayerAPI._contextPlayer.resume = () => new Promise(() => {}); app.changeSong(); pending.resolve(); await flush();
   assert.equal(app.snapshot().syncedPosition, undefined);
   const later = deferred(); app.platform.PlayerAPI._contextPlayer.resume = () => later.promise;
-  app.run('TimestampPositionSync'); await flush(); app.destroy(); later.resolve(); await flush();
+  app.changeSong(); await flush(); app.destroy(); later.resolve(); await flush();
   assert.equal(app.snapshot().syncedPosition, undefined); assert.equal(app.tasks.size, 0);
+});
+
+test('playing seeks emit a zero-delta skip in both directions', async t => {
+  const app = fixture(t, {local:true});
+  app.run('Timestep'); await flush();
+  app.platform.PlayerAPI._state.positionAsOfTimestamp = 30000;
+  app.run('TimestampPositionSync'); await flush(); app.run('Timestep');
+  assert.deepEqual(app.frames.at(-1),[0,true]);
+  app.platform.PlayerAPI._state.positionAsOfTimestamp = 29900;
+  app.run('TimestampPositionSync'); await flush(); app.run('Timestep');
+  assert.deepEqual(app.frames.at(-1),[0,true]);
+  assert.equal(app.snapshot().Timestamp,29.9);
 });

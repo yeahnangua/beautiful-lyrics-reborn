@@ -74,7 +74,7 @@ export const BindLyricsFeedbackButton = (container: HTMLElement, maid: Maid) => 
       try {
         const response = await fetch("https://lyrics.txw.qzz.io/reports", { method: "POST", headers: { "Content-Type": "application/json" }, signal: scope.Signal,
           body: JSON.stringify({ ...captured, category: fields.get("category"), description: fields.get("description"), email: fields.get("email") }) })
-        const result = await response.json()
+        const result = await response.json().catch(() => ({ error: `Report failed (${response.status})` }))
         if (!response.ok) throw new Error(result.error || `Report failed (${response.status})`)
         if (closed) return
         status.textContent = `Thank you! Report saved: ${result.id}`

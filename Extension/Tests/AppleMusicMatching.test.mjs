@@ -6,7 +6,7 @@ import { Abortable, CreateAbortScope } from '../../Universal/Modules/Async.ts';
 
 const source = await readFile(new URL('../Spices/Spicetify/Services/Player/mod.ts', import.meta.url), 'utf8');
 const filter = source.slice(source.indexOf('const SongNameFilters ='), source.indexOf('const LoadSongDetails ='));
-const resolver = source.slice(source.indexOf('const ResolveAppleMusicId ='), source.indexOf('let lyricsController:'));
+const resolver = source.slice(source.indexOf('const appleMusicMatches ='), source.indexOf('let lyricsController:'));
 const js = stripTypeScriptTypes(filter + resolver, { mode: 'transform' });
 const candidate = (extra = {}) => ({ trackId: 222, trackName: 'Home', artistName: 'Expected Singer', trackTimeMillis: 180000, ...extra });
 const url = (name = 'Home', artists = ['Expected Singer'], duration = 180) => {

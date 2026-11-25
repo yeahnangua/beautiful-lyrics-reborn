@@ -1,6 +1,7 @@
 import { motionValue } from 'framer-motion';
 import type { PlayerSnapshot, AudioFrame } from './contracts';
 import { activeLineIndex } from './lyrics';
+import { beginBeatFxTrack, setBeatFxEvents, setBeatFxLiveEffects, stopBeatFx, tickHostBeatFx } from '../vendor/src/services/beatFx/beatFxLive';
 
 // Only discrete snapshots, active-line changes and panel state notify React subscribers.
 export class FoliaModel {
@@ -11,7 +12,12 @@ export class FoliaModel {
   readonly offset = motionValue(0);
   private listeners = new Set<() => void>();
   state: { player: PlayerSnapshot; index: number; panel: 'settings' | 'playlist' | null; failed: boolean };
-  constructor(player: PlayerSnapshot) { this.state = { player, index: -1, panel: null, failed: false }; }
+  constructor(player: PlayerSnapshot) { this.state = { player, index: -1, panel: null, failed: false }; this.installBeats(player); }
+  private installBeats(player: PlayerSnapshot) {
+    beginBeatFxTrack(player.key);
+    setBeatFxEvents(player.key, player.beats ?? [], player.beats?.length ? 'spotify' : 'none');
+    setBeatFxLiveEffects({ 'hanabi.beatBursts':1, 'hanabi.beatPulse':1, 'machi.neonPulse':1, 'metaphor.annihilation':1, 'sonnet.lensTear':1 });
+  }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getSnapshot = () => this.state;
   change(patch: Partial<typeof this.state>) {
@@ -20,10 +26,12 @@ export class FoliaModel {
   }
   update(player: PlayerSnapshot) {
     const changed = player.key !== this.state.player.key;
+    if (changed || player.beats !== this.state.player.beats) this.installBeats(player);
     this.change({ player, index: activeLineIndex(player.lyrics.lines, this.lyricTime.get()),
       ...(changed ? { panel: null, failed: false } : {}) });
   }
   step(time: number, offset: number, audio: AudioFrame) {
+    tickHostBeatFx(time, this.state.player.playing && (typeof document === 'undefined' || !document.hidden));
     this.time.set(time); this.offset.set(offset); this.lyricTime.set(time + offset);
     this.audioPower.set(audio.power);
     for (const band of Object.keys(this.audioBands) as (keyof typeof this.audioBands)[]) this.audioBands[band].set(audio[band]);
@@ -35,6 +43,7 @@ export class FoliaModel {
     this.change({ panel: null }); return true;
   }
   destroy() {
+    stopBeatFx();
     this.listeners.clear();
     this.time.destroy(); this.lyricTime.destroy(); this.offset.destroy(); this.audioPower.destroy();
     Object.values(this.audioBands).forEach(value => value.destroy());

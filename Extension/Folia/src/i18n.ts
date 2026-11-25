@@ -5,7 +5,7 @@ const en = {
   // Vendor renderers use this placeholder whenever no line is active, including gaps.
   // Only the host's whole-track instrumental status should display an instrumental label.
   ui: { backToHome: 'Back to Spotify', waitingForMusic: '', noTrack: 'No track' },
-  settings: 'Visual settings', mode: 'Lyrics mode', background: 'Background', fontSize: 'Font size',
+  camera:'Camera controls', modeParameters:'Mode parameters', backgroundParameters:'Background parameters', settings: 'Visual settings', mode: 'Lyrics mode', background: 'Background', fontSize: 'Font size',
   lyrics: 'Show lyrics', subtitles: 'Show subtitles', offset: 'Lyrics offset', reset: 'Reset',
   loading: 'Loading lyrics…', missing: 'No lyrics available', instrumental: 'Instrumental',
   static: 'Unsynced lyrics', failed: 'This renderer could not start. Showing Still.',
@@ -19,7 +19,7 @@ const en = {
 };
 const zh: typeof en = {
   ui: { backToHome: '返回 Spotify', waitingForMusic: '', noTrack: '暂无歌曲' },
-  settings: '视觉设置', mode: '歌词模式', background: '背景', fontSize: '字号', lyrics: '显示歌词',
+  camera:'摄影机控制', modeParameters:'模式参数', backgroundParameters:'背景参数', settings: '视觉设置', mode: '歌词模式', background: '背景', fontSize: '字号', lyrics: '显示歌词',
   subtitles: '显示字幕', offset: '歌词偏移', reset: '重置', loading: '正在加载歌词…', missing: '暂无歌词',
   instrumental: '纯音乐', static: '无时间轴歌词', failed: '此模式未能启动，已切换为 Still。',
   analysis: '音频分析', available: '响度 / 节拍律动', unavailable: '暂无分析数据，歌词正常显示',

@@ -32,7 +32,7 @@ async function fixture(run, options={}) {
     GetPlaylistsAndFolders(){},GetPlaylistDetails(){},GetPlaylistContents(){},AddToPlaylist(){},CreateFolder(){},CreatePlaylist(){},
     GetLyricsOffset:()=>0.6,AdjustLyricsOffset(){},SetLyricsOffset(){},BindLyricsFeedbackButton(){},LyricsFeedbackButton:'<button></button>',GetCoverArtForSong:()=>['cover'],
     convertLyrics:()=>({status:'loading',lines:[],staticLines:[],direction:'ltr'}),
-    TrackAnalysis:class{status='unavailable';async setSong(){}sample(){return {power:0,bass:0,lowMid:0,mid:0,vocal:0,treble:0};}destroy(){}},
+    TrackAnalysis:class{beats(){return []}status='unavailable';async setSong(){}sample(){return {power:0,bass:0,lowMid:0,mid:0,vocal:0,treble:0};}destroy(){}},
     PlaylistBridge:class{Destroy(){}},
     mountFolia:(_,snapshot)=>{updates.push(snapshot);return {update:s=>updates.push(s),step:(...values)=>steps.push(values),closePanel:()=>{const was=panel;panel=false;return was;},destroy:()=>destroyed++};},
   };

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { motion, useMotionValueEvent, type MotionValue } from 'framer-motion';
 import { type CappellaTuning, type Theme } from '../../../types';
 import { resolveThemeFontWeight } from '../../../utils/fontStacks';
-import { mixColors } from '../colorMix';
+import { mixColors } from '../../../utils/colorMix';
 import { builtinAvatarImages, type CappellaAvatarImage, resolveCappellaAvatarUrl } from './avatarImages';
 import { type CappellaIntensityConfig, type CappellaMessage, type CappellaTimedMessage, type PreparedBubbleMetrics, isTimedMessage } from './cappellaTypes';
 import { CAPPELLA_BUBBLE_FONT_WEIGHT } from './cappellaConstants';
@@ -81,7 +81,6 @@ export const CappellaMessageRow = React.forwardRef<HTMLDivElement, CappellaMessa
                 paddingY: bubblePaddingY,
             })
             : null,
-        // eslint-disable-next-line react-hooks/exhaustive-deps
         [bubbleFontSize, bubblePaddingX, bubblePaddingY, isActiveMessage, lineHeightPx, maxTextWidth, message, metricsCache, theme]
     );
     const [visibleCharacterCount, setVisibleCharacterCount] = useState(() => (

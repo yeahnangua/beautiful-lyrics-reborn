@@ -1,33 +1,6 @@
+// Reborn adapter: upstream renderers, host-owned settings and playback.
 import React from 'react';
-import { DEFAULT_MONET_TUNING } from '../../../types';
 import { defineVisualizer } from '../definition';
-
-
-const VisualizerMonet = React.lazy(() => import('./VisualizerMonet'));
-
-// src/components/visualizer/monet/entry.tsx
-// Registers the Monet poster visualizer and its mode-owned settings panel.
-export default defineVisualizer({
-    mode: 'monet',
-    order: 90,
-    labelKey: 'ui.visualizerMonet',
-    labelFallback: 'Monet',
-    previewSeed: 'monet',
-    previewStartOffset: 0,
-    tuningKind: 'monet',
-    render: props => {
-        const monetTuning = props.monetTuning ?? DEFAULT_MONET_TUNING;
-        const lyricsFontScale = props.lyricsFontScale ?? 1;
-        return (
-            <VisualizerMonet
-                {...props}
-                monetTuning={{
-                    ...monetTuning,
-                    fontScale: monetTuning.fontScale * lyricsFontScale,
-                }}
-            />
-        );
-    },
-    
-    
-});
+import { DEFAULT_MONET_TUNING } from '../../../types';
+const Renderer = React.lazy(() => import('./VisualizerMonet'));
+export default defineVisualizer({mode:'monet',order:6,labelKey:'ui.visualizerMonet',labelFallback:"Monet",previewSeed:'monet',previewStartOffset:0,render:props=><Renderer {...props} monetTuning={{...(props.monetTuning ?? DEFAULT_MONET_TUNING),fontScale:(props.monetTuning ?? DEFAULT_MONET_TUNING).fontScale*(props.lyricsFontScale??1)}} />});

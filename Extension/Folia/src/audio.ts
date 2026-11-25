@@ -24,14 +24,15 @@ export class TrackAnalysis {
   status: 'loading' | 'available' | 'unavailable' = 'unavailable';
   private revision = 0;
   private analysis?: Analysis;
+  private beatEvents: { t: number; kind: 'beat' | 'downbeat' }[] = [];
   private cancel?: () => void;
   constructor(private readonly fetch: ((uri: string) => Promise<unknown>) | undefined, private readonly timeoutMs = 6500) {}
   async setSong(uri: string): Promise<void> {
     const revision = ++this.revision;
-    this.cancel?.(); this.analysis = undefined; this.status = 'unavailable';
+    this.cancel?.(); this.analysis = undefined; this.beatEvents = []; this.status = 'unavailable';
     if (!this.fetch || !uri.startsWith('spotify:track:')) return;
     const existing = cache.get(uri);
-    if (existing) { cache.delete(uri); cache.set(uri, existing); this.analysis = existing; this.status = 'available'; return; }
+    if (existing) { cache.delete(uri); cache.set(uri, existing); this.analysis = existing; this.beatEvents = existing.beats.map(beat => ({t:beat.start,kind:'beat'})); this.status = 'available'; return; }
     this.status = 'loading';
     const result = await new Promise<Analysis | undefined>(resolve => {
       let settled = false;
@@ -43,6 +44,7 @@ export class TrackAnalysis {
     });
     if (revision !== this.revision) return;
     this.analysis = result; this.status = result ? 'available' : 'unavailable';
+    this.beatEvents = (result?.beats ?? []).map(beat => ({t:beat.start,kind:'beat'}));
     if (result) { cache.set(uri, result); while (cache.size > 8) cache.delete(cache.keys().next().value!); }
   }
   sample(time: number, playing: boolean): AudioFrame {
@@ -57,6 +59,9 @@ export class TrackAnalysis {
     const beat = at(this.analysis.beats, time);
     const pulse = beat ? clamp(1 - (time - beat.start) / Math.min(0.18, beat.duration)) * clamp(beat.confidence) * 255 : 0;
     return { power, bass: Math.max(power, pulse), lowMid: power, mid: power, vocal: power, treble: power };
+  }
+  beats(): { t: number; kind: 'beat' | 'downbeat' }[] {
+    return this.beatEvents;
   }
   destroy(): void { ++this.revision; this.cancel?.(); this.analysis = undefined; this.status = 'unavailable'; }
 }

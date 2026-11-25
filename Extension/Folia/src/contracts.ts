@@ -16,6 +16,7 @@ export type LyricsState = {
 };
 export type AudioFrame = { power: number; bass: number; lowMid: number; mid: number; vocal: number; treble: number };
 export interface PlayerSnapshot {
+  beats?: { t: number; kind: 'beat' | 'downbeat' }[];
   key: string;
   title: string;
   artist: string;

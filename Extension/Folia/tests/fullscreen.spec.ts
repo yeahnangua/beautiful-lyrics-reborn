@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test';
 
 // All modes run against the bundled original renderer rather than mocked components.
-const modes = ['classic','cadenza','partita','cappella','tilt','claddagh','monet','diorama','pendolo','sonnet','tempera','lumiere','still'];
+const modes = ['classic','cadenza','partita','cappella','tilt','claddagh','monet','diorama','pendolo','sonnet','tempera','lumiere','still','nebbia','hanabi','machi','metaphor'];
 for(const mode of modes) test(`${mode}: renders, pauses, seeks, resizes and releases its surface`,async({page},testInfo)=>{
+  if(mode === 'machi') test.setTimeout(90000);
   const errors:string[]=[];
   page.on('pageerror',error=>errors.push(error.message));
   await page.goto('/');
@@ -12,7 +13,7 @@ for(const mode of modes) test(`${mode}: renders, pauses, seeks, resizes and rele
   await expect(page.locator('.folia-app')).toHaveAttribute('data-mode',mode);
   await page.waitForTimeout(1800);
   await expect(page.getByRole('alert')).toHaveCount(0);
-  if(mode !== 'still') {
+  if(!['still','machi','metaphor','nebbia'].includes(mode)) {
     const canvas = await page.locator('[data-paper-shader] canvas').first().boundingBox();
     expect(canvas?.width).toBeGreaterThanOrEqual(1440);
     expect(canvas?.height).toBeGreaterThanOrEqual(900);
@@ -109,12 +110,12 @@ test('five backgrounds, display preferences, offset controls and rendering fallb
   await expect(page.getByRole('alert')).toContainText('Showing Still');
   await expect(page.getByRole('button',{name:'Pause',exact:true}).first()).toBeVisible();
 });
-test('subtitles are off by default, all 13 modes are available, and saved preferences are respected',async({page})=>{
+test('subtitles are off by default, all 17 modes are available, and saved preferences are respected',async({page})=>{
   await page.goto('/');
   await page.getByRole('button',{name:'Visual settings',exact:true}).click();
   await expect(page.getByLabel('Show subtitles',{exact:true})).not.toBeChecked();
   await expect(page.getByLabel('Show lyrics',{exact:true})).toBeChecked();
-  await expect(page.getByLabel('Lyrics mode',{exact:true}).locator('option')).toHaveCount(13);
+  await expect(page.getByLabel('Lyrics mode',{exact:true}).locator('option')).toHaveCount(17);
   await expect(page.getByLabel('Lyrics mode',{exact:true}).locator('option[value="fume"]')).toHaveCount(0);
   await page.getByLabel('Show subtitles',{exact:true}).check();
   await page.reload();

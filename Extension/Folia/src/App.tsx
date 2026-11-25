@@ -9,6 +9,9 @@ import { VISUALIZER_BACKGROUND_REGISTRY } from '../vendor/src/components/visuali
 import { DEFAULT_THEME } from '../vendor/src/services/baseThemes';
 import { PlayerBottomBarLayoutContext } from '../vendor/src/components/floating-player/PlayerBottomBarLayoutContext';
 import type { VisualizerSharedProps } from '../vendor/src/components/visualizer/definition';
+import { TuningPanel } from './TuningPanel';
+import { loadTunings, patchTuning, modeTunings, backgroundTunings, type TuningValues } from './tunings';
+import { updateVisualizerHostSettings } from '../vendor/src/stores/useVisualizerSettingsStore';
 import { Controls } from './Controls';
 import { PlaylistPanel } from './PlaylistPanel';
 import { loadSettings, saveSettings, type Settings } from './settings';
@@ -22,43 +25,57 @@ export function App({ model, actions }: { model: FoliaModel; actions: FoliaActio
   const { player, index, panel, failed } = state;
   const { t } = useTranslation();
   const [settings, setSettings] = useState(loadSettings);
+  const [visible, setVisible] = useState(!document.hidden);
+  useEffect(() => {
+    const changed = () => setVisible(!document.hidden);
+    document.addEventListener('visibilitychange', changed);
+    return () => document.removeEventListener('visibilitychange', changed);
+  }, []);
+  const [tunings, setTunings] = useState(loadTunings);
+  const changeTuning = (key: string, patch?: Record<string, unknown>) => setTunings(values => patchTuning(values, key, patch));
+  useEffect(() => { updateVisualizerHostSettings({smartBeat:{mode:'cached',effects:{}}}); }, []);
   useEffect(() => { actions.metric?.('fullscreen_mode', { mode: settings.mode }); }, [settings.mode, actions]);
   const changeSettings = (patch: Partial<Settings>) => {
     setSettings(previous => { const next = { ...previous, ...patch }; saveSettings(next); return next; });
+    if (failed) setBoundaryEpoch(epoch => epoch + 1);
     model.change({ failed: false });
   };
   const timed = player.lyrics.status === 'synced';
   const props: VisualizerSharedProps = {
-    currentTime: model.lyricTime, currentLineIndex: index, lines: player.lyrics.lines, theme: DEFAULT_THEME,
+    visualizerTunings: modeTunings(tunings), onVisualizerTuningChange: patch => changeTuning(settings.mode, patch as Record<string,unknown>),
+    duration: player.duration, currentTime: model.lyricTime, currentLineIndex: index, lines: player.lyrics.lines, theme: DEFAULT_THEME,
     audioPower: model.audioPower, audioBands: model.audioBands, songTitle: player.title, songArtist: player.artist,
-    songAlbum: player.album, coverUrl: player.coverUrl, seed: player.key, paused: !player.playing,
+    songAlbum: player.album, coverUrl: player.coverUrl, seed: player.key, paused: !player.playing || !visible,
     showText: timed && settings.showLyrics, lyricsFontScale: settings.fontScale,
-    background: { mode: settings.background, common: { useCoverColorBg: true } },
+    background: { ...backgroundTunings(tunings), mode: settings.background },
     isPlayerChromeHidden: false, hideTranslationSubtitle: !settings.showSubtitles, showHarmonySubtitle: settings.showSubtitles,
-    subtitleContentMode: 'translation',
+    subtitleContentMode: 'translation', subtitleOverlayLayout: 'translation|only',
     isPanelOpen: panel !== null, onBack: actions.close,
     onLyricLineSeek: time => { if (player.canSeek) actions.seek(lyricSeekTime(time, model.offset.get(), player.duration)); },
   };
-  const key = `${settings.mode}:${settings.background}:${player.key}`;
+  // Keep the runtime alive across songs and style transitions. Reset only after a failure.
+  const [boundaryEpoch, setBoundaryEpoch] = useState(0);
+  const key = boundaryEpoch;
   return <PlayerBottomBarLayoutContext.Provider value={true}><main className="folia-app" dir={player.lyrics.direction} data-mode={failed ? 'still' : settings.mode}>
-    <div className="folia-visual-surface">
+    <div className="folia-visual-surface">{visible && <>
       <RenderBoundary key={key} fallback={<VisualizerStill {...props} />} onFailure={() => model.change({ failed: true })}>
         {failed ? <VisualizerStill {...props} /> : player.lyrics.status === 'static'
           ? <VisualizerBackgroundRenderer config={props.background} theme={DEFAULT_THEME} isDaylight={false} coverUrl={player.coverUrl} audioPower={model.audioPower} audioBands={model.audioBands} staticMode={false} paused={!player.playing} />
-          : <VisualizerRenderer mode={settings.mode} {...props} />}
+          : <VisualizerRenderer animateStyleSwitch mode={settings.mode} {...props} />}
       </RenderBoundary>
       {settings.showLyrics && player.lyrics.status === 'static' && <section className="folia-static" aria-label={t('static')} style={{ fontSize: `${1.5 * settings.fontScale}rem` }}>
         <small>{t('static')}</small>{player.lyrics.staticLines.map((line, i) => <p key={i}>{line || '\u00a0'}</p>)}
       </section>}
       {settings.showLyrics && !timed && player.lyrics.status !== 'static' && <div className="folia-empty" role="status">{t(player.lyrics.status)}</div>}
-    </div>
+    </>}</div>
     {failed && <p className="folia-failure" role="alert">{t('failed')}</p>}
     <Controls player={player} time={model.time} actions={actions} panel={name => model.change({ panel: panel === name ? null : name })} />
-    {panel === 'settings' && <SettingsPanel settings={settings} model={model} change={changeSettings} actions={actions} close={() => model.closePanel()} audioStatus={player.audioStatus} />}
+    {panel === 'settings' && <SettingsPanel tunings={tunings} changeTuning={changeTuning} settings={settings} model={model} change={changeSettings} actions={actions} close={() => model.closePanel()} audioStatus={player.audioStatus} />}
     {panel === 'playlist' && <PlaylistPanel actions={actions} trackKey={player.key} close={() => model.closePanel()} />}
   </main></PlayerBottomBarLayoutContext.Provider>;
 }
-function SettingsPanel({ settings, model, change, actions, close, audioStatus }: {
+function SettingsPanel({ settings, tunings, changeTuning, model, change, actions, close, audioStatus }: {
+  tunings:TuningValues; changeTuning(key:string, patch?:Record<string,unknown>):void;
   settings: Settings; model: FoliaModel; change(patch: Partial<Settings>): void; actions: FoliaActions; close(): void; audioStatus: string;
 }) {
   const { t } = useTranslation();
@@ -76,6 +93,8 @@ function SettingsPanel({ settings, model, change, actions, close, audioStatus }:
     <label>{t('background')}<select aria-label={t('background')} value={settings.background} onChange={event => change({ background: event.target.value })}>
       {VISUALIZER_BACKGROUND_REGISTRY.map(entry => <option key={entry.mode} value={entry.mode}>{entry.labelFallback}</option>)}
     </select></label>
+    <TuningPanel name={settings.mode} values={tunings} change={changeTuning} close={close} />
+    <TuningPanel name={'background:' + settings.background} values={tunings} change={changeTuning} />
     <label>{t('fontSize')} <output>{Math.round(settings.fontScale * 100)}%</output><input aria-label={t('fontSize')} type="range" min={0.5} max={2} step={0.05} value={settings.fontScale} onChange={event => change({ fontScale: Number(event.target.value) })} /></label>
     <label className="folia-checkbox"><span>{t('lyrics')}</span><input type="checkbox" checked={settings.showLyrics} onChange={event => change({ showLyrics: event.target.checked })} /></label>
     <label className="folia-checkbox"><span>{t('subtitles')}</span><input type="checkbox" checked={settings.showSubtitles} onChange={event => change({ showSubtitles: event.target.checked })} /></label>

@@ -1,0 +1,1464 @@
+{
+  "cadenza": {
+    "render": {
+      "type": "object",
+      "fields": {
+        "scale": {
+          "type": "choice",
+          "choices": [
+            "global",
+            0.5,
+            0.75,
+            1,
+            1.5,
+            2
+          ]
+        },
+        "antialias": {
+          "type": "choice",
+          "choices": [
+            "global",
+            "on",
+            "off"
+          ]
+        }
+      }
+    },
+    "fontScale": {
+      "type": "number"
+    },
+    "widthRatio": {
+      "type": "number"
+    },
+    "motionAmount": {
+      "type": "number"
+    },
+    "glowIntensity": {
+      "type": "number"
+    },
+    "beamIntensity": {
+      "type": "number"
+    }
+  },
+  "cappella": {
+    "showEmoMessages": {
+      "type": "boolean"
+    },
+    "emojiPackSource": {
+      "type": "choice",
+      "choices": [
+        "builtin",
+        "custom"
+      ]
+    },
+    "avatarSource": {
+      "type": "choice",
+      "choices": [
+        "cover",
+        "builtin",
+        "color",
+        "custom"
+      ]
+    }
+  },
+  "claddagh": {
+    "focusScaleRatio": {
+      "type": "number"
+    },
+    "radiusScale": {
+      "type": "number"
+    },
+    "ellipseTiltDeg": {
+      "type": "number"
+    },
+    "showAxisLine": {
+      "type": "boolean"
+    },
+    "letterSpacingOffset": {
+      "type": "number"
+    },
+    "positionX": {
+      "type": "number"
+    },
+    "positionY": {
+      "type": "number"
+    },
+    "showTranslation": {
+      "type": "boolean"
+    },
+    "translationScale": {
+      "type": "number"
+    },
+    "translationLetterSpacingOffset": {
+      "type": "number"
+    }
+  },
+  "classic": {
+    "enableWordRotation": {
+      "type": "boolean"
+    },
+    "breathingFloatMultiplier": {
+      "type": "number"
+    },
+    "useLegacyLayout": {
+      "type": "boolean"
+    },
+    "wordSpacing": {
+      "type": "number"
+    },
+    "avoidOverlap": {
+      "type": "boolean"
+    }
+  },
+  "diorama": {
+    "render": {
+      "type": "object",
+      "fields": {
+        "scale": {
+          "type": "choice",
+          "choices": [
+            "global",
+            0.5,
+            0.75,
+            1,
+            1.5,
+            2
+          ]
+        },
+        "antialias": {
+          "type": "choice",
+          "choices": [
+            "global",
+            "on",
+            "off"
+          ]
+        }
+      }
+    },
+    "cameraSpeed": {
+      "type": "number"
+    },
+    "motionAmount": {
+      "type": "number"
+    },
+    "audioReactivity": {
+      "type": "number"
+    },
+    "geometryVisibility": {
+      "type": "object",
+      "fields": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "mode": {
+          "type": "choice",
+          "choices": [
+            "clouds",
+            "corridor"
+          ]
+        },
+        "strands": {
+          "type": "boolean"
+        },
+        "blobs": {
+          "type": "boolean"
+        },
+        "ribbons": {
+          "type": "boolean"
+        },
+        "rings": {
+          "type": "boolean"
+        }
+      }
+    },
+    "particleDensity": {
+      "type": "number"
+    },
+    "particleScale": {
+      "type": "number"
+    },
+    "particleGlowEnabled": {
+      "type": "boolean"
+    },
+    "particleGlowIntensity": {
+      "type": "number"
+    },
+    "showParticles": {
+      "type": "boolean"
+    },
+    "backgroundParticleCircumference": {
+      "type": "number"
+    },
+    "backgroundParticleRadial": {
+      "type": "number"
+    },
+    "glowEnabled": {
+      "type": "boolean"
+    },
+    "glowIntensity": {
+      "type": "number"
+    },
+    "soulEnabled": {
+      "type": "boolean"
+    },
+    "soulIntensity": {
+      "type": "number"
+    },
+    "soulActiveEnabled": {
+      "type": "boolean"
+    },
+    "gradientEnabled": {
+      "type": "boolean"
+    },
+    "gradientIntensity": {
+      "type": "number"
+    },
+    "keywordColoringEnabled": {
+      "type": "boolean"
+    }
+  },
+  "hanabi": {
+    "render": {
+      "type": "object",
+      "fields": {
+        "scale": {
+          "type": "choice",
+          "choices": [
+            "global",
+            0.5,
+            0.75,
+            1,
+            1.5,
+            2
+          ]
+        },
+        "antialias": {
+          "type": "choice",
+          "choices": [
+            "global",
+            "on",
+            "off"
+          ]
+        }
+      }
+    },
+    "colorMode": {
+      "type": "choice",
+      "choices": [
+        "theme",
+        "vivid",
+        "mixed"
+      ]
+    },
+    "sparkAmount": {
+      "type": "number"
+    },
+    "ornamentAmount": {
+      "type": "number"
+    },
+    "textMotion": {
+      "type": "number"
+    },
+    "blockOpacity": {
+      "type": "number"
+    },
+    "riseSpeed": {
+      "type": "number"
+    },
+    "spin": {
+      "type": "number"
+    },
+    "ambient": {
+      "type": "number"
+    },
+    "glow": {
+      "type": "number"
+    },
+    "bloom": {
+      "type": "number"
+    },
+    "chorusBloom": {
+      "type": "number"
+    },
+    "launches": {
+      "type": "boolean"
+    },
+    "overlayFrame": {
+      "type": "boolean"
+    },
+    "textOnly": {
+      "type": "boolean"
+    },
+    "sky": {
+      "type": "number"
+    },
+    "collage": {
+      "type": "number"
+    },
+    "renderQuality": {
+      "type": "choice",
+      "choices": [
+        "full",
+        "balanced",
+        "low"
+      ]
+    }
+  },
+  "lumiere": {
+    "render": {
+      "type": "object",
+      "fields": {
+        "scale": {
+          "type": "choice",
+          "choices": [
+            "global",
+            0.5,
+            0.75,
+            1,
+            1.5,
+            2
+          ]
+        },
+        "antialias": {
+          "type": "choice",
+          "choices": [
+            "global",
+            "on",
+            "off"
+          ]
+        }
+      }
+    },
+    "lightIntensity": {
+      "type": "number"
+    },
+    "audioResponse": {
+      "type": "number"
+    },
+    "fogDensity": {
+      "type": "number"
+    },
+    "darkField": {
+      "type": "number"
+    },
+    "moteAmount": {
+      "type": "number"
+    },
+    "bloom": {
+      "type": "number"
+    },
+    "textBloom": {
+      "type": "number"
+    },
+    "unlitOpacity": {
+      "type": "number"
+    },
+    "windowNeighbors": {
+      "type": "choice",
+      "choices": [
+        1,
+        2
+      ]
+    },
+    "decay": {
+      "type": "number"
+    },
+    "echo": {
+      "type": "number"
+    },
+    "fogOctaves": {
+      "type": "number"
+    },
+    "lineArt": {
+      "type": "boolean"
+    },
+    "frontBokeh": {
+      "type": "boolean"
+    },
+    "trails": {
+      "type": "boolean"
+    },
+    "hideTrails": {
+      "type": "boolean"
+    },
+    "seamlessTransitions": {
+      "type": "boolean"
+    },
+    "overlayFrame": {
+      "type": "boolean"
+    },
+    "textOnly": {
+      "type": "boolean"
+    },
+    "keywordColors": {
+      "type": "boolean"
+    },
+    "themeIcons": {
+      "type": "boolean"
+    },
+    "themeColorMix": {
+      "type": "number"
+    },
+    "renderQuality": {
+      "type": "choice",
+      "choices": [
+        "full",
+        "balanced",
+        "low"
+      ]
+    }
+  },
+  "machi": {
+    "scene": {
+      "type": "choice",
+      "choices": [
+        "auto",
+        "konbini",
+        "station",
+        "kowloon"
+      ]
+    },
+    "timeOfDay": {
+      "type": "choice",
+      "choices": [
+        "auto",
+        "day",
+        "dusk",
+        "night"
+      ]
+    },
+    "weather": {
+      "type": "choice",
+      "choices": [
+        "auto",
+        "clear",
+        "rain",
+        "snow",
+        "fog"
+      ]
+    },
+    "camera": {
+      "type": "choice",
+      "choices": [
+        "custom",
+        "default"
+      ]
+    },
+    "views": {
+      "type": "object",
+      "fields": {
+        "konbini": {
+          "type": "object",
+          "fields": {
+            "azimuth": {
+              "type": "number"
+            },
+            "elevation": {
+              "type": "number"
+            },
+            "zoom": {
+              "type": "number"
+            },
+            "panX": {
+              "type": "number"
+            },
+            "panZ": {
+              "type": "number"
+            }
+          }
+        },
+        "station": {
+          "type": "object",
+          "fields": {
+            "azimuth": {
+              "type": "number"
+            },
+            "elevation": {
+              "type": "number"
+            },
+            "zoom": {
+              "type": "number"
+            },
+            "panX": {
+              "type": "number"
+            },
+            "panZ": {
+              "type": "number"
+            }
+          }
+        },
+        "kowloon": {
+          "type": "object",
+          "fields": {
+            "azimuth": {
+              "type": "number"
+            },
+            "elevation": {
+              "type": "number"
+            },
+            "zoom": {
+              "type": "number"
+            },
+            "panX": {
+              "type": "number"
+            },
+            "panZ": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    },
+    "motion": {
+      "type": "boolean"
+    },
+    "motionSpeed": {
+      "type": "number"
+    },
+    "aperture": {
+      "type": "number"
+    },
+    "dof": {
+      "type": "number"
+    },
+    "dofRange": {
+      "type": "number"
+    },
+    "tiltShift": {
+      "type": "number"
+    },
+    "focus": {
+      "type": "choice",
+      "choices": [
+        "center",
+        "lyrics",
+        "manual"
+      ]
+    },
+    "focusOffset": {
+      "type": "number"
+    },
+    "simulatedBeat": {
+      "type": "boolean"
+    },
+    "quality": {
+      "type": "object",
+      "fields": {
+        "renderScale": {
+          "type": "choice",
+          "choices": [
+            "global",
+            0.5,
+            0.75,
+            1
+          ]
+        },
+        "antialias": {
+          "type": "choice",
+          "choices": [
+            "global",
+            "off",
+            "fxaa",
+            "smaa",
+            "ssaa"
+          ]
+        },
+        "shadows": {
+          "type": "choice",
+          "choices": [
+            "off",
+            "low",
+            "high"
+          ]
+        },
+        "reflections": {
+          "type": "choice",
+          "choices": [
+            "off",
+            "low",
+            "high"
+          ]
+        },
+        "glow": {
+          "type": "boolean"
+        },
+        "adaptive": {
+          "type": "boolean"
+        },
+        "revision": {
+          "type": "choice",
+          "choices": [
+            2
+          ]
+        }
+      }
+    }
+  },
+  "metaphor": {
+    "render": {
+      "type": "object",
+      "fields": {
+        "scale": {
+          "type": "choice",
+          "choices": [
+            "global",
+            0.5,
+            0.75,
+            1,
+            1.5,
+            2
+          ]
+        },
+        "antialias": {
+          "type": "choice",
+          "choices": [
+            "global",
+            "on",
+            "off"
+          ]
+        }
+      }
+    },
+    "cutPace": {
+      "type": "number"
+    },
+    "cameraMotion": {
+      "type": "number"
+    },
+    "flow": {
+      "type": "number"
+    },
+    "blobs": {
+      "type": "number"
+    },
+    "halftone": {
+      "type": "number"
+    },
+    "grain": {
+      "type": "number"
+    },
+    "negative": {
+      "type": "boolean"
+    },
+    "flip": {
+      "type": "boolean"
+    },
+    "keywordColors": {
+      "type": "boolean"
+    },
+    "transitions": {
+      "type": "boolean"
+    }
+  },
+  "monet": {
+    "render": {
+      "type": "object",
+      "fields": {
+        "scale": {
+          "type": "choice",
+          "choices": [
+            "global",
+            0.5,
+            0.75,
+            1,
+            1.5,
+            2
+          ]
+        },
+        "antialias": {
+          "type": "choice",
+          "choices": [
+            "global",
+            "on",
+            "off"
+          ]
+        }
+      }
+    },
+    "keywordColoringEnabled": {
+      "type": "boolean"
+    },
+    "showDescription": {
+      "type": "boolean"
+    },
+    "descriptionVisibility": {
+      "type": "choice",
+      "choices": [
+        "auto",
+        "always",
+        "hidden"
+      ]
+    },
+    "showAudioVisualization": {
+      "type": "boolean"
+    },
+    "audioStyle": {
+      "type": "choice",
+      "choices": [
+        "bar",
+        "line"
+      ]
+    },
+    "fontScale": {
+      "type": "number"
+    },
+    "portraitSource": {
+      "type": "choice",
+      "choices": [
+        "none",
+        "cover",
+        "custom"
+      ]
+    },
+    "portraitOffsetX": {
+      "type": "number"
+    },
+    "portraitStyle": {
+      "type": "choice",
+      "choices": [
+        "square",
+        "rectangular"
+      ]
+    },
+    "showPortraitDragHanger": {
+      "type": "boolean"
+    },
+    "portraitHangerVisibility": {
+      "type": "choice",
+      "choices": [
+        "auto",
+        "always",
+        "hidden"
+      ]
+    },
+    "mirrorLayout": {
+      "type": "boolean"
+    },
+    "customDescription": {
+      "type": "string"
+    }
+  },
+  "nebbia": {
+    "render": {
+      "type": "object",
+      "fields": {
+        "scale": {
+          "type": "choice",
+          "choices": [
+            "global",
+            0.5,
+            0.75,
+            1,
+            1.5,
+            2
+          ]
+        },
+        "antialias": {
+          "type": "choice",
+          "choices": [
+            "global",
+            "on",
+            "off"
+          ]
+        }
+      }
+    },
+    "appear": {
+      "type": "array",
+      "item": {
+        "type": "choice",
+        "choices": [
+          "fade",
+          "write",
+          "breath"
+        ]
+      }
+    },
+    "fade": {
+      "type": "array",
+      "item": {
+        "type": "choice",
+        "choices": [
+          "fog",
+          "fingers"
+        ]
+      }
+    },
+    "layouts": {
+      "type": "array",
+      "item": {
+        "type": "choice",
+        "choices": [
+          "ribbon",
+          "lines2",
+          "lines3",
+          "cross",
+          "pillar",
+          "header",
+          "badge",
+          "columns",
+          "orbit"
+        ]
+      }
+    },
+    "behind": {
+      "type": "choice",
+      "choices": [
+        "night",
+        "aquarium",
+        "backdrop"
+      ]
+    },
+    "glass": {
+      "type": "choice",
+      "choices": [
+        "rain",
+        "snow",
+        "dew"
+      ]
+    },
+    "scenery": {
+      "type": "array",
+      "item": {
+        "type": "choice",
+        "choices": [
+          "spot",
+          "buildings",
+          "lights",
+          "cars",
+          "road"
+        ]
+      }
+    },
+    "rain": {
+      "type": "choice",
+      "choices": [
+        "off",
+        "slant",
+        "straight"
+      ]
+    },
+    "credits": {
+      "type": "boolean"
+    },
+    "jitter": {
+      "type": "number"
+    },
+    "warp": {
+      "type": "number"
+    },
+    "mist": {
+      "type": "number"
+    },
+    "hold": {
+      "type": "number"
+    },
+    "refog": {
+      "type": "number"
+    },
+    "strokeWidth": {
+      "type": "number"
+    },
+    "writeSpeed": {
+      "type": "number"
+    },
+    "doodle": {
+      "type": "number"
+    },
+    "busSpeed": {
+      "type": "number"
+    },
+    "neon": {
+      "type": "number"
+    },
+    "spot": {
+      "type": "number"
+    },
+    "spotX": {
+      "type": "number"
+    },
+    "rainHit": {
+      "type": "number"
+    },
+    "rainBig": {
+      "type": "number"
+    },
+    "bump": {
+      "type": "number"
+    },
+    "jellies": {
+      "type": "number"
+    },
+    "jellySize": {
+      "type": "number"
+    },
+    "bubbles": {
+      "type": "number"
+    },
+    "dew": {
+      "type": "number"
+    },
+    "dewSize": {
+      "type": "number"
+    },
+    "dewGlint": {
+      "type": "number"
+    },
+    "snow": {
+      "type": "number"
+    },
+    "snowSize": {
+      "type": "number"
+    },
+    "snowMelt": {
+      "type": "number"
+    }
+  },
+  "partita": {
+    "showGuideLines": {
+      "type": "boolean"
+    },
+    "useSemanticLayout": {
+      "type": "boolean"
+    },
+    "staggerMin": {
+      "type": "number"
+    },
+    "staggerMax": {
+      "type": "number"
+    },
+    "avoidOverlap": {
+      "type": "boolean"
+    }
+  },
+  "pendolo": {
+    "render": {
+      "type": "object",
+      "fields": {
+        "scale": {
+          "type": "choice",
+          "choices": [
+            "global",
+            0.5,
+            0.75,
+            1,
+            1.5,
+            2
+          ]
+        },
+        "antialias": {
+          "type": "choice",
+          "choices": [
+            "global",
+            "on",
+            "off"
+          ]
+        }
+      }
+    },
+    "arcRadius": {
+      "type": "number"
+    },
+    "arcAngleDeg": {
+      "type": "number"
+    },
+    "wheelCenterX": {
+      "type": "number"
+    },
+    "wheelCenterY": {
+      "type": "number"
+    },
+    "tickSnappiness": {
+      "type": "number"
+    },
+    "activeScale": {
+      "type": "number"
+    },
+    "showGearDecor": {
+      "type": "choice",
+      "choices": [
+        "none",
+        "full",
+        "subtle"
+      ]
+    },
+    "showCenterGradient": {
+      "type": "boolean"
+    },
+    "showCoverOnWatchFace": {
+      "type": "boolean"
+    },
+    "enableLineGlow": {
+      "type": "boolean"
+    },
+    "mirrorLayout": {
+      "type": "boolean"
+    },
+    "tiltDeg": {
+      "type": "number"
+    },
+    "tiltAxisDeg": {
+      "type": "number"
+    },
+    "parallaxDepth": {
+      "type": "number"
+    },
+    "hubView": {
+      "type": "boolean"
+    },
+    "hubViewHeight": {
+      "type": "number"
+    },
+    "hubViewBack": {
+      "type": "number"
+    }
+  },
+  "sonnet": {
+    "render": {
+      "type": "object",
+      "fields": {
+        "scale": {
+          "type": "choice",
+          "choices": [
+            "global",
+            0.5,
+            0.75,
+            1,
+            1.5,
+            2
+          ]
+        },
+        "antialias": {
+          "type": "choice",
+          "choices": [
+            "global",
+            "on",
+            "off"
+          ]
+        }
+      }
+    },
+    "cameraIntensity": {
+      "type": "number"
+    },
+    "typographyMotion": {
+      "type": "number"
+    },
+    "mgDensity": {
+      "type": "number"
+    },
+    "showOnlyText": {
+      "type": "boolean"
+    },
+    "showGuide": {
+      "type": "boolean"
+    },
+    "showBackgroundMg": {
+      "type": "boolean"
+    },
+    "showFixedGeo": {
+      "type": "boolean"
+    },
+    "showGiantDecorativeText": {
+      "type": "boolean"
+    },
+    "showBackgroundDecor": {
+      "type": "boolean"
+    },
+    "enableTransitions": {
+      "type": "boolean"
+    },
+    "outerFrameMode": {
+      "type": "choice",
+      "choices": [
+        "none",
+        "full",
+        "frame"
+      ]
+    },
+    "textureResolution": {
+      "type": "number"
+    },
+    "postProcessEnabled": {
+      "type": "boolean"
+    },
+    "postProcessGrain": {
+      "type": "number"
+    },
+    "postProcessContrast": {
+      "type": "number"
+    },
+    "postProcessRgbShift": {
+      "type": "number"
+    },
+    "postProcessHalftone": {
+      "type": "number"
+    },
+    "postProcessVignette": {
+      "type": "number"
+    },
+    "postProcessLensDistortion": {
+      "type": "number"
+    },
+    "postProcessLensDispersion": {
+      "type": "number"
+    }
+  },
+  "tempera": {
+    "render": {
+      "type": "object",
+      "fields": {
+        "scale": {
+          "type": "choice",
+          "choices": [
+            "global",
+            0.5,
+            0.75,
+            1,
+            1.5,
+            2
+          ]
+        },
+        "antialias": {
+          "type": "choice",
+          "choices": [
+            "global",
+            "on",
+            "off"
+          ]
+        }
+      }
+    },
+    "cameraIntensity": {
+      "type": "number"
+    },
+    "glyphMotion": {
+      "type": "number"
+    },
+    "wholeLineLyrics": {
+      "type": "boolean"
+    },
+    "glyphSettleStretch": {
+      "type": "number"
+    },
+    "depthOfField": {
+      "type": "number"
+    },
+    "depthPan": {
+      "type": "number"
+    },
+    "glyphDepth": {
+      "type": "number"
+    },
+    "colorMode": {
+      "type": "choice",
+      "choices": [
+        "duo",
+        "mono",
+        "gradient"
+      ]
+    },
+    "showBlocks": {
+      "type": "boolean"
+    },
+    "showDecor": {
+      "type": "boolean"
+    },
+    "showCornerMarks": {
+      "type": "boolean"
+    },
+    "textInversion": {
+      "type": "boolean"
+    },
+    "layerImages": {
+      "type": "array",
+      "item": {
+        "type": "object",
+        "fields": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "align": {
+            "type": "choice",
+            "choices": [
+              "center",
+              "left",
+              "right",
+              "free"
+            ]
+          },
+          "verticalAlign": {
+            "type": "choice",
+            "choices": [
+              "center",
+              "free",
+              "top",
+              "bottom"
+            ]
+          },
+          "scale": {
+            "type": "number"
+          },
+          "opacity": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "layerImageDepth": {
+      "type": "choice",
+      "choices": [
+        "back",
+        "front"
+      ]
+    },
+    "layerImageFrequency": {
+      "type": "number"
+    },
+    "enableTransitions": {
+      "type": "boolean"
+    },
+    "textureResolution": {
+      "type": "number"
+    },
+    "postProcessEnabled": {
+      "type": "boolean"
+    },
+    "postProcessTextureCompression": {
+      "type": "boolean"
+    },
+    "postProcessGrain": {
+      "type": "number"
+    },
+    "postProcessContrast": {
+      "type": "number"
+    },
+    "postProcessRgbShift": {
+      "type": "number"
+    },
+    "postProcessVignette": {
+      "type": "number"
+    },
+    "postProcessLensDistortion": {
+      "type": "number"
+    }
+  },
+  "tilt": {
+    "splitProbability": {
+      "type": "number"
+    },
+    "tiltStyleProbability": {
+      "type": "number"
+    },
+    "colorScheme": {
+      "type": "choice",
+      "choices": [
+        "default",
+        "swap",
+        "accentAll",
+        "primaryAll"
+      ]
+    }
+  },
+  "background:latent": {
+    "displayMode": {
+      "type": "choice",
+      "choices": [
+        "both",
+        "dithering",
+        "mesh"
+      ]
+    },
+    "colorSource": {
+      "type": "choice",
+      "choices": [
+        "cover-theme",
+        "cover-only"
+      ]
+    },
+    "dynamicOnlyInPlayer": {
+      "type": "boolean"
+    },
+    "enhancedBeatResponse": {
+      "type": "boolean"
+    },
+    "ditheringSpeed": {
+      "type": "number"
+    },
+    "ditheringAudioSpeed": {
+      "type": "number"
+    },
+    "ditheringSize": {
+      "type": "number"
+    },
+    "ditheringOpacity": {
+      "type": "number"
+    },
+    "meshSpeed": {
+      "type": "number"
+    },
+    "meshAudioSpeed": {
+      "type": "number"
+    },
+    "meshDistortion": {
+      "type": "number"
+    },
+    "meshSwirl": {
+      "type": "number"
+    },
+    "overlayEnabled": {
+      "type": "boolean"
+    },
+    "overlayOpacity": {
+      "type": "number"
+    }
+  },
+  "background:monet": {
+    "backgroundSource": {
+      "type": "choice",
+      "choices": [
+        "cover-derived",
+        "uploaded-global"
+      ]
+    },
+    "backgroundLayout": {
+      "type": "choice",
+      "choices": [
+        "full-overlay",
+        "half-pane-gradient"
+      ]
+    },
+    "backgroundBlurPx": {
+      "type": "number"
+    },
+    "backgroundOverlayOpacity": {
+      "type": "number"
+    },
+    "backgroundGrayscale": {
+      "type": "number"
+    },
+    "backgroundSaturation": {
+      "type": "number"
+    },
+    "backgroundWash": {
+      "type": "number"
+    },
+    "backgroundHalfPaneOffsetX": {
+      "type": "number"
+    },
+    "backgroundWashColorMode": {
+      "type": "choice",
+      "choices": [
+        "custom",
+        "theme"
+      ]
+    },
+    "backgroundWashCustomColor": {
+      "type": "string"
+    },
+    "backgroundDriftEnabled": {
+      "type": "boolean"
+    },
+    "backgroundDriftStrength": {
+      "type": "number"
+    },
+    "backgroundStreaksEnabled": {
+      "type": "boolean"
+    }
+  },
+  "background:nomand": {
+    "imageSource": {
+      "type": "choice",
+      "choices": [
+        "cover-derived",
+        "uploaded-global"
+      ]
+    },
+    "effect": {
+      "type": "choice",
+      "choices": [
+        "dithering",
+        "fluted-glass",
+        "paper-texture",
+        "halftone-dots",
+        "lens-distortion"
+      ]
+    },
+    "ditheringType": {
+      "type": "choice",
+      "choices": [
+        "2x2",
+        "4x4",
+        "8x8"
+      ]
+    },
+    "size": {
+      "type": "number"
+    },
+    "colorSteps": {
+      "type": "number"
+    },
+    "originalColors": {
+      "type": "boolean"
+    },
+    "inverted": {
+      "type": "boolean"
+    },
+    "flutedGlassSize": {
+      "type": "number"
+    },
+    "flutedGlassDistortion": {
+      "type": "number"
+    },
+    "flutedGlassBlur": {
+      "type": "number"
+    },
+    "paperTextureContrast": {
+      "type": "number"
+    },
+    "paperTextureRoughness": {
+      "type": "number"
+    },
+    "paperTextureFiber": {
+      "type": "number"
+    },
+    "halftoneDotsSize": {
+      "type": "number"
+    },
+    "halftoneDotsRadius": {
+      "type": "number"
+    },
+    "halftoneDotsContrast": {
+      "type": "number"
+    },
+    "halftoneDotsOriginalColors": {
+      "type": "boolean"
+    },
+    "halftoneDotsInverted": {
+      "type": "boolean"
+    },
+    "lensDistortionSpread": {
+      "type": "number"
+    },
+    "lensDistortionBulge": {
+      "type": "number"
+    },
+    "lensDistortionDispersion": {
+      "type": "number"
+    },
+    "overlayEnabled": {
+      "type": "boolean"
+    },
+    "overlayOpacity": {
+      "type": "number"
+    }
+  },
+  "background:sora": {
+    "blank": {
+      "type": "boolean"
+    }
+  }
+}

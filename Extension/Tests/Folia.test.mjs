@@ -64,7 +64,7 @@ test('settings validation preserves supported selections and repairs corrupt pre
   const source=stripTypeScriptTypes(await readFile(new URL('../Folia/vendor/src/types/visualizerModes.ts',import.meta.url),'utf8'))
     .replace(/^import.*\n/gm,'').replace(/\bexport\s+/g,'');
   const constants=new Function(source+'\nreturn {BUILTIN_VISUALIZER_MODES,BUILTIN_VISUALIZER_BACKGROUND_MODES};')();
-  assert.equal(constants.BUILTIN_VISUALIZER_MODES.length,13);assert.equal(constants.BUILTIN_VISUALIZER_BACKGROUND_MODES.length,5);
+  assert.equal(constants.BUILTIN_VISUALIZER_MODES.length,17);assert.equal(constants.BUILTIN_VISUALIZER_BACKGROUND_MODES.length,5);
   assert.equal(constants.BUILTIN_VISUALIZER_MODES.includes('fume'),false);
   const {validateSettings}=await load('settings','validateSettings',constants);
   assert.deepEqual(validateSettings({mode:'unknown',background:'url',fontScale:Infinity,showLyrics:'false'}),{mode:'classic',background:'latent',fontScale:1,showLyrics:true,showSubtitles:false});

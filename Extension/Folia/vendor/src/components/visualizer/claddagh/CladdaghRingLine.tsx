@@ -1,10 +1,11 @@
 import React, { useMemo, useRef, useLayoutEffect, useCallback } from 'react';
 import { MotionValue } from 'framer-motion';
 import { type Line, type Theme } from '../../../types';
-import { buildLineGraphemeTimeline } from '../../../utils/lyrics/graphemeTiming';
+import { buildLineGraphemeTimeline, splitLyricGraphemes } from '../../../utils/lyrics/graphemeTiming';
 import { resolveThemeFontStack, resolveThemeFontWeight } from '../../../utils/fontStacks';
-import { colorWithAlpha, mixColors } from '../colorMix';
+import { colorWithAlpha, mixColors } from '../../../utils/colorMix';
 import { isGlowBlurQuantized, quantizeShadowBlur } from '../../../utils/glowBlurQuantize';
+import { cancelUncappedAnimationFrame, requestUncappedAnimationFrame } from '../../../utils/frameRateLimiter';
 import { buildWordColorRanges } from '../wordColoring';
 import {
     adjustCladdaghTimeline,
@@ -26,6 +27,44 @@ import { buildCladdaghGlowFilter } from './claddaghGlow';
 
 // src/components/visualizer/claddagh/CladdaghRingLine.tsx
 // 投影到 3D 椭圆环上的一行歌词：在 useLayoutEffect 里直接写每个字素 span 的变换与样式。
+
+// The ring settle: one animation-frame callback for all ring lines on screen, which rewrites the
+// glyphs of a line whose ring turned in this frame and has not been rewritten since.
+// It runs on every frame of the display, past the frame-rate cap. A turn that waits for it must be
+// written in the frame the ring's spring moved in, and that spring is not always under the cap:
+// framer-motion keeps the `requestAnimationFrame` it found when its module loaded, so with the cap
+// switched on later the spring still moves on frames the cap skips.
+const ringSettleCallbacks = new Set<() => void>();
+let ringSettleFrame = 0;
+// The frame the settle last ran in, as the document's timeline names it.
+let ringSettledAt: CSSNumberish | null = null;
+
+const runRingSettle = () => {
+    ringSettledAt = document.timeline.currentTime;
+    ringSettleCallbacks.forEach(callback => callback());
+    ringSettleFrame = ringSettleCallbacks.size > 0 ? requestUncappedAnimationFrame(runRingSettle) : 0;
+};
+
+/**
+ * Adds a line to the ring settle and returns how to take it out again. The settle is asked for anew
+ * each time, which puts it behind the callbacks that were already waiting: a line joins when the
+ * lyric line changes, so for the turn that follows it runs after the song time has been written.
+ */
+const joinRingSettle = (callback: () => void) => {
+    // A callback asked for inside a frame runs in the next one. So a line that waits for this frame's
+    // settle is rewritten now, and the rest of this frame counts as settled.
+    ringSettleCallbacks.forEach(waiting => waiting());
+    ringSettleCallbacks.add(callback);
+    cancelUncappedAnimationFrame(ringSettleFrame);
+    ringSettleFrame = requestUncappedAnimationFrame(runRingSettle);
+    ringSettledAt = document.timeline.currentTime;
+    return () => {
+        ringSettleCallbacks.delete(callback);
+    };
+};
+
+/** Whether the settle has yet to run in the frame that is being made. */
+const isRingSettleStillToCome = () => document.timeline.currentTime !== ringSettledAt;
 
 /** The per-frame style of one glyph span, as strings ready to assign. */
 interface GlyphStyle {
@@ -56,7 +95,17 @@ interface RingLineProps {
     ellipseTiltDeg?: number;
     textSpacingScale?: number;
     letterSpacingOffset?: number;
+    /** The line's translation, set along the ring under the lyric (#1124); none when it is not shown. */
+    translation?: string;
+    translationFontStack?: string;
+    translationFontWeight?: number;
+    /** The translation's size against its default, half the lyric's. */
+    translationScale?: number;
+    translationLetterSpacingOffset?: number;
 }
+
+/** The translation's default size against the lyric's. */
+const CLADDAGH_TRANSLATION_FONT_RATIO = 0.5;
 
 /**
  * Component representing a single line of lyrics projected onto a portion of the 3D ring.
@@ -81,6 +130,11 @@ export const RingLine: React.FC<RingLineProps> = ({
     ellipseTiltDeg,
     textSpacingScale = 1,
     letterSpacingOffset = 0,
+    translation,
+    translationFontStack,
+    translationFontWeight = 600,
+    translationScale = 1,
+    translationLetterSpacingOffset = 0,
 }) => {
     const fontStack = resolveThemeFontStack(theme);
     const baseFontSize = 72 * lyricsFontScale;
@@ -126,7 +180,19 @@ export const RingLine: React.FC<RingLineProps> = ({
         return buildMeasuredSpacingInfo(data, fontSpec, baseFontSize, Rx, textSpacingScale, letterSpacingOffset);
     }, [line, theme.wordColors, fontSpec, baseFontSize, Rx, textSpacingScale, letterSpacingOffset]);
 
+    // The translation's glyphs: centred on the ring like the lyric's, at their own measured spacing.
+    const translationFontPx = baseFontSize * CLADDAGH_TRANSLATION_FONT_RATIO * translationScale;
+    const resolvedTranslationFontStack = translationFontStack ?? fontStack;
+    const translationSpacingInfo = useMemo(() => {
+        const text = translation?.trim();
+        if (!text) return [];
+        const items = splitLyricGraphemes(text).map(char => ({ char }));
+        const spec = `${translationFontWeight} ${translationFontPx}px ${resolvedTranslationFontStack}`;
+        return buildMeasuredSpacingInfo(items, spec, translationFontPx, Rx, 1, translationLetterSpacingOffset);
+    }, [translation, translationFontWeight, translationFontPx, resolvedTranslationFontStack, Rx, translationLetterSpacingOffset]);
+
     const charRefs = useRef<(HTMLSpanElement | null)[]>([]);
+    const translationRefs = useRef<(HTMLSpanElement | null)[]>([]);
     const previousTimeRef = useRef(currentTime.get());
     const holdResetFrameRef = useRef(false);
 
@@ -349,6 +415,13 @@ export const RingLine: React.FC<RingLineProps> = ({
                 }
                 finalOpacity = finalOpacity * boundaryFade;
 
+                // A glyph at opacity 0 draws nothing, whatever its transform, colour, glow and blur are. Once
+                // that opacity has been written, nothing more is written for the glyph until it is visible
+                // again, and the frame it is writes all five styles below. A glyph element that React replaces
+                // starts at opacity 0 (the style below) with nothing in `written`, so its first frame writes all.
+                const opacityText = finalOpacity.toFixed(3);
+                if (Number(opacityText) === 0 && Number(written.get(el)?.opacity ?? 1) === 0) continue;
+
                 const scale = (0.22 + 0.98 * Math.pow(D, 1.5)) * (1.0 + (focusScaleRatio ?? 0.65) * F) * lengthScaleFactor * ((item as any).scaleFactor ?? 1.0);
                 const blur = 8.0 * (1 - D) * (1 - 0.5 * F);
                 const tiltAngle = clamp(tangentAngle * (0.4 + 0.6 * D), -38, 38);
@@ -439,27 +512,122 @@ export const RingLine: React.FC<RingLineProps> = ({
 
                 writeGlyph(el, {
                     transform,
-                    opacity: finalOpacity.toFixed(3),
+                    opacity: opacityText,
                     color: targetColor,
                     textShadow,
                     filter: [glowFilter, blurFilter].filter(Boolean).join(' ') || 'none',
                 });
             }
+
+            // The translation (#1124): on the same ellipse and turn as the lyric, moved out along the
+            // ellipse's minor axis so it runs under the lyric, clear of the focused glyphs' scale-up.
+            // No per-glyph timing of its own: it fills in at the pace the lyric line is sung.
+            const translationLength = translationSpacingInfo.length;
+            if (translationLength > 0) {
+                const thetaRot = -((ellipseTiltDeg ?? 45) * Math.PI) / 180;
+                const cosTheta = Math.cos(thetaRot);
+                const sinTheta = Math.sin(thetaRot);
+                const lineDiffNormalized = lineDiffFromCenter;
+                const activeLineFactor = Math.max(0, 1 - lineDiffNormalized);
+                const maxVisibleDist = currentRx * 0.48;
+                const focusScale = focusScaleRatio ?? 0.65;
+                const gapPx = baseFontSize * 0.62 * (1 + focusScale * 0.5) + translationFontPx * 0.8;
+                const sungGlyphs = getLinePlaybackProgress(spacingInfo, latestTime, ownRenderEnd) * translationLength;
+
+                for (let i = 0; i < translationLength; i++) {
+                    const el = translationRefs.current[i];
+                    if (!el) continue;
+
+                    const item = translationSpacingInfo[i];
+                    const psi = lineIndex * Math.PI + item.nominalAngle - curLineOffset - wordOffset;
+                    const deltaDist = psi * R_ref;
+                    const thetaCurve = deltaDist / R_major;
+                    const localCos = Math.cos(thetaCurve);
+                    const D = (localCos + 1) / 2;
+                    const depthScale = 0.22 + 0.98 * Math.pow(D, 1.5);
+                    const spacingFactor = 0.35 + 0.65 * Math.pow(D, 1.2);
+                    const rawX = Math.sin(thetaCurve) * R_major * spacingFactor;
+                    const rawY = localCos * R_minor + gapPx * depthScale;
+                    const x = rawX * cosTheta - rawY * sinTheta;
+                    const y = rawX * sinTheta + rawY * cosTheta;
+
+                    const tangentX = Math.cos(thetaCurve) * R_major;
+                    const tangentY = -Math.sin(thetaCurve) * R_minor;
+                    const tangentAngle = normalizeReadableAngle(Math.atan2(
+                        tangentX * sinTheta + tangentY * cosTheta,
+                        tangentX * cosTheta - tangentY * sinTheta,
+                    ) * 180 / Math.PI);
+
+                    const F = activeLineFactor * Math.pow(1 - Math.min(1, Math.abs(deltaDist) / maxVisibleDist), 1.8);
+                    let opacity = (0.35 + 0.65 * Math.pow(D, 1.5) * (0.35 + 0.65 * F)) * (0.68 + 0.32 * Math.pow(D, 1.9));
+                    opacity *= clamp(2 - lineDiffNormalized, 0, 1) * lengthFadeFactor * 0.9;
+                    if (lineIndex < centerLineIndex) opacity *= Math.max(0, 1 - lineDiffNormalized);
+                    if (isUpcomingLine) opacity *= 0.18 + 0.82 * upcomingEntryProgress;
+                    if (lineDiffFromCenter > 0.02) {
+                        const cosThreshold = 1.0 - 1.2 * clamp((lineDiffFromCenter - 0.3) / 0.6, 0, 1);
+                        if (localCos > cosThreshold) opacity *= clamp(1.0 - (localCos - cosThreshold) / 0.15, 0, 1);
+                    }
+
+                    const opacityText = opacity.toFixed(3);
+                    if (Number(opacityText) === 0 && Number(written.get(el)?.opacity ?? 1) === 0) continue;
+
+                    const scale = depthScale * (1 + focusScale * 0.35 * F) * lengthScaleFactor * item.scaleFactor;
+                    const blur = 8.0 * (1 - D) * (1 - 0.5 * F);
+                    const tiltAngle = clamp(tangentAngle * (0.4 + 0.6 * D), -38, 38);
+                    const sung = clamp(sungGlyphs - i, 0, 1);
+
+                    writeGlyph(el, {
+                        transform: `translate3d(calc(-50% + ${x.toFixed(1)}px), calc(-50% + ${y.toFixed(1)}px), 0px) rotate(${tiltAngle.toFixed(2)}deg) scale(${scale.toFixed(3)})`,
+                        opacity: opacityText,
+                        color: sung > 0 ? mixColors(baseColor, highlightColor, sung, 0.55 + 0.3 * sung) : baseColor,
+                        textShadow: 'none',
+                        filter: blur < 0.2 ? 'none' : `blur(${blur.toFixed(2)}px)`,
+                    });
+                }
+            }
         };
 
-        const handleUpdate = () => {
-            handler(currentTime.get());
+        // The glyphs follow the song time and the ring's angle. While the ring turns after a line change
+        // both change in one frame, and each used to rewrite every glyph at once. The song time still
+        // does. A turn of the ring's spring now waits for the ring settle (see `joinRingSettle`)
+        // whenever that is still to run in the same frame: by then the song time has usually rewritten
+        // the glyphs with the new angle, and when it has not, the settle does. So the last rewrite of a
+        // frame has read both values, as before, and a frame has one rewrite less. This holds only
+        // because the settle runs on every frame of the display (see `ringSettleCallbacks`).
+        let anglePending = false;
+        const leaveRingSettle = joinRingSettle(() => {
+            if (anglePending) {
+                anglePending = false;
+                handler(currentTime.get());
+            }
+        });
+        const handleAngle = () => {
+            if (lineOffset.isAnimating() && isRingSettleStillToCome()) {
+                anglePending = true;
+            } else {
+                handler(currentTime.get());
+            }
+        };
+        const handleTime = (latestTime: number) => {
+            // The frame that is held at a playback reset (see `handler`) keeps the angle the ring had
+            // reached in it: the turn that was waiting is written with the time before the reset.
+            if (anglePending && shouldHoldCladdaghFrameForPlaybackReset(previousTimeRef.current, latestTime, centerLineIndex)) {
+                handler(previousTimeRef.current);
+            }
+            anglePending = false;
+            handler(latestTime);
         };
 
-        const unsubscribeTime = currentTime.on("change", handler);
-        const unsubscribeOffset = lineOffset.on("change", handleUpdate);
+        const unsubscribeTime = currentTime.on("change", handleTime);
+        const unsubscribeOffset = lineOffset.on("change", handleAngle);
         handler(currentTime.get());
 
         return () => {
+            leaveRingSettle();
             unsubscribeTime();
             unsubscribeOffset();
         };
-    }, [spacingInfo, lineIndex, centerLineIndex, lineOffset, Rx, Ry, audioPower, currentTime, containerWidth, containerHeight, activeSpacingInfo, renderBaseIndex, highlightColor, baseColor, focusScaleRatio, ellipseTiltDeg, lines, line]);
+    }, [spacingInfo, translationSpacingInfo, translationFontPx, lineIndex, centerLineIndex, lineOffset, Rx, Ry, audioPower, currentTime, containerWidth, containerHeight, activeSpacingInfo, renderBaseIndex, highlightColor, baseColor, focusScaleRatio, ellipseTiltDeg, lines, line]);
 
     return (
         <div className="absolute inset-0 pointer-events-none w-full h-full">
@@ -478,6 +646,30 @@ export const RingLine: React.FC<RingLineProps> = ({
                         fontFamily: fontStack,
                         fontSize: `${baseFontSize}px`,
                         fontWeight,
+                        letterSpacing: `${CLADDAGH_LETTER_SPACING_EM}em`,
+                        whiteSpace: 'nowrap',
+                        color: baseColor,
+                    }}
+                >
+                    {item.char}
+                </span>
+            ))}
+            {translationSpacingInfo.map((item, idx) => (
+                <span
+                    key={`translation-${idx}`}
+                    ref={el => { translationRefs.current[idx] = el; }}
+                    data-claddagh-translation
+                    style={{
+                        position: 'absolute',
+                        left: '50%',
+                        top: '50%',
+                        opacity: 0,
+                        transform: 'translate3d(-50%, -50%, 0px) scale(0.2)',
+                        transformOrigin: 'center center',
+                        willChange: 'transform, opacity, filter, color',
+                        fontFamily: resolvedTranslationFontStack,
+                        fontSize: `${translationFontPx}px`,
+                        fontWeight: translationFontWeight,
                         letterSpacing: `${CLADDAGH_LETTER_SPACING_EM}em`,
                         whiteSpace: 'nowrap',
                         color: baseColor,

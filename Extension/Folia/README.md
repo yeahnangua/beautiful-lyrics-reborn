@@ -1,8 +1,8 @@
 # Folia fullscreen integration
 
-The Spicetify fullscreen host mounts an isolated React root in a Shadow DOM. Playback, lyrics fetching, navigation and feedback remain owned by Beautiful Lyrics Reborn. The copied visualizers come from [Folia](https://github.com/chthollyphile/folia-major), revision `43605cd8e562b7aa0e5897478856ce3604a054a1` (0.7.18).
+The Spicetify fullscreen host mounts an isolated React root in a Shadow DOM. Playback, lyrics fetching, navigation and feedback remain owned by Beautiful Lyrics Reborn. The copied visualizers come from [Folia](https://github.com/chthollyphile/folia-major), revision `3b91924f1e2da7b7f8f9cf1e0cd0b25d4a789e6d` (0.8.0).
 
-The 13 modes are Classic, Cadenza, Partita, Cappella, Tilt, Claddagh, Monet, Diorama, Pendolo, Sonnet, Tempera, Lumiere and Still. The five backgrounds are Common, Latent, Monet, Nomand and Sora. Defaults are Classic, Latent and Folia's Midnight theme, with lyrics visible and subtitles hidden. Explicitly saved subtitle preferences are respected. Mode, background, font size and display switches are stored under `BeautifulLyrics/FoliaFullscreen/v1`. A saved Fume selection falls back to Classic because Fume is excluded from this integration.
+The 17 modes are Classic, Cadenza, Partita, Cappella, Tilt, Claddagh, Monet, Diorama, Pendolo, Sonnet, Tempera, Lumiere, Still, Nebbia, Hanabi, Machi and Metaphor. The five backgrounds are Common, Latent, Monet, Nomand and Sora. Defaults are Classic, Latent and Folia's Midnight theme, with lyrics visible and subtitles hidden. Explicitly saved subtitle preferences are respected. Mode, background, font size and display switches are stored under `BeautifulLyrics/FoliaFullscreen/v1`. A saved Fume selection falls back to Classic because Fume is excluded from this integration.
 
 ## Build and verify
 
@@ -22,6 +22,14 @@ From the repository root, `node --test Extension/Tests/*.test.mjs` verifies the 
 
 ## Host boundary
 
+The 0.8.0 adapter retains all seventeen selected renderer implementations and their tuning normalization. Per-mode and background values use `BeautifulLyrics/FoliaFullscreen/tunings/v1`; the old general preference key remains unchanged. The host generates accessible controls from the upstream tuning types, with upstream read/merge functions validating each change. Machi also has a camera overlay. Fume, URL backgrounds, Folium, desktop audio decoding, stem models and video export remain outside this integration.
+
+Spotify beat timestamps drive beat-list effects through the host clock. Drum hits and isolated vocal envelopes explicitly remain unavailable; broadband proxies are not labeled as separated audio. Hiding the document unmounts the visual surface and releases its GPU loops, and showing it remounts at the current playback position.
+
+Nebbia stroke medians are generated from the upstream-pinned AnimCJK sources with SHA-256 verification. Online builds download a separately hashed JSON asset only when Nebbia needs it; offline builds embed it. A release build fails if generation fails. The APL data notices are embedded in the runtime alongside the program's notices. `nebbia-strokes-build.mjs` retains the upstream generator and its fixed source hashes.
+
+`audit-vendor.mjs` inventories static imports, dynamic imports and Vite glob entries. `--prune` removes unreachable copied TypeScript only inside the vendor tree. Run `node generate-tuning-schema.mjs` after upstream tuning types change, review the generated schema, then run vendor-wide typechecking and the browser suite.
+
 `src/contracts.ts` contains dependency-free snapshots, actions and mount handles shared with the Deno host. `src/lyrics.ts` preserves syllable times, spacing, overlapping vocals and singer identity, and leaves interludes as gaps. Untimed lyrics use a scrollable full-text surface. `src/model.ts` advances precise clocks and audio proxies through MotionValues; only active-line and discrete UI changes notify React.
 
 `src/audio.ts` uses Spicetify track analysis to derive loudness and beat envelopes. Band inputs are proxies, not measured frequency bands; no FFT is synthesized. Missing APIs, unsupported tracks, invalid data and a 6.5-second deadline fall back to zero input. The lyric clock includes the saved offset; audio analysis and the progress bar use the unshifted playback clock.
@@ -30,7 +38,7 @@ The native full-screen and cinema entries continue to use `/BeautifulLyrics/Full
 
 ## Upstream adaptations and licenses
 
-`vendor/provenance.json` records the copied paths and upstream revision. Renderer code and annotations are retained. Entry modules expose renderers without the full application's settings panels. The shared shell omits Folium and local video layers; Sonnet uses no mod multipliers. The bottom subtitle layout no longer imports the application's settings store. Custom Tempera image storage is an empty pool in this integration. Diorama uses a standalone interlude predicate instead of importing the upstream parser. Pixi initialization failures notify the host's fallback boundary. Reduced-motion decisions retain Folia's default animation behavior without changing Spotify's document attributes.
+`vendor/provenance.json` records the copied paths and upstream revision. Renderer code and annotations are retained. Entry modules expose renderers to Reborn-owned tuning controls without the full application settings store. The shared shell omits Folium and local video layers; Sonnet uses no mod multipliers. Bottom subtitles remain translation-only. Custom Tempera image storage is an empty pool in this integration. Diorama uses a standalone interlude predicate instead of importing the upstream parser. Pixi initialization failures notify the host's fallback boundary. Reduced-motion decisions retain Folia's default animation behavior without changing Spotify's document attributes.
 
 Folia's AGPL license is preserved in `vendor/LICENSE`, and the original avatar/emoji notices accompany the images. Build output includes `dist/THIRD_PARTY_NOTICES.txt`, assembled from the license files of bundled packages. These notices are also embedded in the single extension payload. No files under the original temporary checkout are required for building or running the extension.
 

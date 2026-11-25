@@ -1,0 +1,61 @@
+{
+  "hanabi": {
+    "colorMode": "配色",
+    "renderQuality": "画质"
+  },
+  "machi": {
+    "scene": "场景",
+    "timeOfDay": "时间",
+    "weather": "天气",
+    "simulatedBeat": "模拟节拍",
+    "camera": "视角",
+    "motion": "运镜",
+    "motionSpeed": "运镜速度",
+    "dof": "景深强度",
+    "dofRange": "清晰范围",
+    "tiltShift": "移轴",
+    "focus": "对焦",
+    "focusOffset": "对焦前后"
+  },
+  "background:latent": {
+    "displayMode": "显示图层",
+    "colorSource": "颜色来源",
+    "dynamicOnlyInPlayer": "仅在播放页启用动态效果",
+    "enhancedBeatResponse": "增强节拍响应",
+    "overlayEnabled": "可读性叠色",
+    "overlayOpacity": "叠色透明度",
+    "ditheringSpeed": "基础速度",
+    "ditheringAudioSpeed": "音频响应最大速度",
+    "ditheringSize": "像素尺寸",
+    "ditheringOpacity": "像素层透明度",
+    "meshSpeed": "基础速度",
+    "meshAudioSpeed": "音频响应最大速度",
+    "meshDistortion": "流体扭曲",
+    "meshSwirl": "流体旋涡"
+  },
+  "background:nomand": {
+    "effect": "效果",
+    "ditheringType": "像素画图案",
+    "size": "网点尺寸",
+    "colorSteps": "色阶数量",
+    "originalColors": "保留图片原色",
+    "inverted": "反转图片明度",
+    "flutedGlassSize": "纹理尺寸",
+    "flutedGlassDistortion": "扭曲",
+    "flutedGlassBlur": "模糊",
+    "halftoneDotsSize": "网点尺寸",
+    "halftoneDotsRadius": "网点半径",
+    "halftoneDotsContrast": "对比度",
+    "halftoneDotsOriginalColors": "保留图片原色",
+    "halftoneDotsInverted": "反转图片明度",
+    "lensDistortionSpread": "色彩分离",
+    "lensDistortionBulge": "镜头膨胀",
+    "lensDistortionDispersion": "色彩色散",
+    "paperTextureContrast": "对比度",
+    "paperTextureRoughness": "粗糙度",
+    "paperTextureFiber": "纤维"
+  },
+  "background:sora": {
+    "blank": "完全空白"
+  }
+}

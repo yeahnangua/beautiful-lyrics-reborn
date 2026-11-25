@@ -1,16 +1,17 @@
-import React, { forwardRef, useEffect, useRef, useState } from 'react';
-import { motion, MotionValue } from 'framer-motion';
-import { useTranslation } from 'react-i18next';
-import { ChevronLeft } from 'lucide-react';
+import React, { forwardRef, useContext, useEffect, useLayoutEffect, useRef } from 'react';
+import { MotionValue } from 'framer-motion';
 import { AudioBands, Theme } from '../../types';
 import { resolveThemeFontStack, resolveThemeFontWeight } from '../../utils/fontStacks';
 import { type VisualizerSharedProps } from './definition';
-import VisualizerBackgroundRenderer from './backgrounds/VisualizerBackgroundRenderer';
-import { getSizedCoverUrl } from '../../utils/coverUrl';
+import { VisualizerBackdropContext, VisualizerBackdropLayers } from './VisualizerBackdrop';
+import { usePlayerChrome } from './usePlayerChrome';
 
 // Shared outer shell for all visualizers.
-// This is where we keep background layering, font injection, and the hover-only back button
+// This is where we keep background layering, font injection, and the player chrome (usePlayerChrome)
 // so each renderer can stay focused on lyric timing/layout instead of rebuilding the same frame.
+// Inside VisualizerRenderer the background, the video layer, the mod stage layers and the opacity are its
+// backdrop's (VisualizerBackdrop.tsx), which a style switch keeps; the shell draws them only where it
+// stands alone.
 type VisualizerShellSharedProps = Pick<
     VisualizerSharedProps,
     | 'coverUrl'
@@ -34,19 +35,11 @@ interface VisualizerShellProps {
     audioBands: AudioBands;
     sharedProps?: VisualizerShellSharedProps;
     visualizerOpacity?: number;
+    /** False for a style drawn over no background. Inside VisualizerRenderer the style's registry entry says it instead (`background`). */
     renderBackground?: boolean;
     children: React.ReactNode;
     className?: string;
 }
-
-const PLAYER_CHROME_HOTSPOT_SIZE = 120;
-const TOUCH_GUIDE_DISPLAY_MS = 1400;
-
-const isNearPlayerPanelHotspot = (clientX: number, clientY: number) => (
-    typeof window !== 'undefined'
-    && clientX >= window.innerWidth - PLAYER_CHROME_HOTSPOT_SIZE
-    && clientY >= window.innerHeight - PLAYER_CHROME_HOTSPOT_SIZE
-);
 
 const VisualizerShell = forwardRef<HTMLDivElement, VisualizerShellProps>(({
     theme,
@@ -58,54 +51,43 @@ const VisualizerShell = forwardRef<HTMLDivElement, VisualizerShellProps>(({
     children,
     className = '',
 }, ref) => {
-    const { t } = useTranslation();
-    const [showBackButton, setShowBackButton] = useState(false);
-    const playerPanelGuideHotspotRef = useRef(false);
-    const touchGuideHideTimeoutRef = useRef<number | null>(null);
-    const resolvedCoverUrl = getSizedCoverUrl(sharedProps?.coverUrl, 1024) || undefined;
+    const backdrop = useContext(VisualizerBackdropContext);
+    const isInBackdrop = backdrop !== null;
+    const pointerArea = backdrop?.pointerArea ?? null;
     const resolvedIsDaylight = sharedProps?.isDaylight ?? false;
     const resolvedVisualizerOpacity = sharedProps?.visualizerOpacity ?? visualizerOpacity;
     const resolvedStaticMode = sharedProps?.staticMode ?? false;
-    const resolvedBackgroundStaticMode = sharedProps?.backgroundStaticMode ?? false;
     const resolvedPaused = sharedProps?.paused ?? false;
-    const resolvedOnBack = sharedProps?.onBack;
-    const resolvedIsPanelOpen = sharedProps?.isPanelOpen ?? false;
-    const onPlayerPanelGuideHotspotChange = sharedProps?.onPlayerPanelGuideHotspotChange;
-    const isBackButtonVisible = sharedProps?.alwaysShowBackButton || showBackButton;
+    const showStageLayers = !isInBackdrop && !sharedProps?.isPreviewMode && !resolvedStaticMode;
+    const { pointer, backButton } = usePlayerChrome(sharedProps);
 
-    const updatePlayerPanelGuideHotspot = (isActive: boolean) => {
-        if (playerPanelGuideHotspotRef.current === isActive) {
-            return;
-        }
-
-        playerPanelGuideHotspotRef.current = isActive;
-        onPlayerPanelGuideHotspotChange?.(isActive);
-    };
-
-    const clearTouchGuideHideTimeout = () => {
-        if (touchGuideHideTimeoutRef.current === null) {
-            return;
-        }
-
-        window.clearTimeout(touchGuideHideTimeoutRef.current);
-        touchGuideHideTimeoutRef.current = null;
-    };
-
-    const showTouchPanelGuide = () => {
-        clearTouchGuideHideTimeout();
-        updatePlayerPanelGuideHotspot(true);
-        touchGuideHideTimeoutRef.current = window.setTimeout(() => {
-            touchGuideHideTimeoutRef.current = null;
-            updatePlayerPanelGuideHotspot(false);
-        }, TOUCH_GUIDE_DISPLAY_MS);
-    };
-
-    useEffect(() => () => {
-        clearTouchGuideHideTimeout();
-        if (playerPanelGuideHotspotRef.current) {
-            onPlayerPanelGuideHotspotChange?.(false);
-        }
-    }, [onPlayerPanelGuideHotspotChange]);
+    // Inside a backdrop the shell's box lets the pointer through (to stage layers under the style), so
+    // the same handlers listen on the backdrop's box, which every pointer over the visualizer crosses.
+    // A shell that stops listening (it unmounts, or its style starts leaving) hides the guide it showed
+    // at once: the shell that listens next starts from a hidden guide, so the two agree. Moves are read
+    // on the way down (capture), so a layer that keeps its own moves to itself still reveals the chrome.
+    const pointerRef = useRef(pointer);
+    useLayoutEffect(() => {
+        pointerRef.current = pointer;
+    });
+    useEffect(() => {
+        if (!pointerArea) return undefined;
+        const move = (event: MouseEvent) => pointerRef.current.move(event);
+        const leave = () => pointerRef.current.leave();
+        const down = (event: PointerEvent) => pointerRef.current.down(event);
+        const cancel = () => pointerRef.current.cancel();
+        pointerArea.addEventListener('mousemove', move, true);
+        pointerArea.addEventListener('mouseleave', leave);
+        pointerArea.addEventListener('pointerdown', down);
+        pointerArea.addEventListener('pointercancel', cancel);
+        return () => {
+            pointerArea.removeEventListener('mousemove', move, true);
+            pointerArea.removeEventListener('mouseleave', leave);
+            pointerArea.removeEventListener('pointerdown', down);
+            pointerArea.removeEventListener('pointercancel', cancel);
+            cancel();
+        };
+    }, [pointerArea]);
 
     /* eslint-disable-next-line no-warning-comments -- @AI: KEEP THIS EXACTLY AS IS */
     // @note Version Control: Project Folia version 0.5.27-a16525c
@@ -126,82 +108,39 @@ const VisualizerShell = forwardRef<HTMLDivElement, VisualizerShellProps>(({
                 backgroundColor: 'transparent',
                 fontFamily: resolveThemeFontStack(theme),
                 fontWeight: resolveThemeFontWeight(theme, 400),
-                opacity: resolvedVisualizerOpacity,
+                opacity: isInBackdrop ? undefined : resolvedVisualizerOpacity,
+                pointerEvents: isInBackdrop ? 'none' : undefined,
             }}
-            onMouseMove={(event) => {
-                // Back button is intentionally hidden most of the time.
-                // Only reveal it near the top-left hot area so it does not pollute the visual field.
-                const nearBackArea = event.clientX <= PLAYER_CHROME_HOTSPOT_SIZE && event.clientY <= PLAYER_CHROME_HOTSPOT_SIZE;
-                if (nearBackArea !== showBackButton) {
-                    setShowBackButton(nearBackArea);
-                }
-
-                updatePlayerPanelGuideHotspot(!resolvedIsPanelOpen && isNearPlayerPanelHotspot(event.clientX, event.clientY));
-            }}
-            onMouseLeave={() => {
-                if (showBackButton) {
-                    setShowBackButton(false);
-                }
-                updatePlayerPanelGuideHotspot(false);
-            }}
-            onPointerDown={(event) => {
-                if (resolvedIsPanelOpen || event.pointerType !== 'touch' || !isNearPlayerPanelHotspot(event.clientX, event.clientY)) {
-                    return;
-                }
-
-                showTouchPanelGuide();
-            }}
-            onPointerCancel={() => {
-                clearTouchGuideHideTimeout();
-                updatePlayerPanelGuideHotspot(false);
-            }}
+            onMouseMoveCapture={isInBackdrop ? undefined : pointer.move}
+            onMouseLeave={isInBackdrop ? undefined : pointer.leave}
+            onPointerDown={isInBackdrop ? undefined : pointer.down}
+            onPointerCancel={isInBackdrop ? undefined : pointer.cancel}
         >
-            {resolvedOnBack && (
-                <motion.button
-                    type="button"
-                    aria-label={t('ui.backToHome')}
-                    initial={false}
-                    animate={{
-                        opacity: isBackButtonVisible ? 1 : 0,
-                        scale: isBackButtonVisible ? 1 : 0.92,
-                        x: isBackButtonVisible ? 0 : -6,
-                    }}
-                    transition={{ duration: 0.2, ease: 'easeOut' }}
-                    onClick={(event) => {
-                        event.stopPropagation();
-                        resolvedOnBack();
-                    }}
-                    className="absolute top-6 left-6 z-30 h-10 w-10 rounded-full flex items-center justify-center transition-colors backdrop-blur-md bg-black/20 hover:bg-white/10 text-white/60 pointer-events-auto"
-                    style={{ pointerEvents: isBackButtonVisible ? 'auto' : 'none' }}
-                >
-                    <ChevronLeft size={20} />
-                </motion.button>
-            )}
+            {backButton}
 
-            {renderBackground && (
-                <VisualizerBackgroundRenderer
-                    config={sharedProps?.background}
+            {!isInBackdrop && (
+                <VisualizerBackdropLayers
                     theme={theme}
-                    isDaylight={resolvedIsDaylight}
-                    coverUrl={resolvedCoverUrl}
                     audioPower={audioPower}
                     audioBands={audioBands}
-                    seed={sharedProps?.seed}
-                    staticMode={resolvedStaticMode || resolvedBackgroundStaticMode}
-                    paused={resolvedPaused}
+                    sharedProps={sharedProps}
+                    renderBackground={renderBackground}
                 />
             )}
 
-            {/* The built-in video layer follows the same rule as stage layers and stays out of the OBS
-                sources, which cannot open the main window's local file handle. */}
-            
+            {/* Folium stage layers exist on the real player page only, never in previews. Inside a
+                backdrop it draws them, so they stay when the style changes. */}
+            {showStageLayers && (
+                null
+            )}
 
-            {/* Folium stage layers exist on the real player page only, never in previews. */}
-            
+            {/* Without a box of its own, so the style lays out as before; it gives the style back the
+                pointer that the shell's box lets through. */}
+            {isInBackdrop ? <div style={{ display: 'contents', pointerEvents: 'auto' }}>{children}</div> : children}
 
-            {children}
-
-            
+            {showStageLayers && (
+                null
+            )}
         </div>
     );
 });

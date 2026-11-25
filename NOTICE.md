@@ -22,7 +22,17 @@ The full-screen visualizer layer in Extension/Folia/vendor adapts Folia by
 chthollyphile and the Folia contributors:
 
 https://github.com/chthollyphile/folia-major
-Upstream revision: 43605cd8e562b7aa0e5897478856ce3604a054a1 (0.7.18).
+Upstream revision: 3b91924f1e2da7b7f8f9cf1e0cd0b25d4a789e6d (0.8.0).
+
+Nebbia stroke medians are generated from AnimCJK revision
+99dba566b92daf45ae20d05e6c91d3f68d8619f2. The data retains the Arphic Public
+License and its upstream transformation notice, embedded in the fullscreen
+runtime and included by the build generator. The rain texture and Folia image
+notices are retained with the upstream sources.
+
+The bounded QRC decoder adapts qrc-decoder 1.0.2 by apoint123 (MIT), retaining
+its cipher and replacing unbounded inflation with a capped incremental decoder.
+The license is preserved in LICENSES/qrc-decoder-MIT.txt.
 
 Folia's AGPL-3.0 license is preserved in Extension/Folia/vendor/LICENSE.
 The copied file inventory and application-boundary adaptations are documented

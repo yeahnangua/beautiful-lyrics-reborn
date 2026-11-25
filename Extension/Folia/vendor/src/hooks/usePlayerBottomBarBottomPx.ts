@@ -75,3 +75,5 @@ export const usePlayerSubtitleBottomPx = (isPlayerChromeHidden: boolean): Motion
         ),
     );
 };
+
+export const usePlayerSubtitleYieldsToDock = () => false;

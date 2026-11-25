@@ -1,4 +1,4 @@
-import { colorWithAlpha } from '../colorMix';
+import { colorWithAlpha } from '../../../utils/colorMix';
 import {
     buildPendoloClockworkPalette,
     resolvePendoloClockworkAnchors,
@@ -182,6 +182,7 @@ export const drawPendoloClockwork2d = (
         phase,
         bassOscillation,
         secondGearAngle,
+        transBeatAngle = 0,
         primaryTextColor,
         accentTextColor,
         backgroundColor,
@@ -220,6 +221,12 @@ export const drawPendoloClockwork2d = (
         ctx.globalAlpha = 0.42 * (isFullDecor ? 1.0 : 0.6); // Base opacity
         // Draw square image covering the circle
         const size = coverRadius * 2;
+        // 镜像时整个表盘被翻过，封面再翻回来，图里的字不是反的
+        if (input.mirrored) {
+            ctx.translate(centerX, 0);
+            ctx.scale(-1, 1);
+            ctx.translate(-centerX, 0);
+        }
         ctx.drawImage(coverImage, centerX - coverRadius, centerY - coverRadius, size, size);
         ctx.restore();
     }
@@ -361,20 +368,22 @@ export const drawPendoloClockwork2d = (
     );
 
     // Meshing Intermediate Transmission Gear (Lower-Left Offset)
+    // Turns with the wheel, plus 智能动感模式's beat turn (0 otherwise).
+    const transAngle = -escapementAngle * 1.4 + transBeatAngle;
     drawGearTeeth(
-        ctx, anchors.transCx, anchors.transCy, anchors.transR, 24, 7, -escapementAngle * 1.4,
+        ctx, anchors.transCx, anchors.transCy, anchors.transR, 24, 7, transAngle,
         palette.gearPrimaryAlpha, 1.8,
     );
     drawSpokedWheel(
         ctx, anchors.transCx, anchors.transCy,
-        anchors.transR * 0.25, anchors.transR * 0.85, 5, -escapementAngle * 1.4,
+        anchors.transR * 0.25, anchors.transR * 0.85, 5, transAngle,
         palette.gearPrimarySubtleAlpha, 1.5,
     );
 
     // Geneva stripes on transmission gear face (parallel lines clipped to gear circle)
     ctx.save();
     ctx.translate(anchors.transCx, anchors.transCy);
-    ctx.rotate(-escapementAngle * 1.4);
+    ctx.rotate(transAngle);
     // Clip to the gear's inner area
     ctx.beginPath();
     ctx.arc(0, 0, anchors.transR * 0.80, 0, Math.PI * 2);

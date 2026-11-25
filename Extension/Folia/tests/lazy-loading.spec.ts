@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 const bytes = readFileSync(new URL('../dist/folia.mjs', import.meta.url));
 const sha256 = createHash('sha256').update(bytes).digest('hex');
 const descriptor = { api: 1, sha256, file: `beautiful-lyrics-reborn-fullscreen.${sha256.slice(0, 16)}.mjs` };
-const cacheKey = `https://lyrics.txw.qzz.io/extension/${descriptor.file}`;
+const cacheKey = `https://lyrics.txw.qzz.io/Release/${descriptor.file}`;
 const asset = '**/beautiful-lyrics-reborn-fullscreen.*.mjs';
 async function prepare(page: Page) {
   await page.addInitScript(release => { (window as any).fullscreenRelease = release; }, descriptor);

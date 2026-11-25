@@ -1,4 +1,4 @@
-import type { LucideIcon } from 'lucide-react';
+import type { IconNode, LucideIcon } from 'lucide-react';
 
 // src/services/lucideIconResolver.ts
 // Resolves a theme's lyricsIcons entry (a PascalCase lucide name coming from AI output or the
@@ -37,6 +37,12 @@ const isLucideIcon = (value: unknown): value is LucideIcon => (
 
 // lucide-react names each export after its kebab-case file: `arrow-down-0-1` -> `ArrowDown01`.
 const toPascalCase = (key: string) => key.replace(/(?:^|-)(\w)/g, (_, char: string) => char.toUpperCase());
+
+/**
+ * The export name of an icon named as on lucide.dev (`message-circle` -> `MessageCircle`), for callers that
+ * hold the kebab-case name (`folium.ui.icon` names) and render through the lookups below.
+ */
+export const lucideExportName = (iconName: string): string => toPascalCase(iconName.trim());
 
 /** Builds the name tables lucide-react's barrel exports, from the keys of its dynamicIconImports map. */
 const buildIconTable = (loaders: Record<string, IconLoader>): IconTable => {
@@ -138,6 +144,27 @@ export const hasLucideIcon = async (name: string): Promise<boolean> => {
 export const resolveLucideIcon = (name: string | null | undefined): LucideIcon | null => {
     const key = table?.keysByName.get(trimName(name));
     return key ? loadedIcons.get(key) ?? null : null;
+};
+
+/**
+ * The icon's SVG node data (lucide's IconNode: [tag, attrs, children?][]) for an exact export name,
+ * or null when it is unknown or not loaded yet. For canvas / Pixi renderers that draw the shapes
+ * themselves (lumiere's line art, hanabi's icon stickers).
+ *
+ * 取 lucide-react 图标组件里的 IconNode：组件是 forwardRef，它的 render 只是
+ * createElement(Icon, { iconNode, ... })（1.48 起是 { icon: { node, ... } }），不跑 hooks，直接调用即可拿到节点数据，
+ * 不必渲染 SVG 再解析。
+ */
+export const resolveLucideIconNode = (name: string | null | undefined): IconNode | null => {
+    const icon = resolveLucideIcon(name) as unknown as { render?: (props: object, ref: null) => unknown } | null;
+    if (!icon || typeof icon.render !== 'function') return null;
+    try {
+        const element = icon.render({}, null) as { props?: { iconNode?: unknown; icon?: { node?: unknown } } } | null;
+        const node = element?.props?.iconNode ?? element?.props?.icon?.node;
+        return Array.isArray(node) ? node as IconNode : null;
+    } catch {
+        return null;
+    }
 };
 
 /**

@@ -1,7 +1,9 @@
 import React, { useEffect, useRef } from 'react';
+import type { MotionValue } from 'framer-motion';
 import * as twgl from 'twgl.js';
 import { Theme } from '../../../../types';
-import { parseColorChannels } from '../../colorMix';
+import { parseColorChannels } from '../../../../utils/colorMix';
+import { useBlendedColors } from '../useBlendedColors';
 
 // src/components/visualizer/backgrounds/sora/SoraBackground.tsx
 // SoraBackground component is a shader-based space starfield background.
@@ -11,6 +13,10 @@ interface SoraBackgroundProps {
   theme: Theme;
   isDaylight: boolean;
   paused?: boolean;
+  /** How long new theme colours take to blend in (useBlendedColors); 0 or left out, at once. */
+  blendMs?: number;
+  /** Where given, the blend plays along this instead (useBlendedColors). */
+  blendProgress?: MotionValue<number>;
 }
 
 const PARTICLE_COUNT = 150;
@@ -28,7 +34,7 @@ float hash2(vec2 p) {
 
 void main() {
   float seed = a_index * 123.456;
-  
+
   float speed_rand = hash2(vec2(seed, 1.1));
   float size_rand = hash2(vec2(seed, 2.2));
   float y_rand = hash2(vec2(seed, 3.3));
@@ -39,25 +45,25 @@ void main() {
   float aspect = u_resolution.x / u_resolution.y;
   float speed = 0.008 + speed_rand * 0.024;
   float size = 0.0006 + 0.0032 * pow(size_rand, 3.8);
-  
+
   float y = -0.45 + y_rand * 0.9;
-  
+
   float margin = 0.05;
   float width = aspect + margin * 2.0;
   float x = fract(x_rand + u_time * speed);
   x = x * width - (aspect * 0.5 + margin);
-  
+
   float wave = sin(u_time * 0.3 + y_rand * 6.283) * 0.005;
-  
+
   float ndc_x = x / (aspect * 0.5);
   float ndc_y = (y + wave) / 0.5;
-  
+
   gl_Position = vec4(ndc_x, ndc_y, 0.0, 1.0);
-  
-  // Point size in pixels. 
+
+  // Point size in pixels.
   float pointSize = size * u_resolution.y * 3.5;
   gl_PointSize = max(2.0, pointSize);
-  
+
   float blink = 0.3 + 0.7 * sin(u_time * (1.0 + blink_rand * 2.5) + x_rand * 6.283);
   v_intensity_base = blink;
   v_color_type = color_type_rand;
@@ -75,32 +81,35 @@ varying float v_intensity_base;
 void main() {
   vec2 pc = gl_PointCoord - 0.5;
   float dist = length(pc);
-  
+
   float alpha = smoothstep(0.5, 0.1, dist) * v_intensity_base;
   if (alpha < 0.01) discard;
-  
+
   vec3 baseColor = v_color_type > 0.90 ? u_particle_accent_color : u_particle_color;
-  
+
   // Pre-multiplied alpha blending
   gl_FragColor = vec4(baseColor * alpha, alpha);
 }
 `;
 
-const SoraBackground: React.FC<SoraBackgroundProps> = ({ theme, isDaylight, paused = false }) => {
+const SoraBackground: React.FC<SoraBackgroundProps> = ({ theme, isDaylight, paused = false, blendMs = 0, blendProgress }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationRef = useRef<number | null>(null);
   const timeRef = useRef<number>(0);
   const invalidateRef = useRef<(() => void) | null>(null);
+  // A new song's colours blend in where the host plays transitions: a second copy of the canvas for the
+  // soft focus would compile its program again on every song change.
+  const [primaryColor, accentColor] = useBlendedColors([theme.primaryColor, theme.accentColor], blendMs, blendProgress);
 
-  const primaryColorChannels = parseColorChannels(theme.primaryColor) || 
+  const primaryColorChannels = parseColorChannels(primaryColor) ||
     (isDaylight ? { r: 0, g: 0, b: 0 } : { r: 255, g: 255, b: 255 });
   const particleColor = [
     primaryColorChannels.r / 255,
     primaryColorChannels.g / 255,
     primaryColorChannels.b / 255,
   ];
-  
-  const accentColorChannels = parseColorChannels(theme.accentColor) || primaryColorChannels;
+
+  const accentColorChannels = parseColorChannels(accentColor) || primaryColorChannels;
   const particleAccentColor = [
     accentColorChannels.r / 255,
     accentColorChannels.g / 255,
@@ -130,13 +139,13 @@ const SoraBackground: React.FC<SoraBackgroundProps> = ({ theme, isDaylight, paus
       console.error("SoraBackground twgl program error:", err);
     });
     if (!programInfo) return;
-    
+
     // Create an array of particle indices
     const indices = new Float32Array(PARTICLE_COUNT);
     for (let i = 0; i < PARTICLE_COUNT; i++) {
       indices[i] = i;
     }
-    
+
     const arrays = {
       a_index: { numComponents: 1, data: indices }
     };
@@ -181,7 +190,7 @@ const SoraBackground: React.FC<SoraBackgroundProps> = ({ theme, isDaylight, paus
       gl.useProgram(programInfo.program);
       twgl.setBuffersAndAttributes(gl, programInfo, bufferInfo);
       twgl.setUniforms(programInfo, uniforms);
-      
+
       twgl.drawBufferInfo(gl, bufferInfo, gl.POINTS);
 
       if (!pausedRef.current) invalidate();
@@ -208,7 +217,7 @@ const SoraBackground: React.FC<SoraBackgroundProps> = ({ theme, isDaylight, paus
 
   useEffect(() => {
     invalidateRef.current?.();
-  }, [paused, isDaylight, theme.primaryColor, theme.accentColor]);
+  }, [paused, isDaylight, primaryColor, accentColor]);
 
   return (
     <canvas

@@ -1,21 +1,5 @@
+// Reborn adapter: upstream renderers, host-owned settings and playback.
 import React from 'react';
 import { defineVisualizer } from '../definition';
-
-
-const Visualizer = React.lazy(() => import('./Visualizer'));
-
-// src/components/visualizer/classic/entry.tsx
-// Registers the classic visualizer mode.
-export default defineVisualizer({
-    mode: 'classic',
-    order: 30,
-    labelKey: 'ui.visualizerClassic',
-    labelFallback: 'Luminous',
-    previewSeed: 'classic',
-    previewStartOffset: 0,
-    tuningKind: 'classic',
-    usesWordSegmentation: true,
-    render: props => <Visualizer {...props} />,
-    
-    
-});
+const Renderer = React.lazy(() => import('./Visualizer'));
+export default defineVisualizer({mode:'classic',order:0,labelKey:'ui.visualizerClassic',labelFallback:"Luminous",previewSeed:'classic',previewStartOffset:0,render:props=><Renderer {...props} />});

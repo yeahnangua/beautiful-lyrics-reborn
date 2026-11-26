@@ -10,6 +10,29 @@ async function prepare(page: Page, html: string) {
 }
 const bar = '<aside data-testid="now-playing-bar"><div class="hashed-controls"><button data-testid="fullscreen-mode-button" style="display:inline-flex"></button><div><button data-testid="control-button-queue"></button></div></div></aside>';
 
+test('queue/Jam overlap masks never clip the custom playback buttons or queue', async ({ page }) => {
+  const markup = '<aside data-testid="now-playing-bar"><div class="control-row"><button data-testid="lyrics-button"></button><div class="jam-group"><div class="queue-wrapper"><button data-testid="control-button-queue"></button></div></div><div data-testid="volume-bar"></div><button data-testid="fullscreen-mode-button"></button></div></aside>';
+  await prepare(page, '<style>.jam-group > :not(:first-child){mask-image:radial-gradient(circle at 3px 50%,transparent 12px,black 12.5px)}</style>' + markup);
+  await page.evaluate(() => {
+    const buttons = ['lyrics', 'fullscreen'].map(id => {
+      const button = document.createElement('button'); button.id = id; return button;
+    });
+    (window as any).binding = (window as any).domCompat.BindPlaybarElements(buttons, () => true);
+  });
+  const verify = async () => {
+    await expect(page.locator('.control-row > #lyrics')).toHaveCount(1);
+    await expect(page.locator('.control-row > #fullscreen')).toHaveCount(1);
+    await expect(page.locator('.jam-group')).toHaveJSProperty('childElementCount', 1);
+    for (const selector of ['#lyrics', '#fullscreen', '.queue-wrapper']) await expect(page.locator(selector)).toHaveCSS('mask-image', 'none');
+    await expect(page.locator('[data-testid="fullscreen-mode-button"]')).toBeHidden();
+  };
+  await verify();
+  await page.locator('[data-testid="now-playing-bar"]').evaluate((element, markup) => element.outerHTML = markup, markup);
+  await verify();
+  await page.evaluate(() => (window as any).binding.Destroy());
+  await expect(page.locator('[data-testid="fullscreen-mode-button"]')).toBeVisible();
+});
+
 test('playback entries survive unmapped classes, delayed controls and React replacement', async ({ page }) => {
   await prepare(page, '<main></main>');
   await page.evaluate(() => {

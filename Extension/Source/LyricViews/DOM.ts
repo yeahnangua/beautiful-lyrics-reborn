@@ -15,11 +15,18 @@ const ObserveSpotifyRoot = (callback: () => void) => {
 }
 // Spotify can ship unmapped CSS classes before Spicetify catches up. Prefer
 // semantic anchors when its legacy playback/sidebar selectors are unavailable.
-export const FindPlaybarControls = (root: Document = document): HTMLElement | null => (
-	root.querySelector<HTMLElement>(".main-nowPlayingBar-extraControls")
-	?? root.querySelector<HTMLElement>('[data-testid="now-playing-bar"] [data-testid="control-button-queue"]')?.parentElement?.parentElement
-	?? null
-)
+export const FindPlaybarControls = (root: Document = document): HTMLElement | null => {
+	const legacy = root.querySelector<HTMLElement>(".main-nowPlayingBar-extraControls")
+	if (legacy) return legacy
+	const bar = root.querySelector<HTMLElement>('[data-testid="now-playing-bar"]')
+	const queue = bar?.querySelector<HTMLElement>('[data-testid="control-button-queue"]')
+	// Queue/Jam can add nested wrappers with overlap masks. Find the shared
+	// control row using its volume/fullscreen siblings, not a fixed parent count.
+	for (let controls = queue?.parentElement; controls && controls !== bar; controls = controls.parentElement) {
+		if (controls.querySelector('[data-testid="volume-bar"], [data-testid="fullscreen-mode-button"], [data-testid="pip-toggle-button"]')) return controls
+	}
+	return null
+}
 
 export const BindPlaybarElements = (buttons: HTMLButtonElement[], visible: () => boolean) => {
 	const hidden = new Map<HTMLElement, string>()

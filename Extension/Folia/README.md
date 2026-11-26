@@ -46,6 +46,8 @@ The Vite build adapts Paper Shader's style injection to use the canvas's Shadow 
 
 The alternate-text helper retains Reborn's translation-only subtitle policy. Transliteration controls, engines and dictionaries remain absent from the payload.
 
+Classic's shared GlowWord and Partita's chunk state initialize from the current clock and resynchronize when their timings change. This preserves visible lyrics when a paused seek or mode switch mounts the words after the last clock event. Browser regression tests check effective opacity, including parent opacity, rather than only checking that lyric text exists in the DOM.
+
 ## On-demand online runtime
 
 Online releases package this entire runtime separately and only download/import it on the first fullscreen/cinema entry. The main extension keeps the Spotify host and passes snapshots/actions into the verified runtime, so there is one playback service and lyric cache. Offline builds embed this module. See [loading, publication and metric definitions](../../docs/fullscreen-loading-and-statistics.md) for cache behavior, cancellation, hash validation and anonymous aggregate statistics.

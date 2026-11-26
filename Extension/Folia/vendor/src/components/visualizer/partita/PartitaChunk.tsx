@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import { motion, MotionValue, Variants, useMotionValueEvent } from 'framer-motion';
 import { Theme, Word as WordType } from '../../../types';
 import { GlowWord } from '../GlowWord';
@@ -32,19 +32,18 @@ export const PartitaChunk: React.FC<{
     overlapSpacing?: PartitaRowSpacing;
     fontSize: string;
 }> = ({ chunkWords, displayWords, config, guideIndex, currentTime, theme, layoutVariants, bodyVariants, baseColor, renderProfile, isChorus, showGuideLines, overlapSpacing, fontSize }) => {
-    const [chunkStatus, setChunkStatus] = useState<'waiting' | 'active' | 'passed'>('waiting');
-
     const chunkStartTime = chunkWords[0].startTime;
     const chunkEndTime = getGlowWordActiveEndTime(chunkWords[chunkWords.length - 1], renderProfile);
+    const statusAt = useCallback((time: number): 'waiting' | 'active' | 'passed' => {
+        if (time > chunkEndTime) return 'passed';
+        return time >= chunkStartTime - renderProfile.wordLookahead ? 'active' : 'waiting';
+    }, [chunkStartTime, chunkEndTime, renderProfile.wordLookahead]);
+    const [chunkStatus, setChunkStatus] = useState(() => statusAt(currentTime.get()));
+    useLayoutEffect(() => { setChunkStatus(statusAt(currentTime.get())); }, [currentTime, statusAt]);
 
     useMotionValueEvent(currentTime, 'change', (latest: number) => {
-        let newStatus: 'waiting' | 'active' | 'passed' = 'waiting';
-        if (latest >= chunkStartTime - renderProfile.wordLookahead && latest <= chunkEndTime) {
-            newStatus = 'active';
-        } else if (latest > chunkEndTime) {
-            newStatus = 'passed';
-        }
-        if (newStatus !== chunkStatus) setChunkStatus(newStatus);
+        const nextStatus = statusAt(latest);
+        if (nextStatus !== chunkStatus) setChunkStatus(nextStatus);
     });
 
     const activeColor = getActiveColor(displayWords.map(w => w.text).join(' '), theme);

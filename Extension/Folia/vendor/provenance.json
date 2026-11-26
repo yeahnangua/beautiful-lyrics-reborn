@@ -3,6 +3,7 @@
   "revision": "3b91924f1e2da7b7f8f9cf1e0cd0b25d4a789e6d",
   "version": "0.8.0",
   "adapted": [
+    "src/components/visualizer/GlowWord.tsx",
     "src/components/visualizer/VisualizerBackdrop.tsx",
     "src/components/visualizer/VisualizerShell.tsx",
     "src/components/visualizer/backgrounds/common/entry.tsx",
@@ -33,6 +34,7 @@
     "src/components/visualizer/monet/tuning.ts",
     "src/components/visualizer/nebbia/entry.tsx",
     "src/components/visualizer/nebbia/nebbiaStrokes.ts",
+    "src/components/visualizer/partita/PartitaChunk.tsx",
     "src/components/visualizer/partita/entry.tsx",
     "src/components/visualizer/pendolo/entry.tsx",
     "src/components/visualizer/pixi/pixiRuntimeHost.ts",

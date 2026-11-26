@@ -9,6 +9,8 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const directory = join(root, 'Extension/Builds/Release');
 const state = join(root, 'Server/.wrangler/publication');
 const path = 'Extension/Builds/Release';
+const verificationOrigin = 'https://beautiful-lyrics-reborn-server.1135746060.workers.dev';
+const releaseBase = new URL('/Release/', verificationOrigin);
 const command = (binary, args, cwd = root) => {
   const result = spawnSync(binary, args, { cwd, stdio: 'inherit', env: process.env });
   if (result.error || result.status) throw result.error ?? Error(`${binary} failed (${result.status})`);
@@ -30,7 +32,7 @@ for (const item of files) {
 await mkdir(state, { recursive: true });
 await writeFile(join(state, 'next.json'), JSON.stringify(descriptor, null, 2) + '\n');
 const nextLoader = await readFile(join(directory, 'beautiful-lyrics-reborn.mjs'));
-const live = await fetch('https://lyrics.txw.qzz.io/Release/latest.json', { cache: 'no-store', signal: AbortSignal.timeout(20000) });
+const live = await fetch(new URL('latest.json', releaseBase), { cache: 'no-store', signal: AbortSignal.timeout(20000) });
 if (!live.ok) throw Error(`Cannot read current publication (${live.status})`);
 const previous = await live.json();
 if (!/^[a-f0-9]{64}$/.test(previous.sha256)) throw Error('Invalid previous publication');
@@ -38,7 +40,7 @@ for (const item of [previous, previous.fullscreen, ...Object.values(previous.ful
   if (!/^beautiful-lyrics-reborn(?:-fullscreen|-nebbia)?\.[a-f0-9]{16}\.(?:mjs|json)$/.test(item.file) || !/^[a-f0-9]{64}$/.test(item.sha256)) throw Error('Invalid previous asset');
   const local = join(directory,item.file);
   if (!existsSync(local)) {
-    const response=await fetch('https://lyrics.txw.qzz.io/Release/'+item.file,{signal:AbortSignal.timeout(60000)});
+    const response=await fetch(new URL(item.file, releaseBase),{signal:AbortSignal.timeout(60000)});
     if(!response.ok)throw Error('Cannot preserve previous asset');
     const bytes=Buffer.from(await response.arrayBuffer());
     if(digest(bytes)!==item.sha256)throw Error('Previous asset checksum mismatch');
@@ -55,7 +57,7 @@ await writeFile(join(directory,'beautiful-lyrics-reborn.mjs'),previousLoader);
 await writeFile(join(directory, 'latest.json'), JSON.stringify(previous, null, 2) + '\n');
 try {
   command(process.execPath, ['Server/Tasks/Deploy.mjs']);
-  command(process.execPath, ['Extension/Tasks/VerifyPublishedRelease.mjs', '--assets-only', '--expected', join(state, 'next.json')]);
+  command(process.execPath, ['Extension/Tasks/VerifyPublishedRelease.mjs', verificationOrigin, '--assets-only', '--expected', join(state, 'next.json')]);
 } finally {
   await writeFile(join(directory,'beautiful-lyrics-reborn.mjs'),nextLoader);
   await writeFile(join(directory, 'latest.json'), JSON.stringify(descriptor, null, 2) + '\n');
@@ -95,7 +97,7 @@ command(process.execPath, ['Extension/Tasks/VerifyPublishedRelease.mjs','--asset
 // Atomically switch the assets and pointer together in one Worker deployment.
 try {
  command(process.execPath, ['Server/Tasks/Deploy.mjs']);
- command(process.execPath, ['Extension/Tasks/VerifyPublishedRelease.mjs']);
+ command(process.execPath, ['Extension/Tasks/VerifyPublishedRelease.mjs', verificationOrigin]);
 } catch (error) {
  await writeFile(join(directory,'latest.json'),JSON.stringify(previous,null,2)+'\n');
  await writeFile(join(directory,'beautiful-lyrics-reborn.mjs'),previousLoader);

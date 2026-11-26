@@ -8,10 +8,10 @@ const source=(await readFile(new URL('../Tasks/PublishRelease.mjs',import.meta.u
 const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 async function publication(fail){
- const root=path.resolve('publication-fixture'),directory=path.join(root,'Extension/Builds/Release'),files=new Map(),events=[];
+ const root=path.resolve('publication-fixture'),directory=path.join(root,'Extension/Builds/Release'),files=new Map(),events=[],requests=[];
  const build=code=>{const sha256=digest(code);return {schema:1,version:'5.4.0',file:`beautiful-lyrics-reborn.${sha256.slice(0,16)}.mjs`,sha256}};
  const previous=build('old'),next=build('new');
- files.set(path.join(directory,previous.file),Buffer.from('old'));files.set(path.join(directory,next.file),Buffer.from('new'));
+ files.set(path.join(directory,next.file),Buffer.from('new'));
  files.set(path.join(directory,'latest.json'),Buffer.from(JSON.stringify(next)));files.set(path.join(directory,'beautiful-lyrics-reborn.mjs'),Buffer.from('new loader'));
  let deployments=0;
  const spawnSync=(_bin,args,options={})=>{
@@ -26,10 +26,29 @@ async function publication(fail){
   return {status:0,stdout,stderr:''};
  };
  const execute=new AsyncFunction('readFile','writeFile','mkdir','cp','readdir','unlink','existsSync','spawnSync','resolve','join','fileURLToPath','createHash','fetch',source.replaceAll('import.meta.url',JSON.stringify('file:///fixture/Extension/Tasks/PublishRelease.mjs')));
+ const fetchRelease = async url => {
+  const request = new URL(url);
+  requests.push(request.href);
+  if (request.pathname === '/Release/latest.json') return Response.json(previous);
+  if (request.pathname === `/Release/${previous.file}`) return new Response('old');
+  return new Response(null, { status: 404 });
+ };
  let error;
- try{await execute(async file=>files.get(String(file)),async(file,bytes)=>files.set(String(file),Buffer.from(bytes)),async()=>{},async(from,to)=>files.set(to,files.get(from)),async dir=>[...files.keys()].filter(file=>path.dirname(file)===dir).map(file=>path.basename(file)),async file=>files.delete(file),file=>files.has(file),spawnSync,path.resolve,path.join,()=>root,createHash,async()=>Response.json(previous));}catch(caught){error=caught;}
- return {events,error,previous,next,deployments};
+ try{await execute(async file=>files.get(String(file)),async(file,bytes)=>files.set(String(file),Buffer.from(bytes)),async()=>{},async(from,to)=>files.set(to,files.get(from)),async dir=>[...files.keys()].filter(file=>path.dirname(file)===dir).map(file=>path.basename(file)),async file=>files.delete(file),file=>files.has(file),spawnSync,path.resolve,path.join,()=>root,createHash,fetchRelease);}catch(caught){error=caught;}
+ return {events,error,previous,next,deployments,requests};
 }
+test('publication reads rollback assets and verifies the live release on workers.dev', async () => {
+ const result = await publication();
+ assert.equal(result.error, undefined);
+ const origin = 'https://beautiful-lyrics-reborn-server.1135746060.workers.dev';
+ assert.deepEqual(result.requests, [`${origin}/Release/latest.json`, `${origin}/Release/${result.previous.file}`]);
+ const verificationCommands = result.events.map(event => event.command)
+  .filter(command => command.startsWith('Extension/Tasks/VerifyPublishedRelease.mjs'));
+ assert.equal(verificationCommands.length, 3);
+ assert.ok(verificationCommands[0].startsWith(`Extension/Tasks/VerifyPublishedRelease.mjs ${origin} --assets-only`));
+ assert.ok(verificationCommands[1].includes('--cdn-only'));
+ assert.equal(verificationCommands[2], `Extension/Tasks/VerifyPublishedRelease.mjs ${origin}`);
+});
 test('publication stages assets before pointers and publishes main last',async()=>{
  const result=await publication();assert.equal(result.error,undefined);
  const deploys=result.events.filter(event=>event.command.includes('Server/Tasks/Deploy.mjs'));

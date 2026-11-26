@@ -166,4 +166,4 @@ export async function startReleaseLoader(fallback, runtime = globalThis) {
   }
 }
 
-await startReleaseLoader({"schema":1,"version":"5.4.0","sha256":"2f082bac418c72ebff22c43f558811be726ec8c2198bb20084fdfaa2a7f6a23f","file":"beautiful-lyrics-reborn.2f082bac418c72eb.mjs","fullscreen":{"api":2,"sha256":"bbc9d00ec5c21a3d3d15082d4fb4fd2378cda3946b168d4feb3070b942a33a9b","file":"beautiful-lyrics-reborn-fullscreen.bbc9d00ec5c21a3d.mjs","assets":{"nebbia":{"file":"beautiful-lyrics-reborn-nebbia.90c46509adeddec9.json","sha256":"90c46509adeddec9d7ae6c42282e2121aefb1522e85009f1b45f01513ffebd2c"}}}});
+await startReleaseLoader({"schema":1,"version":"5.4.0","sha256":"74da15c0d57655d0ae5c7b72eadbfb7eda2e69517d619dded38720d08842c97f","file":"beautiful-lyrics-reborn.74da15c0d57655d0.mjs","fullscreen":{"api":2,"sha256":"bbc9d00ec5c21a3d3d15082d4fb4fd2378cda3946b168d4feb3070b942a33a9b","file":"beautiful-lyrics-reborn-fullscreen.bbc9d00ec5c21a3d.mjs","assets":{"nebbia":{"file":"beautiful-lyrics-reborn-nebbia.90c46509adeddec9.json","sha256":"90c46509adeddec9d7ae6c42282e2121aefb1522e85009f1b45f01513ffebd2c"}}}});

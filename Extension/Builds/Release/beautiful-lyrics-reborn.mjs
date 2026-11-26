@@ -3,11 +3,11 @@ export async function startReleaseLoader(fallback, runtime = globalThis) {
   const stateKey = "__beautifulLyricsRebornLoader";
   if (runtime[stateKey]) return;
   const state = runtime[stateKey] = { status: "loading", build: undefined };
-  const base = "https://lyrics.txw.qzz.io/extension/";
-  const domestic = "https://lyrics.20050129.xyz/extension/";
-  const cdn = "https://cdn.jsdelivr.net/gh/yeahnangua/beautiful-lyrics-reborn@main/Extension/Builds/Release/";
+  const base = "https://lyrics.txw.qzz.io/Release/";
+  const domestic = "https://lyrics.20050129.xyz/Release/";
+  const cdn = "https://cdn.jsdelivr.net/gh/yeahnangua/beautiful-lyrics-reborn@releases/Extension/Builds/Release/";
   const storageKey = "beautiful-lyrics-reborn:last-release";
-  const headers = { "User-Agent": "beautiful-lyrics-reborn" };
+  const headers = {};
   const valid = (value) => value?.schema === 1 && /^\d+\.\d+\.\d+$/.test(value.version)
     && /^[a-f0-9]{64}$/.test(value.sha256)
     && value.file === `beautiful-lyrics-reborn.${value.sha256.slice(0, 16)}.mjs`;
@@ -25,8 +25,10 @@ export async function startReleaseLoader(fallback, runtime = globalThis) {
     return release;
   };
   const latest = async () => {
-    try { return await readPointer(pointer); }
-    catch { return readPointer(`${base}latest.json`, { headers }); }
+    for (const url of [pointer, `${domestic}latest.json`, `${cdn}latest.json`, "https://lyrics.txw.qzz.io/extension/latest.json"]) {
+      try { return await readPointer(url); } catch { /* Try the next independent route. */ }
+    }
+    throw Error("No update pointer available");
   };
   const downloadFrom = async (origin, release, controller = new AbortController()) => {
     const { signal } = controller;
@@ -55,6 +57,35 @@ export async function startReleaseLoader(fallback, runtime = globalThis) {
     }
   };
   const download = async (release) => {
+    let cache;
+    const key = base + release.file;
+    const bounded = async operation => {
+      let timer;
+      try { return await Promise.race([operation(), new Promise((_, reject) => {
+        timer = (runtime.setTimeout ?? setTimeout)(() => reject(Error("Cache timed out")), 2000);
+      })]); }
+      finally { (runtime.clearTimeout ?? clearTimeout)(timer); }
+    };
+    try {
+      if (!runtime.caches) throw Error("Cache unavailable");
+      cache = await bounded(() => runtime.caches?.open("BeautifulLyrics/Release/v1"));
+      const cached = await bounded(() => cache?.match(key));
+      if (cached) {
+        const bytes = await bounded(() => cached.arrayBuffer());
+        const digest = await bounded(() => runtime.crypto.subtle.digest("SHA-256", bytes));
+        if (Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2,"0")).join("") === release.sha256) return bytes;
+        await cache.delete(key);
+      }
+    } catch { /* Storage is optional. */ }
+    const remember = async bytes => {
+      try {
+        if (!cache) return bytes;
+        await bounded(() => cache?.put(key, new Response(bytes, {headers:{"Content-Type":"text/javascript"}})));
+        const keys = await bounded(() => cache?.keys());
+        for (const old of (keys ?? []).filter(item => item.url !== key).slice(0, Math.max(0,(keys?.length ?? 0)-3))) await cache.delete(old);
+      } catch { /* Keep this session usable. */ }
+      return bytes;
+    };
     const controllers = [new AbortController(), new AbortController()];
     let winner;
     try {
@@ -63,7 +94,7 @@ export async function startReleaseLoader(fallback, runtime = globalThis) {
         bytes: await downloadFrom(origin, release, controllers[index]),
         controller: controllers[index],
       })));
-      return winner.bytes;
+      return await remember(winner.bytes);
     } catch (error) {
       runtime.console.warn("[Beautiful Lyrics Reborn] Both download routes failed.", error);
     } finally {
@@ -71,7 +102,7 @@ export async function startReleaseLoader(fallback, runtime = globalThis) {
         if (controller !== winner?.controller) controller.abort();
       }
     }
-    try { return await downloadFrom(cdn, release); }
+    try { return await remember(await downloadFrom(cdn, release)); }
     catch (error) { runtime.console.warn("[Beautiful Lyrics Reborn]", error); }
     throw new Error(`Unable to download build ${release.sha256.slice(0, 16)}`);
   };
@@ -135,4 +166,4 @@ export async function startReleaseLoader(fallback, runtime = globalThis) {
   }
 }
 
-await startReleaseLoader({"schema":1,"version":"5.3.1","sha256":"50f6d35f8fd9b5cadc92f20ba3ce440251640aab8cd8b7e72966d8ea8d4f714e","file":"beautiful-lyrics-reborn.50f6d35f8fd9b5ca.mjs","fullscreen":{"api":1,"sha256":"09e663dd764f53d4ef488bdde8a869fb16355d2de945ae7f8ff9215dc27b89f8","file":"beautiful-lyrics-reborn-fullscreen.09e663dd764f53d4.mjs"}});
+await startReleaseLoader({"schema":1,"version":"5.4.0","sha256":"2f082bac418c72ebff22c43f558811be726ec8c2198bb20084fdfaa2a7f6a23f","file":"beautiful-lyrics-reborn.2f082bac418c72eb.mjs","fullscreen":{"api":2,"sha256":"bbc9d00ec5c21a3d3d15082d4fb4fd2378cda3946b168d4feb3070b942a33a9b","file":"beautiful-lyrics-reborn-fullscreen.bbc9d00ec5c21a3d.mjs","assets":{"nebbia":{"file":"beautiful-lyrics-reborn-nebbia.90c46509adeddec9.json","sha256":"90c46509adeddec9d7ae6c42282e2121aefb1522e85009f1b45f01513ffebd2c"}}}});

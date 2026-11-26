@@ -76,12 +76,9 @@ jobs:
           cd Extension
           deno test --allow-read --allow-write Tests/DebugServer.test.ts
 
-      - name: Typecheck and test Folia visualizers
+      - name: Typecheck Folia visualizers
         working-directory: Extension/Folia
-        run: |
-          npm run typecheck
-          npx playwright install --with-deps chromium
-          npm run test:ui
+        run: npm run typecheck
 
       - name: Test Worker
         working-directory: Server

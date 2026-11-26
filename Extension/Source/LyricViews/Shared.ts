@@ -1,13 +1,11 @@
 // NPM Packages
 import seedrandom from "npm:seedrandom"
 
-// JSR
 import { BackgroundRenderer } from "./BackgroundRenderer.ts"
 
 // Web-Modules
 import { Signal } from "@Universal/Modules/Signal.ts"
 import type { Maid } from "@Universal/Modules/Maid.ts"
-import { OnPreRender } from "@Universal/Modules/Scheduler.ts"
 
 // Spices
 import { GetInstantStore } from "@Spices/Spicetify/Services/Cache.ts"
@@ -52,48 +50,40 @@ export const CreateElement = <E = HTMLElement>(text: string) => {
 
 // Handle applying our dynamic-background
 const BackgroundClassName = "BeautifulLyricsBackground"
+const PlaceholderCoverArt = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="#6649a8"/><circle cx="160" cy="80" r="110" fill="#a76d8e"/></svg>')}`
 
 export const GetCoverArtForSong = (): [string, (number | undefined)] => {
-	// DJ is ALWAYS guaranteed to have a cover-art
-	if (Song?.Type === "DJ") {
-		return [Song.CoverArt.Big, undefined]
+	const coverArt = Song?.Type === "Local"
+		? (Song.CoverArt || SongContext?.CoverArt)
+		: (Song?.CoverArt.Big || Song?.CoverArt.Large || Song?.CoverArt.Default || Song?.CoverArt.Small)
+	if (coverArt) {
+		// Spotify's desktop image scheme cannot be decoded with CORS for a WebGL texture.
+		const imageId = /^(?:spotify:image:)?([a-f0-9]{40})$/i.exec(coverArt)?.[1]
+		return [imageId ? `https://i.scdn.co/image/${imageId.toLowerCase()}` : coverArt, undefined]
 	}
 
-	const coverArt = (
-		(Song?.Type === "Local")
-		? (
-			Song?.CoverArt
-			?? (
-				(SongContext?.CoverArt !== undefined)
-				? `spotify:image:${SongContext.CoverArt}`
-				: undefined
-			)
-		)
-		: Song?.CoverArt.Big
-	)
-	if (coverArt === undefined) {
-		return [
-			`data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="#6649a8"/><circle cx="160" cy="80" r="110" fill="#a76d8e"/></svg>')}`,
-			(75 + ((360 - 75) * seedrandom(Song?.Uri)()))
-		]
-	} else {
-		return [coverArt, undefined]
-	}
+	return [PlaceholderCoverArt, 75 + (360 - 75) * seedrandom(Song?.Uri)()]
 }
 
 // Blurred Cover Art Generation
 let Blurred_CovertArt: OffscreenCanvas
+let coverArtRequest = 0
 const CoverArtBlurred = new Signal()
 const GenerateBlurredCoverArt = async () => {
+	const request = ++coverArtRequest
 	const [coverArt, placeholderHueShift] = GetCoverArtForSong()
 
 	const image = new Image()
 	image.crossOrigin = "anonymous"
 	image.src = coverArt
-	try { await image.decode() } catch {
-        image.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="#6649a8"/></svg>')
-        try { await image.decode() } catch { return }
-    }
+	try {
+		await image.decode()
+	} catch {
+		if (request !== coverArtRequest || coverArt === PlaceholderCoverArt) return
+		image.src = PlaceholderCoverArt
+		try { await image.decode() } catch { return }
+	}
+	if (request !== coverArtRequest) return
 
 	const originalSize = Math.min(image.width, image.height) // Crop to a square
 	const blurExtent = Math.ceil(3 * 40) // Blur spread extent
@@ -128,10 +118,8 @@ const GenerateBlurredCoverArt = async () => {
 	// Draw the cropped circular image in the center of the expanded canvas
 	blurredCtx.drawImage(circleCanvas, (padding / 2), (padding / 2))
 
-	if (GetCoverArtForSong()[0] === coverArt) {
-		Blurred_CovertArt = blurredCanvas
-		CoverArtBlurred.Fire()
-	}
+	Blurred_CovertArt = blurredCanvas
+	CoverArtBlurred.Fire()
 }
 GenerateBlurredCoverArt()
 SongChanged.Connect(GenerateBlurredCoverArt)
